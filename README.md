@@ -12,27 +12,25 @@ GDGoC_HackathonVietnam/
 │   │   └── grading-engine/           ← SymPy microservice 
 │   │
 │   ├── agents/                       ← Python agent service 
-│   │   ├── src/
-│   │   │   ├── common/               ← Code for all agents
-│   │   │   ├── manager/              
-│   │   │   ├── parser/               
-│   │   │   ├── teacher/              
-│   │   │   ├── verifier/             
-│   │   │   ├── adaptive/             
-│   │   │   └── server.py             ← FastAPI entry point
-│   │   ├── tests/
+│   │   ├── common/               ← Code for all agents
+│   │   ├── manager/              
+│   │   ├── parser/               
+│   │   ├── teacher/              
+│   │   ├── verifier/             
+│   │   ├── adaptive/             
+│   │   ├── server.py             ← FastAPI entry point
 │   │   └── requirements.txt
 │   │
-│   └── data/                         ← Scraping & seed data 
-│       ├── scrapers/
-│       ├── knowledge_graph/
-│       └── exam_bank/
-│
-├── infra/
+│   │── data/                         ← Scraping & seed data 
+│   │   ├── scrapers/
+│   │   ├── knowledge_graph/
+│   │   └── exam_bank/
+│   │
+│   │── test/
+│   │
 │   ├── docker-compose.yml            ← For Local
 │   └── docker-compose.gpu.yml        ← For GPU server
-│
-├── .env                              
+│                       
 ├── .gitignore
 └── README.md
 ```
