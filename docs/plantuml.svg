@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentStyleType="text/css" height="873px" preserveAspectRatio="none" style="width:556px;height:873px;background:#FFFFFF;" version="1.1" viewBox="0 0 556 873" width="556px" zoomAndPan="magnify"><defs/><g><rect fill="none" height="26.2969" id="_title" style="stroke:none;stroke-width:1.0;" width="267" x="137.5" y="5"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="257" x="142.5" y="22.9951">Multi-Agent System Architecture</text><!--MD5=[975d7fda8cf98ff1a26ca528bf10cecf]
+cluster App--><g id="cluster_App"><path d="M8.5,160.2969 L40.5,160.2969 A3.75,3.75 0 0 1 43,162.7969 L50,182.5938 L127.5,182.5938 A2.5,2.5 0 0 1 130,185.0938 L130,277.7969 A2.5,2.5 0 0 1 127.5,280.2969 L8.5,280.2969 A2.5,2.5 0 0 1 6,277.7969 L6,162.7969 A2.5,2.5 0 0 1 8.5,160.2969 " fill="none" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="6" x2="50" y1="182.5938" y2="182.5938"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="31" x="10" y="175.292">App</text></g><!--MD5=[0825a9722806d7849b96c872f72d595f]
+cluster Tools--><g id="cluster_Tools"><path d="M70.5,779.2969 L114.5,779.2969 A3.75,3.75 0 0 1 117,781.7969 L124,801.5938 L333.5,801.5938 A2.5,2.5 0 0 1 336,804.0938 L336,863.7969 A2.5,2.5 0 0 1 333.5,866.2969 L70.5,866.2969 A2.5,2.5 0 0 1 68,863.7969 L68,781.7969 A2.5,2.5 0 0 1 70.5,779.2969 " fill="none" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="68" x2="124" y1="801.5938" y2="801.5938"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="43" x="72" y="794.292">Tools</text></g><!--MD5=[d778d24ecaa1d6d3b253aafa0d0a4d41]
+cluster Group Chat--><g id="cluster_Group Chat"><path d="M256.5,168.2969 L347.5,168.2969 A3.75,3.75 0 0 1 350,170.7969 L357,190.5938 L379.5,190.5938 A2.5,2.5 0 0 1 382,193.0938 L382,409.7969 A2.5,2.5 0 0 1 379.5,412.2969 L256.5,412.2969 A2.5,2.5 0 0 1 254,409.7969 L254,170.7969 A2.5,2.5 0 0 1 256.5,168.2969 " fill="none" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="254" x2="357" y1="190.5938" y2="190.5938"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="90" x="258" y="183.292">Group Chat</text></g><!--MD5=[b0a4e028b9cef4be8ea8d5f7c524c5a0]
+entity User Input\n- history\n- results--><g id="elem_User Input\n- history\n- results"><rect fill="#F1F1F1" height="68.8906" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="91" x="22.5" y="195.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="71" x="32.5" y="218.292">User Input</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="55" x="32.5" y="234.5889">- history</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="56" x="32.5" y="250.8857">- results</text></g><!--MD5=[f08d99a5d954cab98c847de775e5956b]
+entity Search--><g id="elem_Search"><rect fill="#F1F1F1" height="36.2969" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="68" x="84" y="814.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="48" x="94" y="837.292">Search</text></g><!--MD5=[61652ced3fb34cea9764cfb4d1763475]
+entity Wiki--><g id="elem_Wiki"><rect fill="#F1F1F1" height="36.2969" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="47" x="187.5" y="814.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="27" x="197.5" y="837.292">Wiki</text></g><!--MD5=[d4c63efc849c138da47c28c0daf11e88]
+entity RAG--><g id="elem_RAG"><rect fill="#F1F1F1" height="36.2969" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="50" x="270" y="814.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="30" x="280" y="837.292">RAG</text></g><!--MD5=[bd52913e540508edbec2adde3cae4946]
+entity Agent 4\nNg chấm 1--><g id="elem_Agent 4\nNg chấm 1"><rect fill="#F1F1F1" height="52.5938" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="95" x="270.5" y="203.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="54" x="280.5" y="226.292">Agent 4</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="75" x="280.5" y="242.5889">Ng chấm 1</text></g><!--MD5=[54968c02c636c18c7deaef0e6f678972]
+entity Agent 5\nNg chấm 2--><g id="elem_Agent 5\nNg chấm 2"><rect fill="#F1F1F1" height="52.5938" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="95" x="270.5" y="343.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="54" x="280.5" y="366.292">Agent 5</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="75" x="280.5" y="382.5889">Ng chấm 2</text></g><!--MD5=[b7be1e319f25dd713a9c8d433e733f74]
+entity Agent 1\n(Director)--><g id="elem_Agent 1\n(Director)"><rect fill="#F1F1F1" height="52.5938" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="85" x="66.5" y="343.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="54" x="76.5" y="366.292">Agent 1</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="65" x="76.5" y="382.5889">(Director)</text></g><g id="elem_Plan"><ellipse cx="108.9914" cy="473.8205" fill="#F1F1F1" rx="31.9914" ry="14.5236" style="stroke:#181818;stroke-width:0.5;"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="29" x="94.4914" y="476.6672">Plan</text></g><!--MD5=[c6be092c2188fe2d39f756e0e5df56a9]
+entity Agent 2\n(OCR)--><g id="elem_Agent 2\n(OCR)"><rect fill="#F1F1F1" height="52.5938" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="74" x="78" y="565.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="54" x="88" y="588.292">Agent 2</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="41" x="88" y="604.5889">(OCR)</text></g><!--MD5=[92ea900eb0c1f707c4e5adfcf0e95765]
+entity Agent 3\n(Search & Retrieve)--><g id="elem_Agent 3\n(Search &amp; Retrieve)"><rect fill="#F1F1F1" height="52.5938" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="155" x="133.5" y="679.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="54" x="143.5" y="702.292">Agent 3</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="135" x="143.5" y="718.5889">(Search &amp; Retrieve)</text></g><!--MD5=[08215f367480e3b2565d990728c3750d]
+entity Agent 6\nVerifier--><g id="elem_Agent 6\nVerifier"><rect fill="#F1F1F1" height="52.5938" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="74" x="342" y="44.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="54" x="352" y="67.292">Agent 6</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="47" x="352" y="83.5889">Verifier</text></g><!--MD5=[fa1e3283224feb76407c84b7e90ed808]
+entity Database--><g id="elem_Database"><rect fill="#F1F1F1" height="36.2969" rx="2.5" ry="2.5" style="stroke:#181818;stroke-width:0.5;" width="86" x="149" y="211.7969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="66" x="159" y="234.792">Database</text></g><!--MD5=[1e96c06808aa88658994bc4199de4746]
+link User Input\n- history\n- results to Agent 1\n(Director)--><g id="link_User Input\n- history\n- results_Agent 1\n(Director)"><path d="M78.03,264.5569 C84.73,287.1069 93.47,316.5269 99.96,338.3569 " fill="none" id="User Input\n- history\n- results-to-Agent 1\n(Director)" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="101.39,343.1769,102.6753,333.4123,99.973,338.3819,95.0033,335.6795,101.39,343.1769" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[ecf90021ddc7374d61c648d8b3121353]
+link Agent 1\n(Director) to Plan--><g id="link_Agent 1\n(Director)_Plan"><path d="M109,396.5369 C109,414.4569 109,437.9469 109,454.0969 " fill="none" id="Agent 1\n(Director)-to-Plan" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="109,459.2669,113,450.2669,109,454.2669,105,450.2669,109,459.2669" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[1ca80903accb47508e858035d1b6348e]
+link Plan to Agent 2\n(OCR)--><g id="link_Plan_Agent 2\n(OCR)"><path d="M109.71,488.5569 C110.62,506.0769 112.21,536.8569 113.41,560.0769 " fill="none" id="Plan-to-Agent 2\n(OCR)" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="113.68,565.2069,117.2125,556.0133,113.4232,560.2135,109.223,556.4242,113.68,565.2069" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="59" x="113" y="531.3638">chấm bài</text></g><!--MD5=[510ea969587d1985954c512c55f24bb8]
+link Agent 2\n(OCR) to Agent 3\n(Search & Retrieve)--><g id="link_Agent 2\n(OCR)_Agent 3\n(Search &amp; Retrieve)"><path d="M137.02,618.4969 C151.54,635.4269 170.58,657.6469 185.72,675.2969 " fill="none" id="Agent 2\n(OCR)-to-Agent 3\n(Search &amp; Retrieve)" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="189.08,679.2169,186.2423,669.7857,185.819,675.4267,180.178,675.0033,189.08,679.2169" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[8cfa6d6701af0c31e499a0294ac579bf]
+link Agent 3\n(Search & Retrieve) to Search--><g id="link_Agent 3\n(Search &amp; Retrieve)_Search"><path d="M191.73,732.5969 C174.67,755.4269 150.06,788.3669 134.05,809.8069 " fill="none" id="Agent 3\n(Search &amp; Retrieve)-to-Search" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="130.97,813.9369,139.57,809.1369,133.97,809.9369,133.17,804.3369,130.97,813.9369" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[972c9e7daa0052e630a6a529a3038bc7]
+link Agent 3\n(Search & Retrieve) to Wiki--><g id="link_Agent 3\n(Search &amp; Retrieve)_Wiki"><path d="M211,732.5969 C211,755.0469 211,787.2769 211,808.7269 " fill="none" id="Agent 3\n(Search &amp; Retrieve)-to-Wiki" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="211,813.9369,215,804.9369,211,808.9369,207,804.9369,211,813.9369" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[4b14fbf52d29727f4fa45bcd1038f376]
+link Agent 3\n(Search & Retrieve) to RAG--><g id="link_Agent 3\n(Search &amp; Retrieve)_RAG"><path d="M228.4,732.5969 C243.75,755.3369 265.85,788.0969 280.32,809.5369 " fill="none" id="Agent 3\n(Search &amp; Retrieve)-to-RAG" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="283.29,813.9369,281.5644,804.2404,280.4902,809.7943,274.9363,808.7201,283.29,813.9369" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[b845498426d66d88f602be3cfa6caafd]
+link Agent 3\n(Search & Retrieve) to Agent 4\nNg chấm 1--><g id="link_Agent 3\n(Search &amp; Retrieve)_Agent 4\nNg chấm 1"><path d="M211,678.9969 C211,656.2969 211,622.3569 211,592.7969 C211,368.7969 211,368.7969 211,368.7969 C211,343.5269 256.38,292.6369 288.04,260.2169 " fill="none" id="Agent 3\n(Search &amp; Retrieve)-to-Agent 4\nNg chấm 1" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="291.82,256.3569,282.6638,259.9851,288.3204,259.9279,288.3775,265.5845,291.82,256.3569" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="58" x="212" y="478.3638">Tìm kiếm</text></g><!--MD5=[0bee16309ee1142faadd9057b54d4b7e]
+link Agent 3\n(Search & Retrieve) to Agent 5\nNg chấm 2--><g id="link_Agent 3\n(Search &amp; Retrieve)_Agent 5\nNg chấm 2"><path d="M224.02,679.1769 C228.46,669.8969 233.25,659.2569 237,649.2969 C270.15,561.3869 298.01,453.6669 310.68,401.7269 " fill="none" id="Agent 3\n(Search &amp; Retrieve)-to-Agent 5\nNg chấm 2" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="311.93,396.5769,305.9097,404.3715,310.7442,401.4342,313.6815,406.2687,311.93,396.5769" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="58" x="280" y="531.3638">Tìm kiếm</text></g><!--MD5=[dd3d0e14d897c13b5c57d03b7cb4b0dc]
+link Agent 4\nNg chấm 1 to Agent 5\nNg chấm 2--><g id="link_Agent 4\nNg chấm 1_Agent 5\nNg chấm 2"><path d="M318,261.4969 C318,284.2069 318,315.0269 318,337.8069 " fill="none" id="Agent 4\nNg chấm 1-Agent 5\nNg chấm 2" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="318,342.8369,322,333.8369,318,337.8369,314,333.8369,318,342.8369" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="318,256.4269,314,265.4269,318,261.4269,322,265.4269,318,256.4269" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="51" x="319" y="309.3638">Trao đổi</text></g><!--MD5=[e2546545744ad4b3f5f472c87773c226]
+link Agent 4\nNg chấm 1 to Agent 6\nVerifier--><g id="link_Agent 4\nNg chấm 1_Agent 6\nVerifier"><path d="M294.92,203.1769 C278.8,182.0269 262.53,151.6369 277,127.2969 C289.98,105.4669 314.88,91.6769 336.83,83.3069 " fill="none" id="Agent 4\nNg chấm 1-to-Agent 6\nVerifier" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="341.75,81.5069,331.9236,80.8426,337.0544,83.2248,334.6722,88.3556,341.75,81.5069" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="278" y="140.3638">Đánh giá</text></g><!--MD5=[ca0446aa800ee31a42f373fdbd073fd2]
+link Agent 6\nVerifier to Agent 4\nNg chấm 1--><g id="link_Agent 6\nVerifier_Agent 4\nNg chấm 1"><path d="M369.06,97.3669 C358.34,124.9669 341.27,168.9069 329.85,198.2869 " fill="none" id="Agent 6\nVerifier-to-Agent 4\nNg chấm 1" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="327.93,203.2369,334.9241,196.3028,329.745,198.5779,327.4698,193.3988,327.93,203.2369" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="32" x="356" y="140.3638">Gợi ý</text></g><!--MD5=[b94cb37505dd51ac3544afef322253c7]
+link Agent 5\nNg chấm 2 to Agent 6\nVerifier--><g id="link_Agent 5\nNg chấm 2_Agent 6\nVerifier"><path d="M365.53,362.9369 C407.58,354.6869 464.33,335.0069 478,288.2969 C494.97,230.2869 494.97,210.3069 478,152.2969 C469.83,124.3869 444.02,103.9369 420.8,90.6369 " fill="none" id="Agent 5\nNg chấm 2-to-Agent 6\nVerifier" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="416.19,88.0669,422.1039,95.9425,420.5574,90.5012,425.9988,88.9547,416.19,88.0669" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="491" y="234.3638">Đánh giá</text></g><!--MD5=[25b4341b00638b891d99a68d267ef1cc]
+link Agent 6\nVerifier to Agent 5\nNg chấm 2--><g id="link_Agent 6\nVerifier_Agent 5\nNg chấm 2"><path d="M389.14,97.3569 C392.33,106.6369 395.42,117.2869 397,127.2969 C409.97,209.3269 418.5,240.2369 379,313.2969 C373.79,322.9269 366.25,331.7569 358.24,339.4069 " fill="none" id="Agent 6\nVerifier-to-Agent 5\nNg chấm 2" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="354.27,343.0669,363.604,339.9241,357.9522,339.6844,358.192,334.0326,354.27,343.0669" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="32" x="408" y="234.3638">Gợi ý</text></g><!--MD5=[0b6202e6d5d04c426dab0caf9fa023e0]
+link Agent 6\nVerifier to Database--><g id="link_Agent 6\nVerifier_Database"><path d="M341.96,83.9069 C317.68,93.1169 286.24,107.5869 263,127.2969 C236.36,149.8869 214.94,184.6769 202.84,207.0869 " fill="none" id="Agent 6\nVerifier-to-Database" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="200.4,211.6769,208.1678,205.622,202.7552,207.2663,201.1108,201.8537,200.4,211.6769" style="stroke:#181818;stroke-width:1.0;"/></g><!--MD5=[b406dff0d5eb1baf9022954b860b98fa]
+link Database to Agent 1\n(Director)--><g id="link_Database_Agent 1\n(Director)"><path d="M175.27,248.0169 C163.68,260.6169 148.52,278.5469 138,296.2969 C130.24,309.3869 123.72,324.9269 118.83,338.2569 " fill="none" id="Database-to-Agent 1\n(Director)" style="stroke:#181818;stroke-width:1.0;"/><polygon fill="#181818" points="117.1,343.0669,123.9036,335.9457,118.788,338.3604,116.3733,333.2449,117.1,343.0669" style="stroke:#181818;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="45" x="139" y="309.3638">update</text></g><!--MD5=[25464ef74df8fa86539f348c45b65380]
+@startuml
+title Multi-Agent System Architecture
+
+skinparam componentStyle rectangle
+
+' ===== App Layer =====
+package "App" {
+    [User Input\n- history\n- results]
+}
+
+' ===== Director (outside App) =====
+[Agent 1\n(Director)]
+
+[User Input\n- history\n- results] - -> [Agent 1\n(Director)]
+' ===== Planning =====
+[Agent 1\n(Director)] - -> (Plan)
+
+(Plan) - -> [Agent 2\n(OCR)] : chấm bài
+[Agent 2\n(OCR)] - -> [Agent 3\n(Search & Retrieve)]
+
+' ===== Tools =====
+package "Tools" {
+    [Search]
+    [Wiki]
+    [RAG]
+}
+
+[Agent 3\n(Search & Retrieve)] - -> [Search]
+[Agent 3\n(Search & Retrieve)] - -> [Wiki]
+[Agent 3\n(Search & Retrieve)] - -> [RAG]
+
+' ===== Group Chat =====
+package "Group Chat" {
+    [Agent 4\nNg chấm 1]
+    [Agent 5\nNg chấm 2]
+}
+
+[Agent 3\n(Search & Retrieve)] - -> [Agent 4\nNg chấm 1] : Tìm kiếm
+[Agent 3\n(Search & Retrieve)] - -> [Agent 5\nNg chấm 2] : Tìm kiếm
+
+[Agent 4\nNg chấm 1] <- -> [Agent 5\nNg chấm 2] : Trao đổi
+
+' ===== Verification =====
+[Agent 4\nNg chấm 1] - -> [Agent 6\nVerifier] : Đánh giá
+[Agent 5\nNg chấm 2] - -> [Agent 6\nVerifier] : Đánh giá
+[Agent 6\nVerifier] - -> [Agent 4\nNg chấm 1] : Gợi ý
+[Agent 6\nVerifier] - -> [Agent 5\nNg chấm 2] : Gợi ý
+
+[Agent 6\nVerifier] - -> [Database]
+
+' ===== Feedback Loop =====
+[Database] - -> [Agent 1\n(Director)] : update
+@enduml
+
+@startuml
+title Multi-Agent System Architecture
+
+skinparam componentStyle rectangle
+
+package "App" {
+    [User Input\n- history\n- results]
+}
+
+[Agent 1\n(Director)]
+
+[User Input\n- history\n- results] - -> [Agent 1\n(Director)]
+[Agent 1\n(Director)] - -> (Plan)
+
+(Plan) - -> [Agent 2\n(OCR)] : chấm bài
+[Agent 2\n(OCR)] - -> [Agent 3\n(Search & Retrieve)]
+
+package "Tools" {
+    [Search]
+    [Wiki]
+    [RAG]
+}
+
+[Agent 3\n(Search & Retrieve)] - -> [Search]
+[Agent 3\n(Search & Retrieve)] - -> [Wiki]
+[Agent 3\n(Search & Retrieve)] - -> [RAG]
+
+package "Group Chat" {
+    [Agent 4\nNg chấm 1]
+    [Agent 5\nNg chấm 2]
+}
+
+[Agent 3\n(Search & Retrieve)] - -> [Agent 4\nNg chấm 1] : Tìm kiếm
+[Agent 3\n(Search & Retrieve)] - -> [Agent 5\nNg chấm 2] : Tìm kiếm
+
+[Agent 4\nNg chấm 1] <- -> [Agent 5\nNg chấm 2] : Trao đổi
+
+[Agent 4\nNg chấm 1] - -> [Agent 6\nVerifier] : Đánh giá
+[Agent 5\nNg chấm 2] - -> [Agent 6\nVerifier] : Đánh giá
+[Agent 6\nVerifier] - -> [Agent 4\nNg chấm 1] : Gợi ý
+[Agent 6\nVerifier] - -> [Agent 5\nNg chấm 2] : Gợi ý
+
+[Agent 6\nVerifier] - -> [Database]
+
+[Database] - -> [Agent 1\n(Director)] : update
+@enduml
+
+PlantUML version 1.2022.7(Mon Aug 22 17:01:30 UTC 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: null
+--></g></svg>

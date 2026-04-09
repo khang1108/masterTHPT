@@ -1,6 +1,6 @@
 .agents/
 .venv/
-docs/
+.cursor/
 img/
 Tabs_Engineers.md
 .env
