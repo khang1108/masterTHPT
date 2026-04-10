@@ -3,4 +3,6 @@
 .cursor/
 img/
 Tabs_Engineers.md
+gdgoc/
 .env
+__pycache__/

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         MONGODB_URI: str = "mongodb://localhost:27017/master_db" # URI for the MongoDB database
 
         # vLLM endpoints (H100 GPU server)
-        VLLM_BASE_URL: str = "http://localhost" # Base URL for the vLLM server
+        VLLM_BASE_URL: str = "124.197.18.23" # Base URL for the vLLM server
         VLLM_MANAGER_PORT: int = 8080 # Port for the vLLM manager server
         VLLM_TEACHER_PORT: int = 8081 # Port for the vLLM teacher server
         VLLM_VERIFIER_PORT: int = 8082 # Port for the vLLM verifier server
