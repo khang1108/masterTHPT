@@ -106,6 +106,7 @@ jobs:
               --resource-group DefaultResourceGroup-CCAN \
               --settings \
                 DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+                JWT_SECRET="${{ secrets.JWT_SECRET }}" \
                 WEBSITES_PORT=3000
 
       - name: Restart App Service
