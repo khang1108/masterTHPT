@@ -4,18 +4,18 @@ generator client {
 }
 
 datasource db {
-  provider = "mongo"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model Student {
-  id            String   @id @default(uuid())
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
   name          String
-  email         String   @unique
+  email         String    @unique
   password_hash String
   grade         Int
   is_first_login Boolean @default(true)
-  created_at    DateTime @default(now())
+  created_at    DateTime  @default(now())
 
   @@map("students")
 }
