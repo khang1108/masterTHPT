@@ -89,7 +89,7 @@ jobs:
           inlineScript: |
             az webapp config container set \
               --name masterTHPT \
-              --resource-group rg-masterthpt \
+              --resource-group DefaultResourceGroup-CCAN \
               --multicontainer-config-type compose \
               --multicontainer-config-file docker-compose-deploy.yml \
               --container-registry-url https://${{ secrets.ACR_LOGIN_SERVER }} \
@@ -103,7 +103,7 @@ jobs:
           inlineScript: |
             az webapp config appsettings set \
               --name masterTHPT \
-              --resource-group rg-masterthpt \
+              --resource-group DefaultResourceGroup-CCAN \
               --settings \
                 DATABASE_URL="${{ secrets.DATABASE_URL }}" \
                 WEBSITES_PORT=3000
@@ -113,4 +113,4 @@ jobs:
         with:
           azcliversion: latest
           inlineScript: |
-            az webapp restart --name masterTHPT --resource-group rg-masterthpt
+            az webapp restart --name masterTHPT --resource-group DefaultResourceGroup-CCAN
