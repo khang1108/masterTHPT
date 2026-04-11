@@ -78,7 +78,7 @@ class ExamQuestion(BaseModel):
 
 
 class ExamSection(BaseModel):
-    type: str
+    type: str # ["multiple_choice", "essay", ...]
     questions: list[ExamQuestion]
 
 
