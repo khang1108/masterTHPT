@@ -4,3 +4,6 @@
 img/
 Tabs_Engineers.md
 .env
+infra/.env.api
+infra/.env.web
+infra/.env.db

@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: /master/apps/api
+      dockerfile: Dockerfile
+    container_name: masterthpt-api
+    restart: unless-stopped
+    env_file:
+      - ./.env.api
+    ports:
+      - "3001:3001"
+  web:
+    build:
+      context: /master/apps/web
+      dockerfile: Dockerfile
+    container_name: masterthpt-web
+    restart: unless-stopped
+    env_file:
+      - ./.env.web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
