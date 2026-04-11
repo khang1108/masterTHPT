@@ -1,18 +1,16 @@
 from typing import Annotated, List, Any, Optional, Dict
 from typing_extensions import TypedDict
-from langgraph.graph import StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from tools import get_all_tools
-from master.common import ExamData, AgentMessage
+from langgraph.graph.message import add_messages
+from langchain_core.messages import SystemMessage
 from master.agents import BaseAgent
+from master.agents.common.message import ExamData
+from master.agents.debate import Debate
 
 class State(TypedDict):
+    """
+    State for the Teacher Agent, including the messages, exam data, success criteria, verifier feedback, success criteria met, needs user input, and debate round.
+    """
     messages: Annotated[List[Any], add_messages]
     exam_data: ExamData                         # The exam data that the Teacher Agent needs to process, including sections and questions
     success_criteria: str                       # The specific criteria that the Teacher Agent needs to meet in its response, such as accuracy, completeness, or clarity
@@ -33,13 +31,24 @@ class TeacherAgent(BaseAgent):
         self.browser = None
         self.playwright = None
         self.memory = MemorySaver()
+        self.graph = None
+        self._debate: Debate | None = None
 
     async def setup(self):
-        self.tools, self.browser, self.playwright = await get_all_tools()
-        teacher_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
-        self.teacher_llm_with_tools = teacher_llm.bind_tools(self.tools)
+        # Teacher + verifier share one LangGraph; see ``master.agents.debate.Debate``.
+        self._debate = Debate()
+        await self._debate.setup()
+        self.tools = self._debate.tools
+        self.browser = self._debate.browser
+        self.playwright = self._debate.playwright
+        self.teacher_llm_with_tools = self._debate.teacher_llm_with_tools
+        self.memory = self._debate.memory
+        self.graph = self._debate.graph
 
-        await self.build_graph()
+    async def run(self, input: str) -> str:
+        raise NotImplementedError(
+            "After setup(), use self.graph.ainvoke(...) or master.agents.debate.Debate.run_superstep."
+        )
 
     # ------------------------------ TEACHER ------------------------------
     def teacher(self, state: State) -> Dict[str, Any]:
@@ -65,7 +74,7 @@ class TeacherAgent(BaseAgent):
         if not found_system_message:
             messages = [SystemMessage(content=self.system_prompt)] + messages
 
-        response = self.teacher_llm_with_tools(messages)
+        response = self.teacher_llm_with_tools.invoke(messages)
 
         return {"messages": [response]}
         

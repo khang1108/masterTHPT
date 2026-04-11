@@ -22,18 +22,48 @@ class ErrorType(str, Enum):
     PRESENTATION_FLAW = "PRESENTATION_FLAW"
 
 
-# --- TaskRequest / TaskResponse (NestJS <-> Agent Service) ---
+"""
+Message for NestJS <-> Agent Service communication.
 
-class TaskRequest(BaseModel):
-    student_id: str
+INTENT = "EXAM_PRACTICE"
+    - Metadata:
+        + subject: str
+        + total_questions: int
+        + exam_sections: list[ExamSection]
+INTENT = "GRADE_SUBMISSION"
+    - Metadata:
+        + file_urls: list[str]
+
+INTENT = "VIEW_ANALYSIS"
+    - Metadata:
+        + exam_id: str
+        + student_id: str
+        + session_id: str
+        + total_questions: int
+        + exam_sections: list[ExamSection]
+        + student_answers: list[StudentAnswer]
+INTENT = "ASK_HINT"
+    - Metadata:
+        + question_id: str
+        + exam_id: str
+INTENT = "REVIEW_MISTAKE"
+    - Metadata:
+        + exam_id: str
+        + questions: list[ExamQuestion]
+INTENT = "UNKNOWN"
+    - Metadata:
+        + context: str
+"""
+class MessageRequest(BaseModel):
+    # student_id: str
+    # session_id: Optional[str] = None
     intent: Intent
     user_message: str
-    session_id: Optional[str] = None
     file_urls: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class TaskResponse(BaseModel):
+class MessageResponse(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     status: str  # "success" | "error"
     intent: Intent
@@ -62,18 +92,18 @@ class ExamQuestion(BaseModel):
         topic_tags: The topic tags of the question
         max_score: The maximum score of the question
     """
-    id: str
-    question_index: int
+    question_id: str
+    question_index: int 
     type: str  # "multiple_choice" | "essay"
     content: str
-    content_latex: Optional[str] = None
+    formulas: Optional[list[str]] = None # LaTeX formulas in the question
     options: Optional[list[str]] = None
     correct_answer: Optional[str] = None
     has_image: bool = False
     image_url: Optional[str] = None
     difficulty_a: float = 1.0
     difficulty_b: float = 0.0
-    topic_tags: list[str] = Field(default_factory=list)
+    topic_tags: list[str] = Field(default_factory=list) # ["math.12.ch2.integrals", "math.12.ch4.solid_geometry", ...]
     max_score: float = 0.2
 
 
@@ -101,39 +131,15 @@ class ErrorAnalysis(BaseModel):
     remedial: str
 
 
-class QuestionEvaluation(BaseModel):
+class StudentAnswer(BaseModel):
+    exam_id: str
     question_id: str
-    student_answer: Optional[str] = None
+    answer: Optional[str] = None
     correct_answer: Optional[str] = None
-    is_correct: bool
-    score: float
-    max_score: float
-    reasoning: str
-    error_analysis: Optional[ErrorAnalysis] = None
+    file_urls: list[str] = Field(default_factory=list)
 
 
 class OverallAnalysis(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     recommended_topics: list[str] = Field(default_factory=list)
-
-
-class EvaluationResult(BaseModel):
-    evaluation_id: str
-    exam_id: str
-    student_id: str
-    total_score: float
-    max_score: float
-    confidence: float
-    per_question: list[QuestionEvaluation] = Field(default_factory=list)
-    overall_analysis: Optional[OverallAnalysis] = None
-
-
-# --- Internal Agent Communication ---
-
-class AgentMessage(BaseModel):
-    """Message passed between agents in the pipeline."""
-    from_agent: str
-    to_agent: str
-    payload: dict[str, Any]
-    metadata: dict[str, Any] = Field(default_factory=dict)

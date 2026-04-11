@@ -1,15 +1,6 @@
-from typing import Annotated, List, Any, Optional, Dict
-from langgraph.graph import StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from tools import get_all_tools
 from master.agents import BaseAgent
-from master.agents.teacher import State
+from master.agents.debate import Debate
 
 class VerifierAgent(BaseAgent):
     def __init__(self):
@@ -24,10 +15,23 @@ class VerifierAgent(BaseAgent):
         self.tools = None
         self.browser = None
         self.playwright = None
+        self.graph = None
+        self.memory = MemorySaver()
+        self._debate: Debate | None = None
 
     async def setup(self):
-        self.tools, self.browser, self.playwright = await get_all_tools()
-        verifier_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.2)
-        self.verifier_llm_with_tools = verifier_llm.bind_tools(self.tools)
+        # Same graph as Teacher (teacher ↔ tools ↔ verifier); see ``Debate``.
+        self._debate = Debate()
+        await self._debate.setup()
+        self.tools = self._debate.tools
+        self.browser = self._debate.browser
+        self.playwright = self._debate.playwright
+        self.verifier_llm_with_output = self._debate.verifier_llm_with_output
+        self.verifier_llm_with_tools = None
+        self.memory = self._debate.memory
+        self.graph = self._debate.graph
 
-        await self.build_graph()
+    async def run(self, input: str) -> str:
+        raise NotImplementedError(
+            "After setup(), use self.graph.ainvoke(...) or master.agents.debate.Debate.run_superstep."
+        )
