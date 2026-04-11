@@ -58,7 +58,7 @@ jobs:
         run: |
           export ACR_LOGIN_SERVER=${{ secrets.ACR_LOGIN_SERVER }}
           export IMAGE_TAG=${{ github.sha }}
-          envsubst < infra/docker-compose-azure.yml > infra/docker-compose-deploy.yml
+          envsubst '${ACR_LOGIN_SERVER} ${IMAGE_TAG}' < infra/docker-compose-azure.yml > infra/docker-compose-deploy.yml
           cat infra/docker-compose-deploy.yml
 
       - name: Upload compose file as artifact
@@ -108,6 +108,16 @@ jobs:
                 DATABASE_URL="${{ secrets.DATABASE_URL }}" \
                 JWT_SECRET="${{ secrets.JWT_SECRET }}" \
                 WEBSITES_PORT=3000
+
+      - name: Enable Always On to prevent cold starts
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az webapp config set \
+              --name masterTHPT \
+              --resource-group DefaultResourceGroup-CCAN \
+              --always-on true
 
       - name: Restart App Service
         uses: azure/cli@v2

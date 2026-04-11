@@ -221,7 +221,11 @@ export default function DashboardPage() {
 	}
 
 	if (!student) {
-		return null;
+		return (
+			<main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}>
+				<div className="practice-spinner" />
+			</main>
+		);
 	}
 
 	const showOnboarding = student.is_first_login;
