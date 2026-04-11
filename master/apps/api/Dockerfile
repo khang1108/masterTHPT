@@ -30,6 +30,7 @@ RUN npx prisma generate
 FROM node:22.17.0-alpine3.21 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=3001
 
 RUN apk add --no-cache openssl
 
@@ -38,4 +39,5 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package*.json ./
 
+EXPOSE 3001
 CMD ["node", "dist/main.js"]
