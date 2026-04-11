@@ -1,0 +1,24 @@
+services:
+  api:
+    image: ${ACR_LOGIN_SERVER}/masterthpt-api:${IMAGE_TAG}
+    container_name: masterthpt-api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - PORT=3001
+    ports:
+      - "3001:3001"
+
+  web:
+    image: ${ACR_LOGIN_SERVER}/masterthpt-web:${IMAGE_TAG}
+    container_name: masterthpt-web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://api:3001
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
