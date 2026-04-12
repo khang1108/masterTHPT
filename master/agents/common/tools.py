@@ -1,11 +1,13 @@
-from playwright.async_api import async_playwright
 from langchain_community.agent_toolkits import PlayWrightBrowserToolkit
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_experimental.tools import PythonREPLTool
+from playwright.async_api import async_playwright
+from motor.motor_asyncio import AsyncIOMotorClient
 
+MONGO_URI = "mongodb+srv://admin:masterTHPT_202_GDGoC@masterthpt.dfhbmee.mongodb.net/masterthpt?retryWrites=true&w=majority&appName=masterTHPT"
 class ToolRegistry:
     def __init__(self):
-        pass
+        self.client = AsyncIOMotorClient(MONGO_URI)
 
     async def playwright_tools(self):
         playwright = await async_playwright().start()
@@ -19,6 +21,13 @@ class ToolRegistry:
 
     async def get_python_repl_tool(self):
         return PythonREPLTool()
+    
+    async def get_data(self, database_name: str, collection_name: str, query: dict):
+        collection = self.client[database_name][collection_name]
+        
+        cursor = collection.find(query)
+        data = await cursor.to_list(length=10)
+        return data
 
     async def get_all_tools(self):
         browser_tools, browser, playwright = await self.playwright_tools()
@@ -27,8 +36,5 @@ class ToolRegistry:
         all_tools = browser_tools + file_tools + [python_repl_tool]
 
         return all_tools, browser, playwright
-
-
-    async def get_all_tools():
-        """Build the full tool set (used by teacher / verifier when running as a script)."""
-        return await ToolRegistry().get_all_tools()
+    
+tools = ToolRegistry()

@@ -1,1 +1,1 @@
-from .teacher import TeacherAgent, State
+from .teacher import TeacherAgent

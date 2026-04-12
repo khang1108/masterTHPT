@@ -55,8 +55,8 @@ INTENT = "UNKNOWN"
         + context: str
 """
 class MessageRequest(BaseModel):
-    # student_id: str
-    # session_id: Optional[str] = None
+    student_id: str
+    session_id: Optional[str] = None
     intent: Intent
     user_message: str
     file_urls: list[str] = Field(default_factory=list)
