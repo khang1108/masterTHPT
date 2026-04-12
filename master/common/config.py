@@ -16,3 +16,4 @@ LOG_LEVEL_TAGS = [
     "PROGRESS",
     "COMPLETE",
 ]
+
