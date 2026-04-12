@@ -72,3 +72,5 @@ GDGoC_HackathonVietnam/
 | `ASK_HINT` | User xin gợi ý | Teacher trả hint |
 | `REVIEW_MISTAKE` | User xem lại lỗi sai | Adaptive trả lịch sử lỗi |
 | `UNKNOWN` | Không phân loại được | Manager hỏi lại |
+
+## Agents Architecture
