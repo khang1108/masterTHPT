@@ -8,11 +8,13 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from playwright.async_api import async_playwright
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
+from dotenv import load_dotenv
 from typing import Type
 import asyncio
+import os
 
-MONGO_URI = "mongodb+srv://admin:masterTHPT_202_GDGoC@masterthpt.dfhbmee.mongodb.net/masterthpt?retryWrites=true&w=majority&appName=masterTHPT"
-
+load_dotenv(override=True)
+MONGO_URI = os.getenv("MONGO_URI")
 
 class ToolRegistry:
     # ── Shared across all agents (class-level cache) ───────────────────────────
