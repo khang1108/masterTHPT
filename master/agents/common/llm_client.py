@@ -162,7 +162,7 @@ class LLMClient:
         tp = top_p if top_p is not None else _env_float("LLM_DEFAULT_TOP_P", 0.9)
         mname = model or _model_for_role(agent_role)
         if not mname:
-            mname = "gemini-2.5-flash"
+            mname = "gemini-2.5-flash-lite"
 
         if prov is LLMProvider.GOOGLE_GENAI:
             from langchain_google_genai import ChatGoogleGenerativeAI

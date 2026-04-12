@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
 from master.agents.common import tools
+from master.agents.common.tools import ToolRegistry
 from master.agents.common.llm_client import LLMClient
 # Import từ teacher để dùng chung type
 from master.agents.teacher import (
@@ -70,28 +71,17 @@ class VerifierState(TypedDict):
 
 # ── VerifierAgent ──────────────────────────────────────────────────────────────
 
-class VerifierAgent(BaseAgent):
+class VerifierAgent(BaseAgent, ToolRegistry):
     def __init__(self):
         super().__init__(agent_role="verifier")
-        self._llm               = None
-        self._llm_verdict       = None      # structured output → VerifierBatchVerdict
-        self._llm_finalize      = None      # structured output → VerifiedResult
-        self._tools             = None
-        self.browser            = None
-        self.playwright         = None
         self.memory             = MemorySaver()
         self.graph              = None
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup(self):
-        self._tools, self.browser, self.playwright = await tools.get_all_tools()
-        self._llm          = LLMClient.chat_model()
-        self._llm_verdict  = self._llm.bind_tools(self._tools).with_structured_output(
-            VerifierBatchVerdict
-        )
-        self._llm_finalize = self._llm.with_structured_output(VerifiedResult)
-        self.graph         = self._build_graph()
+        await self.setup_tools(LLMClient.chat_model())
+        self.graph = self._build_graph()
 
     def _build_graph(self):
         builder = StateGraph(VerifierState)
@@ -130,50 +120,31 @@ class VerifierAgent(BaseAgent):
         output: Output,
         exam_id: Optional[str],
     ) -> VerifierVerdict:
-        sa        = output.student_ans
-        question  = await tools.get_data(
+        sa       = output.student_ans
+        question = await tools.get_data(
             "masterthpt", "questions", query={"id": sa.question_id}
         )
-
-        # Lấy kết quả mới nhất của Teacher (debate_result ưu tiên hơn draft_result)
         teacher_result = (
-            output.debate_result.model_dump()
-            if output.debate_result
-            else output.draft_result.model_dump()
-            if output.draft_result
+            output.debate_result.model_dump() if output.debate_result
+            else output.draft_result.model_dump() if output.draft_result
             else "Chưa có kết quả"
         )
+        prompt = f"""Bạn là Verifier — kiểm tra độc lập kết quả chấm thi.
+Bạn PHẢI dùng tools để tìm bằng chứng trước khi ra quyết định.
 
-        prompt = f"""Bạn là Verifier — người kiểm tra độc lập kết quả chấm thi.
-Bạn có thể dùng tools để tra cứu bằng chứng trước khi ra quyết định.
+Câu hỏi           : {question}
+Trả lời HS        : {sa.answer}
+Đáp án            : {sa.correct_answer}
+Kết quả Teacher   : {teacher_result}
+Feedback trước đó : {output.verifier_feedback}
 
-Câu hỏi             : {question}
-Trả lời học sinh     : {sa.answer}
-Đáp án chuẩn        : {sa.correct_answer}
-Kết quả Teacher     : {teacher_result}
-Feedback trước đó   : {output.verifier_feedback}
-
-Nhiệm vụ:
-1. Dùng tools nếu cần tra cứu thêm bằng chứng
-2. Quyết định: agreed=True nếu đồng ý, agreed=False nếu phản đối
-3. Nếu phản đối, feedback phải cụ thể và có bằng chứng
-4. confidence: mức độ chắc chắn từ 0.0 đến 1.0
+Tra cứu bằng chứng, sau đó quyết định agreed=True/False với lập luận rõ ràng.
 question_id phải là: {sa.question_id}"""
 
-        verdict: VerifierBatchVerdict = await asyncio.to_thread(
-            self._llm_verdict.invoke, prompt
-        )
-        # invoke trả VerifierBatchVerdict nhưng ta prompt 1 câu → lấy phần tử đầu
-        result = verdict.verdicts[0] if verdict.verdicts else VerifierVerdict(
-            question_id=sa.question_id,
-            agreed=True,
-            confidence=0.5,
-            feedback=[],
-            reasoning="Không có phản hồi từ model",
-        )
+        result: VerifierVerdict = await self._run_with_tools(prompt, VerifierVerdict)
         result.question_id = sa.question_id
         return result
-
+    
     async def _verify_batch(self, state: VerifierState) -> VerifierState:
         debate_state = state["debate_state"]
         exam_id      = debate_state.get("exam_id")

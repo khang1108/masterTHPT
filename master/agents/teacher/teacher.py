@@ -6,32 +6,14 @@ from langgraph.graph import StateGraph, START, END
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
-from master.agents.common.message import StudentAnswer, ExamSection, ExamQuestion
+from master.agents.common.message import StudentAnswer, ExamSection, Intent, MessageRequest
 from master.agents.common import tools
+from master.agents.common.tools import ToolRegistry
 from master.agents.common.llm_client import LLMClient
 
 import asyncio
 
 load_dotenv(override=True)
-
-
-# ── Enums & MessageRequest (nhận từ agent phía trên) ──────────────────────────
-
-class Intent(str, Enum):
-    EXAM_PRACTICE    = "EXAM_PRACTICE"
-    GRADE_SUBMISSION = "GRADE_SUBMISSION"
-    VIEW_ANALYSIS    = "VIEW_ANALYSIS"
-    ASK_HINT         = "ASK_HINT"
-    REVIEW_MISTAKE   = "REVIEW_MISTAKE"
-    UNKNOWN          = "UNKNOWN"
-
-
-class MessageRequest(BaseModel):
-    intent: Intent
-    user_message: str
-    file_urls: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
 
 # ── Metadata schemas (parse từ MessageRequest.metadata) ───────────────────────
 
@@ -95,12 +77,9 @@ class DebateState(TypedDict):
 
 # ── TeacherAgent (subgraph) ────────────────────────────────────────────────────
 
-class TeacherAgent(BaseAgent):
+class TeacherAgent(BaseAgent, ToolRegistry):
     def __init__(self):
         super().__init__(agent_role="teacher")
-        self._llm           = None
-        self._llm_draft     = None
-        self._llm_debate    = None
         self._llm_extractor = None          # Extract StudentAnswer từ file
         self.browser        = None
         self.playwright     = None
@@ -110,12 +89,8 @@ class TeacherAgent(BaseAgent):
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup(self):
-        self._tools, self.browser, self.playwright = await tools.get_all_tools()
-        self._llm           = LLMClient.chat_model()
-        self._llm_draft     = self._llm.with_structured_output(DraftResult)
-        self._llm_debate    = self._llm.with_structured_output(DebateResult)
-        self._llm_extractor = self._llm.with_structured_output(StudentAnswer)
-        self.graph          = self._build_graph()
+        await self.setup_tools(LLMClient.chat_model())
+        self.graph = self._build_graph()
 
     def _build_graph(self):
         builder = StateGraph(DebateState)
@@ -207,25 +182,25 @@ Trả về đúng định dạng StudentAnswer với các trường: exam_id, qu
     # ── Draft Phase ────────────────────────────────────────────────────────────
 
     async def _draft_single(self, output: Output) -> Output:
-        sa = output.student_ans
+        sa       = output.student_ans
         question = await tools.get_data(
             "masterthpt", "questions", query={"id": sa.question_id}
         )
         prompt = f"""Bạn là giáo viên chấm thi chuyên nghiệp.
+Bạn có thể dùng tools để tra cứu thêm tài liệu, tìm kiếm thông tin liên quan trước khi chấm.
 
-Câu hỏi   : {question}
-Trả lời HS: {sa.answer}
-Đáp án    : {sa.correct_answer}
-File đính kèm: {sa.file_urls if sa.file_urls else "Không có"}
+Câu hỏi      : {question}
+Trả lời HS   : {sa.answer}
+Đáp án       : {sa.correct_answer}
+File đính kèm: {sa.file_urls or "Không có"}
 
-Chấm điểm, lập luận rõ ràng, đưa ra nhận xét để gửi Verifier kiểm tra lại.
+Hãy tra cứu nếu cần, sau đó chấm điểm và đưa ra nhận xét để Verifier kiểm tra.
 question_id phải là: {sa.question_id}"""
 
-        result: DraftResult = await asyncio.to_thread(
-            self._llm_draft.invoke, prompt
-        )
+        result: DraftResult = await self._run_with_tools(prompt, DraftResult)
         result.question_id = sa.question_id
         return output.model_copy(update={"draft_result": result})
+
 
     async def _draft_batch(self, state: DebateState) -> DebateState:
         updated = await asyncio.gather(
@@ -236,11 +211,12 @@ question_id phải là: {sa.question_id}"""
     # ── Debate Phase ───────────────────────────────────────────────────────────
 
     async def _debate_single(self, output: Output) -> Output:
-        sa = output.student_ans
+        sa       = output.student_ans
         question = await tools.get_data(
             "masterthpt", "questions", query={"id": sa.question_id}
         )
         prompt = f"""Bạn là giáo viên đang tranh luận với Verifier.
+Bạn PHẢI dùng tools để tìm bằng chứng củng cố hoặc bác bỏ feedback của Verifier.
 
 Câu hỏi           : {question}
 Trả lời HS        : {sa.answer}
@@ -248,12 +224,10 @@ Trả lời HS        : {sa.answer}
 Chấm nháp của bạn : {output.draft_result.model_dump() if output.draft_result else "Chưa có"}
 Feedback Verifier : {output.verifier_feedback}
 
-Phân tích feedback, phản biện hoặc đồng ý có lập luận, đưa ra nhận xét cuối cùng.
+Tra cứu bằng chứng, sau đó phản biện hoặc đồng ý có lập luận.
 question_id phải là: {sa.question_id}"""
 
-        result: DebateResult = await asyncio.to_thread(
-            self._llm_debate.invoke, prompt
-        )
+        result: DebateResult = await self._run_with_tools(prompt, DebateResult)
         result.question_id = sa.question_id
         return output.model_copy(update={"debate_result": result})
 
@@ -303,6 +277,7 @@ async def main():
     request = MessageRequest(
         intent=Intent.VIEW_ANALYSIS,
         user_message="Chấm bài thi cho học sinh",
+        student_id="student-001",
         metadata={
             "exam_id":         "bed1f84d-329c-5ab3-876e-84dbaaa96c13",
             "student_id":      "student-001",
