@@ -12,6 +12,7 @@ class Intent(str, Enum):
     VIEW_ANALYSIS = "VIEW_ANALYSIS"
     EXAM_PRACTICE = "EXAM_PRACTICE"
     PREPROCESS = "PREPROCESS"
+    UNKNOWN = "UNKNOWN"
 
 class ErrorType(str, Enum):
     CONCEPT_GAP = "CONCEPT_GAP"
@@ -61,6 +62,7 @@ class MessageRequest(BaseModel):
     student_answers: Optional[list[StudentAnswer]] = None
     student_message: Optional[str] = None
     parser_output: Optional[str] = None
+    content: Optional[str] = None # Nội dung thêm, nếu cần thiết.
 
 class MessageResponse(BaseModel):
     student_id: str
