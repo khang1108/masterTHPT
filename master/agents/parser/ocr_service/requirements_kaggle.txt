@@ -1,0 +1,26 @@
+# --- PADDLE ENGINE (GPU OPTIMIZED - ZERO CONFLICT) ---
+# Tối ưu hóa cấp cao: Sử dụng Paddle CUDA 11.8 (cu118) trên phân vùng GPU Kaggle.
+# Do Kaggle mặc định cài PyTorch sử dụng tệp CUDA 12 (nvidia-*-cu12), việc dùng Paddle cu118 sẽ khiến Pip tải (nvidia-*-cu11).
+# Hai hệ sinh thái CUDA 11 và 12 sẽ nằm độc lập song song, giải quyết vĩnh viễn lỗi dependency đâm nhau!
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu118/
+paddlepaddle-gpu==3.2.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+
+# --- OCR & STRUCTURE PARSING ---
+# Cài đặt core paddleocr (loại bỏ hậu tố [all] để tránh tải quá nhiều dependencies gây nổ môi trường)
+paddleocr
+
+# Các thư viện phụ trợ (Auxiliary) bắt buộc phải có để chạy Layout Parser và FormulaNet
+paddlex[ocr,formula]>=2.6.2
+pyclipper
+shapely
+imgaug
+rapidocr_onnxruntime
+
+# --- FASTAPI WEB SERVER (KAGGLE EXPOSURE) ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+pyngrok>=7.1.5

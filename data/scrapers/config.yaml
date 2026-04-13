@@ -1,0 +1,83 @@
+storage_dir: "./storage"
+data_dir: "./data"
+
+throttle:
+  min_delay: 1.0
+  max_delay: 3.0
+
+dedup:
+  ttl_days: 7
+
+priority:
+  min_year: 2022
+  prefer_years: [2026, 2025, 2024]
+
+proxy:
+  enabled: false
+  url: ""
+
+playwright:
+  headless: true
+  timeout: 30000
+
+crawl:
+  max_depth: 8
+  max_pages: 500
+
+detectors:
+  max_click_attempts: 6
+  network_wait_ms: 2500
+  download_keywords:
+    positive:
+      - "tai"
+      - "tai ve"
+      - "tai xuong"
+      - "download"
+      - "pdf"
+      - "xem de"
+      - "file"
+      - ".pdf"
+    negative:
+      - "dang nhap"
+      - "quang cao"
+      - "lien he"
+      - "gioi thieu"
+      - "facebook"
+      - "zalo"
+      - "share"
+      - "binh luan"
+    weights:
+      text: 3.0
+      href: 4.0
+      aria_label: 2.0
+      title: 2.0
+      class_name: 1.0
+      element_id: 1.0
+      nearby_text: 1.5
+  intent:
+    subjects:
+      toan: ["toan", "mon toan"]
+      van: ["van", "ngu van", "nguvan"]
+      anh: ["anh", "tieng anh", "ngoai ngu"]
+      ly: ["ly", "vat ly", "vat li"]
+      hoa: ["hoa", "hoa hoc"]
+      sinh: ["sinh", "sinh hoc"]
+      su: ["su", "lich su"]
+      dia: ["dia", "dia ly"]
+      gdcd: ["gdcd", "giao duc cong dan"]
+      gdktpl: ["gdktpl", "kinh te phap luat", "kinh te va phap luat"]
+      tin: ["tin", "tin hoc"]
+      cong_nghe: ["cong nghe"]
+    grades:
+      "10": ["lop 10", "khoi 10", "10"]
+      "11": ["lop 11", "khoi 11", "11"]
+      "12": ["lop 12", "khoi 12", "12"]
+      thpt: ["thpt", "tot nghiep", "quoc gia"]
+    exam_types:
+      giua_hk1: ["giua ky 1", "giua hk1", "giua hoc ky 1", "gk1"]
+      hk1: ["hoc ky 1", "hk1", "ki 1", "ck1"]
+      giua_hk2: ["giua ky 2", "giua hk2", "giua hoc ky 2", "gk2"]
+      hk2: ["hoc ky 2", "hk2", "ki 2", "ck2"]
+      thi_thu: ["thi thu"]
+      de_cuong: ["de cuong"]
+      minh_hoa: ["minh hoa"]
