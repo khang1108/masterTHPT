@@ -72,7 +72,7 @@ DebateState = AgentState
 
 # ── TeacherAgent ───────────────────────────────────────────────────────────────
 
-class TeacherAgent(BaseAgent, ToolRegistry):
+class TeacherAgent(BaseAgent, ToolsRegistry):
     def __init__(self):
         super().__init__(agent_role="teacher")
         self.memory = MemorySaver()

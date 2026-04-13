@@ -63,7 +63,7 @@ class VerifiedResult(BaseModel):
 
 # ── VerifierAgent ──────────────────────────────────────────────────────────────
 
-class VerifierAgent(BaseAgent, ToolRegistry):
+class VerifierAgent(BaseAgent, ToolsRegistry):
     def __init__(self):
         super().__init__(agent_role="verifier")
         self.memory = MemorySaver()
