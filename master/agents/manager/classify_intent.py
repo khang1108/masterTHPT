@@ -1,0 +1,1 @@
+from common.message import Intent
