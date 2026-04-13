@@ -1,103 +1,91 @@
-from typing import List, Optional, Literal, Any
+from __future__ import annotations
+
+from typing import Optional, Literal
 from typing_extensions import TypedDict
-from enum import Enum
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
-from master.agents.common.message import StudentAnswer, ExamSection, Intent, MessageRequest
+from master.agents.common.message import (
+    StudentAnswer, Intent, MessageRequest, ExamQuestion,
+)
 from master.agents.common import tools
-from master.agents.common.tools import ToolRegistry
+from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
 
 import asyncio
 
 load_dotenv(override=True)
 
-# ── Metadata schemas (parse từ MessageRequest.metadata) ───────────────────────
 
-class GradeSubmissionMeta(BaseModel):
-    """GRADE_SUBMISSION — teacher nhận file, tự extract câu trả lời rồi chấm."""
-    file_urls: list[str]
-
-
-class ViewAnalysisMeta(BaseModel):
-    """VIEW_ANALYSIS — đã có student_answers, teacher chấm + debate."""
-    exam_id: str
-    student_id: str
-    session_id: str
-    total_questions: int
-    exam_sections: list[ExamSection]
-    student_answers: list[StudentAnswer]
-
-
-# ── Grading models ─────────────────────────────────────────────────────────────
+# ── Internal models ────────────────────────────────────────────────────────────
 
 class DraftResult(BaseModel):
-    question_id: str
-    is_correct: bool
+    """Kết quả Teacher tạo ra ở vòng đầu, tuỳ intent."""
+    question_id: Optional[str] = None
+    # GRADE / VIEW_ANALYSIS
+    is_correct: Optional[bool] = None
     score: Optional[float] = None
-    reasoning: str      # Lập luận chấm điểm
-    feedback: str       # Nhận xét gửi cho Verifier
+    # ASK_HINT / REVIEW_MISTAKE
+    response_text: Optional[str] = None
+    # PREPROCESS
+    parsed_questions: Optional[list[ExamQuestion]] = None
+    # Mọi intent
+    reasoning: str = ""
+    feedback: str = ""        # Gửi cho Verifier
 
 
 class DebateResult(BaseModel):
-    question_id: str
-    teacher_rebuttal: str       # Phản biện hoặc đồng ý với Verifier
-    final_feedback: str         # Nhận xét tổng hợp cuối cùng
+    """Phản biện của Teacher sau khi nghe Verifier."""
+    question_id: Optional[str] = None
+    teacher_rebuttal: str
+    final_response: str        # Kết quả cuối: text, JSON, ...
     final_score: Optional[float] = None
-    accepted_verifier: bool     # Có chấp nhận ý kiến Verifier không
+    accepted_verifier: bool = False
 
 
 class Output(BaseModel):
-    """Unit xử lý cho một câu hỏi — xuyên suốt toàn pipeline."""
-    student_ans: StudentAnswer              # KHÔNG thay đổi
+    """Đơn vị xử lý xuyên suốt pipeline — 1 câu hỏi hoặc 1 đơn vị xử lý."""
+    student_ans: Optional[StudentAnswer] = None   # None với PREPROCESS / ASK_HINT
     draft_result: Optional[DraftResult] = None
     verifier_feedback: list[str] = Field(default_factory=list)
     debate_result: Optional[DebateResult] = None
 
 
-# ── DebateState ────────────────────────────────────────────────────────────────
+# ── AgentState ─────────────────────────────────────────────────────────────────
 
-class DebateState(TypedDict):
-    # Core grading state
+class AgentState(TypedDict):
     outputs: list[Output]
     round: int
     max_round: int
     phase: Literal["draft", "debate"]
-
-    # Context giữ nguyên từ MessageRequest để truyền downstream
     intent: Intent
     exam_id: Optional[str]
     student_id: Optional[str]
-    session_id: Optional[str]
-    raw_request: MessageRequest             # Toàn bộ request gốc
+    raw_request: MessageRequest
 
 
-# ── TeacherAgent (subgraph) ────────────────────────────────────────────────────
+# Backward-compat alias cho VerifierAgent
+DebateState = AgentState
+
+
+# ── TeacherAgent ───────────────────────────────────────────────────────────────
 
 class TeacherAgent(BaseAgent, ToolRegistry):
     def __init__(self):
         super().__init__(agent_role="teacher")
-        self._llm_extractor = None          # Extract StudentAnswer từ file
-        self.browser        = None
-        self.playwright     = None
-        self.memory         = MemorySaver()
-        self.graph          = None
-
-    # ── Setup ──────────────────────────────────────────────────────────────────
+        self.memory = MemorySaver()
+        self.graph  = None
 
     async def setup(self):
         await self.setup_tools(LLMClient.chat_model())
         self.graph = self._build_graph()
 
     def _build_graph(self):
-        builder = StateGraph(DebateState)
-
+        builder = StateGraph(AgentState)
         builder.add_node("draft",  self._draft_batch)
         builder.add_node("debate", self._debate_batch)
-
         builder.add_conditional_edges(
             START,
             lambda s: s["phase"],
@@ -105,141 +93,157 @@ class TeacherAgent(BaseAgent, ToolRegistry):
         )
         builder.add_edge("draft",  END)
         builder.add_edge("debate", END)
-
         return builder.compile(checkpointer=self.memory)
 
-    # ── Intent → DebateState ───────────────────────────────────────────────────
+    # ── Build initial AgentState from MessageRequest ───────────────────────────
 
-    async def _build_state_from_request(
-        self,
-        request: MessageRequest,
-        max_round: int = 3,
-    ) -> DebateState:
+    def _build_state(self, request: MessageRequest, max_round: int) -> AgentState:
         """
-        Parse MessageRequest theo intent, trả về DebateState sẵn sàng chạy.
-        Teacher chỉ xử lý GRADE_SUBMISSION và VIEW_ANALYSIS.
+        Mọi intent đều được đưa vào 1 state duy nhất.
+        - ASK_HINT / PREPROCESS: 1 Output duy nhất, không có student_ans.
+        - REVIEW_MISTAKE / VIEW_ANALYSIS / EXAM_PRACTICE: 1 Output mỗi StudentAnswer.
         """
         match request.intent:
+            case Intent.ASK_HINT:
+                outputs = [Output()]          # 1 đơn vị, không có student_ans
 
-            case Intent.GRADE_SUBMISSION:
-                meta = GradeSubmissionMeta(
-                    file_urls=request.file_urls or request.metadata.get("file_urls", [])
-                )
-                # Extract StudentAnswer từ từng file (song song)
-                outputs = await asyncio.gather(
-                    *[self._extract_answer_from_file(url) for url in meta.file_urls]
-                )
-                return DebateState(
-                    outputs=list(outputs),
-                    round=0,
-                    max_round=max_round,
-                    phase="draft",
-                    intent=request.intent,
-                    exam_id=None,
-                    student_id=None,
-                    session_id=None,
-                    raw_request=request,
-                )
-
-            case Intent.VIEW_ANALYSIS:
-                meta = ViewAnalysisMeta(**request.metadata)
-                outputs = [
-                    Output(student_ans=sa)
-                    for sa in meta.student_answers
-                ]
-                return DebateState(
-                    outputs=outputs,
-                    round=0,
-                    max_round=max_round,
-                    phase="draft",
-                    intent=request.intent,
-                    exam_id=meta.exam_id,
-                    student_id=meta.student_id,
-                    session_id=meta.session_id,
-                    raw_request=request,
-                )
+            case Intent.PREPROCESS:
+                outputs = [Output()]          # 1 đơn vị cho cả block câu hỏi
 
             case _:
-                raise ValueError(
-                    f"TeacherAgent không xử lý intent: {request.intent}. "
-                    f"Chỉ hỗ trợ GRADE_SUBMISSION và VIEW_ANALYSIS."
-                )
+                # REVIEW_MISTAKE, VIEW_ANALYSIS, EXAM_PRACTICE
+                outputs = [
+                    Output(student_ans=sa)
+                    for sa in (request.student_answers or [])
+                ]
 
-    # ── File extraction ────────────────────────────────────────────────────────
-
-    async def _extract_answer_from_file(self, file_url: str) -> Output:
-        """Dùng LLM extract StudentAnswer từ file (ảnh bài làm, PDF,...)."""
-        prompt = f"""Từ file sau, hãy trích xuất thông tin bài làm của học sinh.
-File URL: {file_url}
-Trả về đúng định dạng StudentAnswer với các trường: exam_id, question_id, answer, correct_answer, file_urls."""
-
-        student_ans: StudentAnswer = await asyncio.to_thread(
-            self._llm_extractor.invoke, prompt
+        return AgentState(
+            outputs     = outputs,
+            round       = 0,
+            max_round   = max_round,
+            phase       = "draft",
+            intent      = request.intent,
+            exam_id     = request.exam_id,
+            student_id  = request.student_id,
+            raw_request = request,
         )
-        student_ans.file_urls = [file_url]
-        return Output(student_ans=student_ans)
 
     # ── Draft Phase ────────────────────────────────────────────────────────────
 
-    async def _draft_single(self, output: Output) -> Output:
-        sa       = output.student_ans
-        question = await tools.get_data(
-            "masterthpt", "questions", query={"id": sa.question_id}
-        )
-        prompt = f"""Bạn là giáo viên chấm thi chuyên nghiệp.
-Bạn có thể dùng tools để tra cứu thêm tài liệu, tìm kiếm thông tin liên quan trước khi chấm.
+    async def _draft_single(self, output: Output, state: AgentState) -> Output:
+        req    = state["raw_request"]
+        intent = state["intent"]
 
-Câu hỏi      : {question}
-Trả lời HS   : {sa.answer}
-Đáp án       : {sa.correct_answer}
-File đính kèm: {sa.file_urls or "Không có"}
+        match intent:
+            case Intent.ASK_HINT:
+                question = await tools.get_data(
+                    "masterthpt", "questions", query={"id": req.question_id}
+                )
+                prompt = f"""Bạn là giáo viên tạo gợi ý cho học sinh.
+Câu hỏi    : {question}
+Thắc mắc HS: {req.student_message or "Không có"}
 
-Hãy tra cứu nếu cần, sau đó chấm điểm và đưa ra nhận xét để Verifier kiểm tra.
+Tạo gợi ý giúp học sinh tự tìm ra đáp án, KHÔNG tiết lộ đáp án trực tiếp.
+Ghi rõ reasoning (lý luận) và feedback (nhận xét gửi Verifier)."""
+                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
+                result.question_id = req.question_id
+
+            case Intent.REVIEW_MISTAKE:
+                sa       = output.student_ans
+                question = await tools.get_data(
+                    "masterthpt", "questions", query={"id": sa.question_id}
+                )
+                prompt = f"""Bạn là giáo viên phân tích lỗi sai của học sinh.
+Câu hỏi    : {question}
+Trả lời HS : {sa.student_answer}
+
+Phân tích nguyên nhân sai, phân loại lỗi, đưa ra hướng khắc phục.
+Ghi rõ reasoning và feedback (nhận xét gửi Verifier).
 question_id phải là: {sa.question_id}"""
+                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
+                result.question_id = sa.question_id
 
-        result: DraftResult = await self._run_with_tools(prompt, DraftResult)
-        result.question_id = sa.question_id
+            case Intent.PREPROCESS:
+                prompt = f"""Bạn là giáo viên parse đề thi thành cấu trúc ExamQuestion.
+Nội dung thô: {req.parser_output}
+
+Parse thành list ExamQuestion chuẩn JSON, ghi vào parsed_questions.
+Ghi rõ reasoning và feedback (nhận xét gửi Verifier)."""
+                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
+
+            case _:
+                # VIEW_ANALYSIS / EXAM_PRACTICE — chấm điểm câu hỏi
+                sa       = output.student_ans
+                question = await tools.get_data(
+                    "masterthpt", "questions", query={"id": sa.question_id}
+                )
+                prompt = f"""Bạn là giáo viên chấm thi.
+Câu hỏi    : {question}
+Trả lời HS : {sa.student_answer}
+
+Chấm điểm, đưa ra nhận xét để Verifier kiểm tra.
+question_id phải là: {sa.question_id}"""
+                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
+                result.question_id = sa.question_id
+
         return output.model_copy(update={"draft_result": result})
 
-
-    async def _draft_batch(self, state: DebateState) -> DebateState:
+    async def _draft_batch(self, state: AgentState) -> AgentState:
         updated = await asyncio.gather(
-            *[self._draft_single(o) for o in state["outputs"]]
+            *[self._draft_single(o, state) for o in state["outputs"]]
         )
         return {**state, "outputs": list(updated)}
 
     # ── Debate Phase ───────────────────────────────────────────────────────────
 
-    async def _debate_single(self, output: Output) -> Output:
-        sa       = output.student_ans
-        question = await tools.get_data(
-            "masterthpt", "questions", query={"id": sa.question_id}
-        )
-        prompt = f"""Bạn là giáo viên đang tranh luận với Verifier.
-Bạn PHẢI dùng tools để tìm bằng chứng củng cố hoặc bác bỏ feedback của Verifier.
+    async def _debate_single(self, output: Output, state: AgentState) -> Output:
+        req    = state["raw_request"]
+        intent = state["intent"]
+        draft  = output.draft_result
 
-Câu hỏi           : {question}
-Trả lời HS        : {sa.answer}
-Đáp án            : {sa.correct_answer}
-Chấm nháp của bạn : {output.draft_result.model_dump() if output.draft_result else "Chưa có"}
-Feedback Verifier : {output.verifier_feedback}
+        match intent:
+            case Intent.ASK_HINT:
+                prompt = f"""Verifier phản biện gợi ý của bạn. Hãy bảo vệ hoặc cải thiện.
+Gợi ý ban đầu    : {draft.response_text if draft else "Chưa có"}
+Feedback Verifier: {output.verifier_feedback}
 
-Tra cứu bằng chứng, sau đó phản biện hoặc đồng ý có lập luận.
-question_id phải là: {sa.question_id}"""
+Trả về final_response là gợi ý đã cải thiện."""
+
+            case Intent.REVIEW_MISTAKE:
+                sa = output.student_ans
+                prompt = f"""Verifier phản biện phân tích lỗi của bạn. Hãy bảo vệ hoặc cải thiện.
+Phân tích ban đầu: {draft.response_text if draft else "Chưa có"}
+Feedback Verifier: {output.verifier_feedback}
+question_id phải là: {sa.question_id}
+
+Trả về final_response là phân tích đã cải thiện."""
+
+            case Intent.PREPROCESS:
+                prompt = f"""Verifier phản biện câu hỏi bạn parse. Hãy sửa lại nếu cần.
+Parse ban đầu    : {draft.parsed_questions if draft else "Chưa có"}
+Feedback Verifier: {output.verifier_feedback}
+
+Trả về final_response là JSON list ExamQuestion đã sửa."""
+
+            case _:
+                sa = output.student_ans
+                prompt = f"""Verifier phản biện kết quả chấm. Hãy bảo vệ hoặc cải thiện.
+Chấm ban đầu     : {draft.model_dump() if draft else "Chưa có"}
+Feedback Verifier: {output.verifier_feedback}
+question_id phải là: {sa.question_id}
+
+Trả về final_response và final_score đã cập nhật."""
 
         result: DebateResult = await self._run_with_tools(prompt, DebateResult)
-        result.question_id = sa.question_id
+        if output.student_ans:
+            result.question_id = output.student_ans.question_id
         return output.model_copy(update={"debate_result": result})
 
-    async def _debate_batch(self, state: DebateState) -> DebateState:
+    async def _debate_batch(self, state: AgentState) -> AgentState:
         updated = await asyncio.gather(
-            *[self._debate_single(o) for o in state["outputs"]]
+            *[self._debate_single(o, state) for o in state["outputs"]]
         )
-        return {
-            **state,
-            "outputs": list(updated),
-            "round": state["round"] + 1,
-        }
+        return {**state, "outputs": list(updated), "round": state["round"] + 1}
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -248,81 +252,20 @@ question_id phải là: {sa.question_id}"""
         request: MessageRequest,
         max_round: int = 3,
         thread_id: str = "default",
-    ) -> DebateState:
-        """Nhận MessageRequest → build state → chạy draft phase."""
-        state  = await self._build_state_from_request(request, max_round)
+    ) -> AgentState:
+        """MessageRequest → AgentState sau draft phase."""
+        state  = self._build_state(request, max_round)
         config = {"configurable": {"thread_id": thread_id}}
         return await self.graph.ainvoke(state, config=config)
 
     async def run_debate(
         self,
-        state: DebateState,
+        state: AgentState,
         thread_id: str = "default",
-    ) -> DebateState:
-        """Nhận DebateState đã có verifier_feedback → chạy debate phase."""
+    ) -> AgentState:
+        """AgentState có verifier_feedback → AgentState sau debate phase."""
         config = {"configurable": {"thread_id": thread_id}}
         return await self.graph.ainvoke({**state, "phase": "debate"}, config=config)
 
     async def run(self, input: str) -> str:
-        return "Use run_draft(MessageRequest) or run_debate(DebateState)."
-
-
-# ── Demo ───────────────────────────────────────────────────────────────────────
-
-async def main():
-    teacher = TeacherAgent()
-    await teacher.setup()
-
-    # ── Simulate: VIEW_ANALYSIS từ NestJS ─────────────────────────────────────
-    request = MessageRequest(
-        intent=Intent.VIEW_ANALYSIS,
-        user_message="Chấm bài thi cho học sinh",
-        student_id="student-001",
-        metadata={
-            "exam_id":         "bed1f84d-329c-5ab3-876e-84dbaaa96c13",
-            "student_id":      "student-001",
-            "session_id":      "session-abc",
-            "total_questions": 2,
-            "exam_sections":   [],
-            "student_answers": [
-                {
-                    "exam_id":        "bed1f84d-329c-5ab3-876e-84dbaaa96c13",
-                    "question_id":    "07931d51-d61b-5a58-bb3b-351a8edccbcd",
-                    "answer":         "B",
-                    "correct_answer": "A",
-                    "file_urls":      [],
-                },
-                {
-                    "exam_id":        "bed1f84d-329c-5ab3-876e-84dbaaa96c13",
-                    "question_id":    "c7b9433a-e22e-5f91-9a8e-6e682612f748",
-                    "answer":         "C",
-                    "correct_answer": "A",
-                    "file_urls":      [],
-                },
-            ],
-        },
-    )
-
-    # Phase 1: Draft
-    draft_state = await teacher.run_draft(request, thread_id="exam-001")
-    print("=== DRAFT ===")
-    for o in draft_state["outputs"]:
-        print(o.draft_result)
-
-    # Simulate Verifier thêm feedback vào outputs
-    draft_state["outputs"][0] = draft_state["outputs"][0].model_copy(
-        update={"verifier_feedback": ["Đáp án B cũng có thể chấp nhận trong ngữ cảnh này"]}
-    )
-    draft_state["outputs"][1] = draft_state["outputs"][1].model_copy(
-        update={"verifier_feedback": ["Học sinh trả lời C là hoàn toàn sai"]}
-    )
-
-    # Phase 2: Debate
-    final_state = await teacher.run_debate(draft_state, thread_id="exam-001")
-    print("\n=== DEBATE ===")
-    for o in final_state["outputs"]:
-        print(o.debate_result)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        return "Use run_draft(MessageRequest) or run_debate(AgentState)."
