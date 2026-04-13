@@ -1,4 +1,4 @@
-# master/agents/common/agent_mixin.py
+# master/agents/common/tools_registry.py
 
 from langchain_community.agent_toolkits import PlayWrightBrowserToolkit
 from langchain_community.agent_toolkits import FileManagementToolkit
@@ -8,16 +8,27 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from playwright.async_api import async_playwright
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
-from dotenv import load_dotenv
 from typing import Type
+from dotenv import load_dotenv
 import asyncio
 import os
 
 load_dotenv(override=True)
 MONGO_URI = os.getenv("MONGO_URI")
 
-class ToolRegistry:
-    # ── Shared across all agents (class-level cache) ───────────────────────────
+class ToolsRegistry:
+    """
+    Mixin duy nhất cho tất cả agent:
+      - Khởi tạo và cache tools (Playwright, File, PythonREPL)
+      - MongoDB get/insert
+      - ReAct loop (_run_with_tools)
+
+    Class sử dụng phải gọi setup_tools(llm) trong setup() của mình.
+    Tools được cache ở class-level → Teacher và Verifier dùng chung,
+    không khởi tạo browser nhiều lần.
+    """
+
+    # ── Class-level cache (dùng chung toàn bộ agent instances) ────────────────
     _shared_tools: list[BaseTool] | None = None
     _shared_tool_map: dict[str, BaseTool] | None = None
     _shared_browser = None
@@ -27,29 +38,35 @@ class ToolRegistry:
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup_tools(self, llm):
-        """Gọi trong setup() của agent. llm là base LLM chưa bind tools."""
-        if ToolRegistry._shared_tools is None:
+        """
+        Gọi trong setup() của agent.
+        llm: base LLM chưa bind tools (LLMClient.chat_model()).
+        """
+        if ToolsRegistry._shared_tools is None:
             await self._init_tools()
 
-        self._tools          = ToolRegistry._shared_tools
-        self._tool_map       = ToolRegistry._shared_tool_map
-        self.browser         = ToolRegistry._shared_browser
-        self.playwright      = ToolRegistry._shared_playwright
+        self._tools          = ToolsRegistry._shared_tools
+        self._tool_map       = ToolsRegistry._shared_tool_map
+        self.browser         = ToolsRegistry._shared_browser
+        self.playwright      = ToolsRegistry._shared_playwright
         self._llm            = llm
         self._llm_with_tools = llm.bind_tools(self._tools)
 
     async def _init_tools(self):
-        playwright      = await async_playwright().start()
-        browser         = await playwright.chromium.launch(headless=False)
-        browser_tools   = PlayWrightBrowserToolkit.from_browser(async_browser=browser).get_tools()
-        file_tools      = FileManagementToolkit().get_tools()
-        repl_tool       = PythonREPLTool()
-        all_tools       = browser_tools + file_tools + [repl_tool]
+        """Khởi tạo tất cả tools một lần duy nhất."""
+        playwright    = await async_playwright().start()
+        browser       = await playwright.chromium.launch(headless=False)
+        browser_tools = PlayWrightBrowserToolkit.from_browser(
+            async_browser=browser
+        ).get_tools()
+        file_tools    = FileManagementToolkit().get_tools()
+        repl_tool     = PythonREPLTool()
+        all_tools     = browser_tools + file_tools + [repl_tool]
 
-        ToolRegistry._shared_tools      = all_tools
-        ToolRegistry._shared_tool_map   = {t.name: t for t in all_tools}
-        ToolRegistry._shared_browser    = browser
-        ToolRegistry._shared_playwright = playwright
+        ToolsRegistry._shared_tools      = all_tools
+        ToolsRegistry._shared_tool_map   = {t.name: t for t in all_tools}
+        ToolsRegistry._shared_browser    = browser
+        ToolsRegistry._shared_playwright = playwright
 
     # ── MongoDB ────────────────────────────────────────────────────────────────
 
@@ -59,13 +76,26 @@ class ToolRegistry:
         collection_name: str,
         query: dict,
         length: int = 10,
-    ):
-        collection = ToolRegistry._mongo_client[database_name][collection_name]
+    ) -> list:
+        collection = ToolsRegistry._mongo_client[database_name][collection_name]
         return await collection.find(query).to_list(length=length)
+
+    async def insert_data(
+        self,
+        database_name: str,
+        collection_name: str,
+        documents: list[dict],
+    ):
+        """Insert nhiều document vào MongoDB."""
+        if not documents:
+            return
+        collection = ToolsRegistry._mongo_client[database_name][collection_name]
+        await collection.insert_many(documents)
 
     # ── ReAct loop ─────────────────────────────────────────────────────────────
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolMessage]:
+        """Thực thi tất cả tool calls song song."""
         async def _call_one(tc) -> ToolMessage:
             tool = self._tool_map.get(tc["name"])
             if tool is None:
@@ -85,6 +115,12 @@ class ToolRegistry:
         output_schema: Type[BaseModel],
         max_tool_rounds: int = 5,
     ) -> BaseModel:
+        """
+        ReAct loop:
+          1. LLM (có tools) suy luận, gọi tools nếu cần
+          2. Lặp cho đến khi không còn tool call hoặc hết max_tool_rounds
+          3. Dùng toàn bộ message history để extract structured output
+        """
         messages = [HumanMessage(content=prompt)]
 
         for _ in range(max_tool_rounds):
@@ -108,6 +144,7 @@ class ToolRegistry:
 
     @classmethod
     async def cleanup(cls):
+        """Đóng browser và playwright. Gọi trong GradingPipeline.run() finally."""
         if cls._shared_browser:
             await cls._shared_browser.close()
         if cls._shared_playwright:
@@ -116,5 +153,3 @@ class ToolRegistry:
         cls._shared_tool_map   = None
         cls._shared_browser    = None
         cls._shared_playwright = None
-
-tools = ToolRegistry()

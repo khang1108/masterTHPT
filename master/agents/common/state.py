@@ -1,25 +1,24 @@
 from typing import Literal, Optional, TypedDict
-from message import MessageRequest, Intent, MessageResponse
+from message import MessageRequest, MessageResponse
 from learner_profile import LearnerProfile
-from message import ExamQuestion, StudentAnswer
-from teacher import Output
-from common.config import GradeResult
-from common.message import Solution
+from master.agents.common.message import ExamQuestion, StudentAnswer
+from master.agents.teacher import Output
+from master.common.message import GradeResult, Solution
 
 class AgentState(TypedDict):
     # Request
     request: MessageRequest
-    intent: Intent
+    # intent: Intent
 
     # Learner context
-    student_id: Optional[str]
-    session_id: Optional[str]
+    # student_id: Optional[str]
+    # session_id: Optional[str]
     learner_profile: LearnerProfile # BKT mastery per KC, IRT theta, history
 
     # Exam context
     exam_id: Optional[str]
     questions: list[ExamQuestion]
-    student_answers: Optional[StudentAnswer]
+    student_answers: list[StudentAnswer]
     raw_request: MessageRequest             # Toàn bộ request gốc
 
     # Debate context

@@ -7,12 +7,11 @@ from pydantic import BaseModel, Field
 import uuid
 
 class Intent(str, Enum):
-    EXAM_PRACTICE = "EXAM_PRACTICE"
-    GRADE_SUBMISSION = "GRADE_SUBMISSION"
-    VIEW_ANALYSIS = "VIEW_ANALYSIS"
     ASK_HINT = "ASK_HINT"
     REVIEW_MISTAKE = "REVIEW_MISTAKE"
-    UNKNOWN = "UNKNOWN"
+    VIEW_ANALYSIS = "VIEW_ANALYSIS"
+    EXAM_PRACTICE = "EXAM_PRACTICE"
+    PREPROCESS = "PREPROCESS"
 
 class ErrorType(str, Enum):
     CONCEPT_GAP = "CONCEPT_GAP"
@@ -25,52 +24,49 @@ class ErrorType(str, Enum):
 """
 Message for NestJS <-> Agent Service communication.
 
-INTENT = "EXAM_PRACTICE"
+INTENT = "ASK_HINT"
     - Metadata:
-        + subject: str
-        + total_questions: int
-        + exam_sections: list[ExamSection]
-INTENT = "GRADE_SUBMISSION"
+        + student_id: str
+        + questions_id: str
+
+INTENT = "REVIEW_MISTAKE"
     - Metadata:
-        + file_urls: list[str]
+        + student_id: str
+        + question_id: str
+        + student_answers: list[StudentAnswer]
 
 INTENT = "VIEW_ANALYSIS"
     - Metadata:
-        + exam_id: str
         + student_id: str
-        + session_id: str
-        + total_questions: int
-        + exam_sections: list[ExamSection]
+        + exam_id: str
         + student_answers: list[StudentAnswer]
-INTENT = "ASK_HINT"
-    - Metadata:
-        + question_id: str
-        + exam_id: str
-INTENT = "REVIEW_MISTAKE"
-    - Metadata:
-        + exam_id: str
-        + questions: list[ExamQuestion]
-INTENT = "UNKNOWN"
-    - Metadata:
-        + context: str
-"""
-class MessageRequest(BaseModel):
-    student_id: str
-    session_id: Optional[str] = None
-    intent: Intent
-    user_message: str
-    file_urls: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
+INTENT = "EXAM_PRACTICE"
+    - Metadata:
+        + student_id: str
+        + exam_id: str
+        + student_answers: list[StudentAnswer]
+
+INTENT = PREPROCES
+    - Metadata:
+        + parser_output
+"""
+
+
+class MessageRequest(BaseModel):
+    intent: Intent
+    student_id: str
+    exam_id: Optional[str] = None
+    question_id: Optional[str] = None
+    student_answers: Optional[list[StudentAnswer]] = None
+    student_message: Optional[str] = None
+    parser_output: Optional[str] = None
 
 class MessageResponse(BaseModel):
-    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    status: str  # "success" | "error"
-    intent: Intent
-    result: dict[str, Any] = Field(default_factory=dict)
-    agent_trail: list[str] = Field(default_factory=list)
-    error_message: Optional[str] = None
-
+    student_id: str
+    exam_id: Optional[str] = None
+    question_id: Optional[str] = None
+    feedback: Optional[str] = None
 
 # --- Exam JSON Schema ---
 
@@ -93,7 +89,6 @@ class ExamQuestion(BaseModel):
         max_score: The maximum score of the question
     """
     question_id: str
-    question_index: int 
     type: str  # "multiple_choice" | "essay"
     content: str
     formulas: Optional[list[str]] = None # LaTeX formulas in the question
@@ -106,22 +101,6 @@ class ExamQuestion(BaseModel):
     topic_tags: list[str] = Field(default_factory=list) # ["math.12.ch2.integrals", "math.12.ch4.solid_geometry", ...]
     max_score: float = 0.2
 
-
-class ExamSection(BaseModel):
-    type: str # ["multiple_choice", "essay", ...]
-    questions: list[ExamQuestion]
-
-
-class ExamData(BaseModel):
-    exam_id: str
-    source: str  # "image" | "pdf" | "manual"
-    subject: str
-    exam_type: str
-    total_questions: int
-    sections: list[ExamSection]
-    duration_minutes: Optional[int] = None
-
-
 # --- Evaluation JSON Schema ---
 
 class ErrorAnalysis(BaseModel):
@@ -132,12 +111,8 @@ class ErrorAnalysis(BaseModel):
 
 
 class StudentAnswer(BaseModel):
-    exam_id: str
     question_id: str
-    answer: Optional[str] = None
-    correct_answer: Optional[str] = None
-    file_urls: list[str] = Field(default_factory=list)
-
+    student_answer: Optional[str] = None
 
 class OverallAnalysis(BaseModel):
     strengths: list[str] = Field(default_factory=list)
