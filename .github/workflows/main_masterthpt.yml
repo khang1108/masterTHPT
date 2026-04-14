@@ -9,6 +9,9 @@ on:
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}   # e.g. masterthptacr.azurecr.io
   IMAGE_TAG: ${{ github.sha }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL}}
+  NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL}}
+  API_PROXY_TARGET: ${{ secrets.API_PROXY_TARGET}}
 
 jobs:
   build-and-push:
