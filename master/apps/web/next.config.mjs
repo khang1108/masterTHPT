@@ -1,3 +1,13 @@
+function normalizeApiProxyTarget(value) {
+	if (!value) {
+		return '';
+	}
+
+	return value.replace(/\/$/, '').replace(/\/api$/, '');
+}
+
+const apiProxyTarget = normalizeApiProxyTarget(process.env.API_PROXY_TARGET);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	reactStrictMode: true,
@@ -14,10 +24,14 @@ const nextConfig = {
 	},
 
 	async rewrites() {
+		if (!apiProxyTarget) {
+			return [];
+		}
+
 		return [
 			{
-				source: '/:path*',
-				destination: 'http://api:3001/:path*'
+				source: '/api/:path*',
+				destination: `${apiProxyTarget}/api/:path*`,
 			},
 		];
 	},
