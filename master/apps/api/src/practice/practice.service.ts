@@ -1,96 +1,127 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { ExternalApiService } from 'src/integrations/external-api.service';
-import { MockAiService } from 'src/mocks/mock-ai.service';
+import { ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { postToAiService } from 'src/common/ai/ai-client';
+import { isAnswerCorrect } from 'src/common/exams/evaluation';
+import { sortItemsByReferenceOrder } from 'src/common/exams/exam-content';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { GenerateOnboardingExamDto } from './dto/generate-onboarding-exam.dto';
-import { GeneratePracticeDto } from './dto/generate-practice.dto';
+import { CheckPracticeQuestionDto } from './dto/check-practice-question.dto';
+import { UpdatePracticeDto } from './dto/update-practice.dto';
 
 @Injectable()
 export class PracticeService {
+	private readonly logger = new Logger(PracticeService.name);
+
 	constructor(
-		private readonly mockAiService: MockAiService,
 		private readonly prisma: PrismaService,
-		private readonly externalApiService: ExternalApiService,
+		private readonly configService: ConfigService,
 	) { }
 
-	async generateExam(studentId: string, dto: GeneratePracticeDto, file?: Express.Multer.File) {
-		const sourceType = file ? 'upload_file' : dto.embedded_text ? 'text_input' : 'manual';
-		const payload = {
-			uuid: studentId,
-			sourceType,
-			subject: dto.subject,
-			examType: dto.exam_type,
-			embeddedText: dto.embedded_text,
-		};
-
-		// REAL API
-		const externalExam = await this.externalApiService.generateExam(payload);
-		if (externalExam) {
-			return externalExam;
+	async listUserPracticeExams(userId: string) {
+		const examIds = await this.getUserPracticeExamIds(userId);
+		if (examIds.length === 0) {
+			return [];
 		}
 
-		if (!this.externalApiService.isMockEnabled()) {
-			throw new BadRequestException(
-				'External generate exam API returned no data while USE_MOCK_SERVICES=false',
-			);
-		}
-
-		// MOCKTEST
-		return this.mockAiService.generateExam(payload);
-	}
-
-	async generateOnboardingExam(studentId: string, dto: GenerateOnboardingExamDto) {
-		const student = await this.prisma.student.findUnique({
-			where: { id: studentId },
+		const exams = await this.prisma.exam.findMany({
+			where: {
+				id: {
+					in: examIds,
+				},
+			},
+			select: {
+				id: true,
+				subject: true,
+				source: true,
+				total_questions: true,
+				exam_type: true,
+				grade: true,
+				year: true,
+			},
 		});
 
-		if (!student) {
-			throw new BadRequestException('Không tìm thấy tài khoản học sinh');
+		return sortItemsByReferenceOrder(examIds, exams);
+	}
+
+	async checkQuestion(userId: string, dto: CheckPracticeQuestionDto) {
+		// Practice checking only works for exams explicitly assigned to the student.
+		// Keep this authorization check close to the entry point so future mutations reuse it.
+		const examIds = await this.getUserPracticeExamIds(userId);
+		if (!examIds.includes(dto.exam_id)) {
+			throw new ForbiddenException('Bạn không có quyền luyện đề này');
 		}
 
-		const isFirstLogin =
-			'is_first_login' in student &&
-			typeof student.is_first_login === 'boolean' &&
-			student.is_first_login;
+		const exam = await this.prisma.exam.findUnique({
+			where: { id: dto.exam_id },
+			select: {
+				questions: true,
+			},
+		});
 
-		if (!isFirstLogin) {
-			throw new BadRequestException('Bạn đã hoàn thành bài thi đầu vào trước đó');
+		if (!exam) {
+			throw new NotFoundException('Không tìm thấy đề luyện tập');
 		}
 
-		const firstSubject = dto.subjects[0]?.subject?.trim();
-		if (!firstSubject) {
-			throw new BadRequestException('Vui lòng thêm ít nhất một môn học hợp lệ');
+		if (!(exam.questions ?? []).includes(dto.question_id)) {
+			throw new NotFoundException('Câu hỏi không thuộc đề này');
 		}
 
-		const normalizedSubjects = dto.subjects.map((subject) => ({
-			subject: subject.subject.trim(),
-			scores: subject.scores.map((score) => ({
-				label: score.label.trim(),
-				value: score.value.trim(),
-			})),
-		}));
+		const question = await this.prisma.question.findUnique({
+			where: { id: dto.question_id },
+			select: {
+				correct_answer: true,
+			},
+		});
 
-		const payload = {
-			uuid: studentId,
-			sourceType: 'first_login_onboarding',
-			subject: firstSubject,
-			examType: 'onboarding_assessment',
-			subjects: normalizedSubjects,
+		if (!question) {
+			throw new NotFoundException('Không tìm thấy câu hỏi');
+		}
+
+		const correctAnswer = question.correct_answer ?? '';
+		const studentAnswer = (dto.student_answer ?? '').trim();
+
+		return {
+			question_id: dto.question_id,
+			student_answer: studentAnswer,
+			correct_answer: correctAnswer,
+			is_correct: isAnswerCorrect(studentAnswer, correctAnswer),
 		};
+	}
 
-		// REAL API
-		const externalExam = await this.externalApiService.generateExam(payload);
-		if (externalExam) {
-			return externalExam;
+	async updatePractice(userId: string, dto: UpdatePracticeDto) {
+		// The AI service is responsible for updating the practice assignment out of band.
+		// This endpoint only triggers that workflow and lets the frontend refresh afterwards.
+		if (!this.configService.get<string>('AI_API_BASE_URL')?.trim()) {
+			throw new ServiceUnavailableException('AI service chưa được cấu hình');
 		}
 
-		if (!this.externalApiService.isMockEnabled()) {
-			throw new BadRequestException(
-				'External onboarding generate API returned no data while USE_MOCK_SERVICES=false',
+		try {
+			await postToAiService(
+				this.configService,
+				{
+					intent: 'UPDATE_PRACTICE',
+					user_id: userId,
+					user_message: dto.request,
+				},
 			);
-		}
 
-		// MOCKTEST fallback.
-		return this.mockAiService.generateExam(payload);
+			return {
+				success: true,
+			};
+		} catch (error) {
+			this.logger.warn(`Failed to update practice for user ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+			throw new ServiceUnavailableException('Không thể cập nhật danh sách luyện tập lúc này');
+		}
+	}
+
+	private async getUserPracticeExamIds(userId: string) {
+		// Shared helper to keep the student-to-practice lookup logic in one place.
+		const practice = await this.prisma.practice.findUnique({
+			where: { user_id: userId },
+			select: {
+				exam_ids: true,
+			},
+		});
+
+		return practice?.exam_ids ?? [];
 	}
 }

@@ -1,50 +1,17 @@
 'use client';
 
-import { DocumentDetailResponse, ExamEvaluationItem, ExamQuestion, getDocumentDetail } from '@/lib/api';
+import { QuestionFeedbackPanels } from '@/components/exam/feedback-panels';
+import { formatScore } from '@/components/exam/helpers';
+import { MathText } from '@/components/exam/math-text';
+import { ExamQuestionHeader } from '@/components/exam/question-header';
+import { ResultAnswerPanel } from '@/components/exam/result-answer-panel';
+import { FlatQuestion, flattenExamSections } from '@/components/exam/types';
+import { DocumentDetailResponse, ExamEvaluationItem, askHint, createHistory, getDocumentDetail, reviewMistake } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { getCachedExamDetail, getCachedExamResult } from '@/lib/exam-session';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import Latex from 'react-latex-next';
-
-type FlatQuestion = {
-	id: string;
-	index: number;
-	sectionType: 'multiple_choice' | 'true_false' | 'short_answer';
-	question: ExamQuestion;
-};
-
-function parseOption(option: string) {
-	const match = option.match(/^([A-Z])\.\s*(.*)$/);
-	if (!match) {
-		return {
-			label: option,
-			text: option,
-		};
-	}
-
-	return {
-		label: match[1],
-		text: match[2],
-	};
-}
-
-function getAlphabetLabel(index: number) {
-	return String.fromCharCode(65 + index);
-}
-
-function MathText({ text }: { text: string }) {
-	return (
-		<span className="exam-math-text">
-			<Latex>{text}</Latex>
-		</span>
-	);
-}
-
-function tokenToLabel(value: string) {
-	return value === 'T' ? 'Đúng' : 'Sai';
-}
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export default function ExamResultPage() {
 	const router = useRouter();
@@ -55,6 +22,12 @@ export default function ExamResultPage() {
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(true);
 	const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+	const [hintFeedbacks, setHintFeedbacks] = useState<Record<string, string>>({});
+	const [loadingHintQuestionId, setLoadingHintQuestionId] = useState<string | null>(null);
+	const [hintError, setHintError] = useState('');
+	const [reviewFeedbacks, setReviewFeedbacks] = useState<Record<string, string>>({});
+	const [loadingReviewQuestionId, setLoadingReviewQuestionId] = useState<string | null>(null);
+	const [reviewError, setReviewError] = useState('');
 
 	const result = useMemo(() => {
 		if (!examId) {
@@ -112,14 +85,7 @@ export default function ExamResultPage() {
 			return [];
 		}
 
-		return exam.sections.flatMap((section) =>
-			section.questions.map((question) => ({
-				id: question.id,
-				index: question.question_index,
-				sectionType: section.type,
-				question,
-			})),
-		);
+		return flattenExamSections(exam.sections);
 	}, [exam]);
 
 	const evaluationMap = useMemo(() => {
@@ -132,79 +98,93 @@ export default function ExamResultPage() {
 
 	const activeQuestion = flatQuestions[activeQuestionIndex];
 	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.id) : null;
+	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
+	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
 
-	function renderResultPanel(question: FlatQuestion, evaluation: ExamEvaluationItem) {
-		if (question.sectionType === 'multiple_choice') {
-			const selected = evaluation.student_answer.trim();
-			const correctLabel = parseOption(evaluation.correct_answer).label;
-
-			return (
-				<div className="exam-mc-grid exam-result-panel">
-					{question.question.options?.map((option) => {
-						const parsed = parseOption(option);
-						const isCorrectOption = parsed.label === correctLabel;
-						const isStudentSelected = selected === parsed.label;
-						const isWrongSelected = isStudentSelected && !isCorrectOption;
-
-						return (
-							<div
-								key={`${question.id}-${parsed.label}`}
-								className={`exam-mc-option exam-result-option ${isCorrectOption ? 'is-correct' : ''} ${isWrongSelected ? 'is-wrong' : ''}`}
-							>
-								<div className="exam-mc-option-main">
-									<span className="exam-mc-badge">{parsed.label}</span>
-									<MathText text={parsed.text} />
-								</div>
-								<span className="exam-result-tag">{isCorrectOption ? 'Đúng' : isStudentSelected ? 'Bạn chọn' : ''}</span>
-							</div>
-						);
-					})}
-				</div>
-			);
+	const handleExitResults = useCallback(async () => {
+		const token = getToken();
+		if (!token || !examId) {
+			router.push('/documents');
+			return;
 		}
 
-		if (question.sectionType === 'true_false') {
-			const statements = question.question.statements ?? [];
-			const studentTokens = evaluation.student_answer.split(',').map((item) => item.trim());
-			const correctTokens = evaluation.correct_answer.split(',').map((item) => item.trim());
+		const studentAnswers = result?.per_question.map((item) => ({
+			question_id: item.question_id,
+			student_answer: item.student_answer,
+		})) ?? [];
 
-			return (
-				<div className="exam-tf-table exam-result-panel">
-					<div className="exam-tf-head exam-tf-result-head">
-						<p>PHÁT BIỂU</p>
-						<p>BẠN CHỌN</p>
-						<p>ĐÁP ÁN</p>
-					</div>
+		try {
+			await createHistory(token, {
+				intent: 'VIEW_ANALYSIS',
+				exam_id: examId,
+				student_ans: studentAnswers,
+				correct_count: result?.correct_count ?? 0,
+				score: result?.score ?? undefined,
+			});
+		} catch {
+			// Keep exit smooth even if history write fails.
+		} finally {
+			router.push('/documents');
+		}
+	}, [examId, result, router]);
 
-					{statements.map((statement, idx) => {
-						const studentToken = studentTokens[idx] ?? '';
-						const correctToken = correctTokens[idx] ?? '';
-						const isCorrect = studentToken === correctToken;
-
-						return (
-							<div key={`${question.id}-${idx}`} className={`exam-tf-item exam-tf-result-item ${isCorrect ? 'is-correct' : 'is-wrong'}`}>
-								<div className="exam-tf-statement">
-									<span className="exam-tf-label">{getAlphabetLabel(idx)}</span>
-									<p><MathText text={statement} /></p>
-								</div>
-								<p className="exam-tf-answer-chip">{studentToken ? tokenToLabel(studentToken) : 'Bỏ trống'}</p>
-								<p className="exam-tf-answer-chip is-correct">{correctToken ? tokenToLabel(correctToken) : '-'}</p>
-							</div>
-						);
-					})}
-				</div>
-			);
+	const handleAskHint = useCallback(async () => {
+		if (!activeQuestion || !examId || loadingHintQuestionId || hintFeedbacks[activeQuestion.id]) {
+			return;
 		}
 
-		return (
-			<div className="exam-short-wrap exam-result-panel">
-				<div className={`exam-result-short ${evaluation.is_correct ? 'is-correct' : 'is-wrong'}`}>
-					<p><strong>Bạn trả lời:</strong> {evaluation.student_answer || 'Bỏ trống'}</p>
-					<p><strong>Đáp án đúng:</strong> {evaluation.correct_answer}</p>
-				</div>
-			</div>
-		);
-	}
+		const token = getToken();
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		setHintError('');
+		setLoadingHintQuestionId(activeQuestion.id);
+		try {
+			const data = await askHint(token, {
+				exam_id: examId,
+				question_id: activeQuestion.id,
+			});
+			setHintFeedbacks((prev) => ({
+				...prev,
+				[activeQuestion.id]: data.feedback,
+			}));
+		} catch {
+			setHintError('Không thể lấy gợi ý lúc này. Vui lòng thử lại.');
+		} finally {
+			setLoadingHintQuestionId(null);
+		}
+	}, [activeQuestion, examId, hintFeedbacks, loadingHintQuestionId, router]);
+
+	const handleReviewMistake = useCallback(async () => {
+		if (!activeQuestion || !activeEvaluation || loadingReviewQuestionId || reviewFeedbacks[activeQuestion.id]) {
+			return;
+		}
+
+		const token = getToken();
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		setReviewError('');
+		setLoadingReviewQuestionId(activeQuestion.id);
+		try {
+			const data = await reviewMistake(token, {
+				question_id: activeQuestion.id,
+				student_ans: activeEvaluation.student_answer,
+			});
+			setReviewFeedbacks((prev) => ({
+				...prev,
+				[activeQuestion.id]: data.feedback,
+			}));
+		} catch {
+			setReviewError('Không thể lấy giải thích lúc này. Vui lòng thử lại.');
+		} finally {
+			setLoadingReviewQuestionId(null);
+		}
+	}, [activeEvaluation, activeQuestion, loadingReviewQuestionId, reviewFeedbacks, router]);
 
 	if (loading) {
 		return <main className="exam-room">Đang tải kết quả...</main>;
@@ -221,39 +201,49 @@ export default function ExamResultPage() {
 		);
 	}
 
-	const scorePercent = Math.round((result.total_score / Math.max(result.max_score, 1)) * 100);
-
 	return (
 		<main className="exam-room exam-result-room">
 			<header className="exam-header exam-result-header">
-				<div>
+				<div className="exam-header-main">
 					<p className="documents-kicker">Kết quả bài thi</p>
 					<h1 className="documents-title">{exam.subject} - {exam.exam_type}</h1>
-					<p className="text-soft">Tổng điểm: {result.total_score.toFixed(2)} / {result.max_score.toFixed(2)} ({scorePercent}%)</p>
+					<p className="text-soft">
+						{exam.grade ? `Lớp ${exam.grade} | ` : ''}
+						{result.score !== null
+							? `Điểm: ${formatScore(result.score)}`
+							: `Số câu đúng: ${result.correct_count} / ${result.total_questions}`}
+					</p>
 				</div>
-				<Link href="/documents" className="btn-ghost">Về Kho đề</Link>
+				<button type="button" className="btn-ghost" onClick={handleExitResults}>
+					Về Kho đề
+				</button>
 			</header>
-
-			<section className="exam-result-overview">
-				<p><strong>Điểm mạnh:</strong> {result.overall_analysis.strengths.join(' | ') || 'Đang cập nhật'}</p>
-				<p><strong>Điểm yếu:</strong> {result.overall_analysis.weaknesses.join(' | ') || 'Đang cập nhật'}</p>
-				<p><strong>Gợi ý AI:</strong> {result.overall_analysis.general_advice}</p>
-			</section>
 
 			<section className="exam-layout">
 				<article className="exam-main">
 					<div className="exam-question-shell">
-						<div className="exam-question-top">
-							<div className="exam-question-chip">
-								<span>{activeQuestion.index}</span>
-								<strong>CÂU {activeQuestion.index}</strong>
-							</div>
-							<p className={`exam-result-status ${activeEvaluation.is_correct ? 'is-correct' : 'is-wrong'}`}>
-								{activeEvaluation.is_correct ? 'Trả lời đúng' : 'Trả lời sai'}
-							</p>
-						</div>
+						<ExamQuestionHeader
+							questionIndex={activeQuestion.index}
+							showHintButton
+							onAskHint={handleAskHint}
+							isHintLoading={loadingHintQuestionId === activeQuestion.id}
+							hasHint={Boolean(activeHint)}
+							showReviewButton
+							onReviewMistake={handleReviewMistake}
+							isReviewLoading={loadingReviewQuestionId === activeQuestion.id}
+							hasReview={Boolean(activeReview)}
+							statusText={activeEvaluation.is_correct ? 'Trả lời đúng' : 'Trả lời sai'}
+							statusTone={activeEvaluation.is_correct ? 'is-correct' : 'is-wrong'}
+						/>
 
 						<div className="exam-question-content"><MathText text={activeQuestion.question.content} /></div>
+
+						<QuestionFeedbackPanels
+							hintError={hintError}
+							hintFeedback={activeHint}
+							reviewError={reviewError}
+							reviewFeedback={activeReview}
+						/>
 
 						{activeQuestion.question.has_image && activeQuestion.question.image_url ? (
 							<div className="exam-image-wrap">
@@ -261,15 +251,7 @@ export default function ExamResultPage() {
 							</div>
 						) : null}
 
-						{renderResultPanel(activeQuestion, activeEvaluation)}
-
-						<div className="exam-result-explain">
-							<p className="exam-result-explain-title">Giải thích AI</p>
-							<p>{activeEvaluation.reasoning}</p>
-							{activeEvaluation.error_analysis?.remedial ? (
-								<p><strong>Khuyến nghị:</strong> {activeEvaluation.error_analysis.remedial}</p>
-							) : null}
-						</div>
+						<ResultAnswerPanel question={activeQuestion} evaluation={activeEvaluation} />
 					</div>
 
 					<div className="exam-main-actions">
@@ -298,13 +280,17 @@ export default function ExamResultPage() {
 						{flatQuestions.map((item, idx) => {
 							const isActive = idx === activeQuestionIndex;
 							const evaluation = evaluationMap.get(item.id);
-							const isCorrect = evaluation?.is_correct ?? false;
+							const stateClass = !evaluation?.student_answer
+								? 'is-unanswered'
+								: evaluation.is_correct
+									? 'is-correct'
+									: 'is-wrong';
 
 							return (
 								<button
 									key={item.id}
 									type="button"
-									className={`exam-index-btn ${isActive ? 'is-active' : ''} ${isCorrect ? 'is-correct' : 'is-wrong'}`}
+									className={`exam-index-btn ${stateClass} ${isActive ? 'is-active' : ''}`}
 									onClick={() => setActiveQuestionIndex(idx)}
 								>
 									{item.index}

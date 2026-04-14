@@ -75,7 +75,7 @@ export default function RegisterPage() {
 				</aside>
 
 				<div className="auth-form-wrap">
-					<h2>Register</h2>
+					<h2>Đăng ký</h2>
 					<form className="auth-form" onSubmit={onSubmit}>
 						<label className="input-label" htmlFor="name">
 							Họ và Tên

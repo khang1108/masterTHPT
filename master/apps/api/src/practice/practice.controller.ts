@@ -1,17 +1,9 @@
-import {
-	Body,
-	Controller,
-	Post,
-	UploadedFile,
-	UseGuards,
-	UseInterceptors,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { JwtPayload } from 'src/auth/types';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { GenerateOnboardingExamDto } from './dto/generate-onboarding-exam.dto';
-import { GeneratePracticeDto } from './dto/generate-practice.dto';
+import { CheckPracticeQuestionDto } from './dto/check-practice-question.dto';
+import { UpdatePracticeDto } from './dto/update-practice.dto';
 import { PracticeService } from './practice.service';
 
 @Controller('practice')
@@ -19,23 +11,24 @@ import { PracticeService } from './practice.service';
 export class PracticeController {
 	constructor(private readonly practiceService: PracticeService) { }
 
-	@Post('generate')
-	@UseInterceptors(FileInterceptor('file'))
-	// MOCKTEST
-	generate(
-		@CurrentUser() user: JwtPayload,
-		@Body() dto: GeneratePracticeDto,
-		@UploadedFile() file?: Express.Multer.File,
-	) {
-		return this.practiceService.generateExam(user.sub, dto, file);
+	@Get()
+	listUserPracticeExams(@CurrentUser() user: JwtPayload) {
+		return this.practiceService.listUserPracticeExams(user.sub);
 	}
 
-	@Post('onboarding')
-	// MOCKTEST
-	generateOnboardingExam(
+	@Post('check-question')
+	checkQuestion(
 		@CurrentUser() user: JwtPayload,
-		@Body() dto: GenerateOnboardingExamDto,
+		@Body() dto: CheckPracticeQuestionDto,
 	) {
-		return this.practiceService.generateOnboardingExam(user.sub, dto);
+		return this.practiceService.checkQuestion(user.sub, dto);
+	}
+
+	@Post('update')
+	updatePractice(
+		@CurrentUser() user: JwtPayload,
+		@Body() dto: UpdatePracticeDto,
+	) {
+		return this.practiceService.updatePractice(user.sub, dto);
 	}
 }
