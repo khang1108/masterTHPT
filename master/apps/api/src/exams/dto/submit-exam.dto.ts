@@ -89,6 +89,10 @@ class SubmittedExamSnapshotDto {
 
 	@IsOptional()
 	@IsString()
+	source_type?: string;
+
+	@IsOptional()
+	@IsString()
 	source?: string;
 
 	@IsString()

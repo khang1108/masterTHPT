@@ -1,32 +1,38 @@
 'use client';
 
-import { generatePractice } from '@/lib/api';
+import { PracticeExamItem, getPracticeExams, updatePractice } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import { cacheExamDetail } from '@/lib/exam-session';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 
-const SUBJECT_OPTIONS = ['Toán Học'];
-const EXAM_TYPE_OPTIONS = ['THPTQG_2025', 'THPTQG_2024', 'THPTQG_2023', 'LUYEN_TAP'];
-const LOADING_TEXTS = [
-	'AI đang phân tích tài liệu...',
-	'Đang trích xuất câu hỏi và cấu trúc đề...',
-	'Đang tạo đề thi thử từ mock service...',
-];
+function formatPracticePrimaryMetric(item: PracticeExamItem) {
+	return `${item.total_questions} câu • Lớp ${item.grade}`;
+}
 
 export default function PracticePage() {
 	const router = useRouter();
-	const inputRef = useRef<HTMLInputElement | null>(null);
-	const [token, setToken] = useState<string | null>(null);
-	const [file, setFile] = useState<File | null>(null);
-	const [embeddedText, setEmbeddedText] = useState('');
-	const [subject, setSubject] = useState(SUBJECT_OPTIONS[0]);
-	const [examType, setExamType] = useState(EXAM_TYPE_OPTIONS[0]);
-	const [dragging, setDragging] = useState(false);
-	const [loading, setLoading] = useState(false);
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const [items, setItems] = useState<PracticeExamItem[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
-	const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+	const [requestText, setRequestText] = useState('');
+	const [isUpdating, setIsUpdating] = useState(false);
+	const [updateError, setUpdateError] = useState('');
+
+	async function loadPracticeExams(authToken: string) {
+		setLoading(true);
+		setError('');
+
+		try {
+			const data = await getPracticeExams(authToken);
+			setItems(data);
+		} catch {
+			setError('Không thể tải danh sách bài luyện tập. Vui lòng thử lại.');
+		} finally {
+			setLoading(false);
+		}
+	}
 
 	useEffect(() => {
 		const storedToken = getToken();
@@ -35,189 +41,162 @@ export default function PracticePage() {
 			return;
 		}
 
-		setToken(storedToken);
+		loadPracticeExams(storedToken);
 	}, [router]);
 
 	useEffect(() => {
-		if (!loading) {
+		const textarea = textareaRef.current;
+		if (!textarea) {
 			return;
 		}
 
-		const interval = window.setInterval(() => {
-			setLoadingTextIndex((prev) => (prev + 1) % LOADING_TEXTS.length);
-		}, 1400);
+		textarea.style.height = '0px';
+		const nextHeight = Math.min(textarea.scrollHeight, 128);
+		textarea.style.height = `${Math.max(nextHeight, 48)}px`;
+	}, [requestText]);
 
-		return () => {
-			window.clearInterval(interval);
-		};
-	}, [loading]);
-
-	const selectedFileLabel = useMemo(() => {
-		if (!file) {
-			return 'Chưa có file được chọn';
+	async function submitPracticeUpdate() {
+		const trimmedRequest = requestText.trim();
+		if (!trimmedRequest || isUpdating) {
+			return;
 		}
 
-		const inMb = (file.size / 1024 / 1024).toFixed(2);
-		return `${file.name} (${inMb} MB)`;
-	}, [file]);
-
-	function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-		const selected = event.target.files?.[0] ?? null;
-		setFile(selected);
-	}
-
-	function handleDrop(event: DragEvent<HTMLDivElement>) {
-		event.preventDefault();
-		setDragging(false);
-
-		const dropped = event.dataTransfer.files?.[0] ?? null;
-		if (dropped) {
-			setFile(dropped);
-		}
-	}
-
-	function openFileDialog() {
-		inputRef.current?.click();
-	}
-
-	async function onGenerate(event: FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-
+		const token = getToken();
 		if (!token) {
 			router.replace('/login');
 			return;
 		}
 
-		if (!file && embeddedText.trim().length === 0) {
-			setError('Cần chọn file hoặc nhập nội dung text để tạo đề.');
-			return;
-		}
-
-		setError('');
-		setLoading(true);
-		setLoadingTextIndex(0);
+		setUpdateError('');
+		setIsUpdating(true);
 
 		try {
-			const response = await generatePractice(token, {
-				file: file ?? undefined,
-				embedded_text: embeddedText,
-				subject,
-				exam_type: examType,
+			await updatePractice(token, {
+				request: trimmedRequest,
 			});
-
-			cacheExamDetail(response);
-			router.push(`/exams/${response.exam_id}`);
+			await loadPracticeExams(token);
+			setRequestText('');
 		} catch {
-			setError('Không tạo được đề thi. Vui lòng thử lại sau.');
+			setUpdateError('Không thể gửi yêu cầu cập nhật lúc này. Vui lòng thử lại.');
 		} finally {
-			setLoading(false);
+			setIsUpdating(false);
 		}
 	}
 
+	async function onSubmitUpdate(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		await submitPracticeUpdate();
+	}
+
+	function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+		if (event.key !== 'Enter' || event.shiftKey) {
+			return;
+		}
+
+		event.preventDefault();
+
+		if (!requestText.trim() || isUpdating) {
+			return;
+		}
+
+		void submitPracticeUpdate();
+	}
+
 	return (
-		<main className="practice-page">
+		<main className="documents-page practice-page">
 			<header className="documents-header">
 				<div>
 					<p className="documents-kicker">Phòng luyện thi</p>
-					<h1 className="documents-title">Tạo đề thi thử động</h1>
-					<p className="text-soft">Upload file hoặc nhập text để mock AI tạo đề trong vài giây.</p>
+					<h1 className="documents-title">Trang luyện tập</h1>
+					<p className="text-soft">Danh sách đề đang được gán riêng cho tài khoản của bạn, có thể cập nhật lại bằng yêu cầu mới.</p>
 				</div>
 				<Link href="/dashboard" className="btn-ghost">
-					Quay lại Dashboard
+					Quay lại tổng quan
 				</Link>
 			</header>
 
-			<form className="practice-grid" onSubmit={onGenerate}>
-				<section
-					className={`practice-dropzone ${dragging ? 'is-dragging' : ''}`}
-					onDragOver={(event) => {
-						event.preventDefault();
-						setDragging(true);
-					}}
-					onDragLeave={() => setDragging(false)}
-					onDrop={handleDrop}
-				>
-					<input
-						ref={inputRef}
-						type="file"
-						accept=".pdf,.png,.jpg,.jpeg,.webp"
-						onChange={handleFileChange}
-						hidden
-					/>
-					<p className="practice-drop-title">Kéo thả file vào đây</p>
-					<p className="practice-drop-subtitle">Hỗ trợ PDF hoặc ảnh. Bạn cũng có thể nhập text bên dưới.</p>
-					<button type="button" className="btn-ghost" onClick={openFileDialog}>
-						Chọn file
-					</button>
-					<p className="practice-file-name">{selectedFileLabel}</p>
-				</section>
-
-				<section className="practice-form-panel">
-					<label className="input-label" htmlFor="embeddedText">
-						Nội dung bổ sung
-					</label>
-					<textarea
-						id="embeddedText"
-						className="practice-textarea"
-						placeholder="Nhập đề bài mẫu, ghi chú hoặc nội dung để AI dùng làm context..."
-						value={embeddedText}
-						onChange={(event) => setEmbeddedText(event.target.value)}
-					/>
-
-					<div className="split-2">
-						<div>
-							<label className="input-label" htmlFor="subject">
-								Môn học
-							</label>
-							<select
-								id="subject"
-								className="documents-select"
-								value={subject}
-								onChange={(event) => setSubject(event.target.value)}
-							>
-								{SUBJECT_OPTIONS.map((item) => (
-									<option key={item} value={item}>
-										{item}
-									</option>
-								))}
-							</select>
-						</div>
-
-						<div>
-							<label className="input-label" htmlFor="examType">
-								Loại đề
-							</label>
-							<select
-								id="examType"
-								className="documents-select"
-								value={examType}
-								onChange={(event) => setExamType(event.target.value)}
-							>
-								{EXAM_TYPE_OPTIONS.map((item) => (
-									<option key={item} value={item}>
-										{item}
-									</option>
-								))}
-							</select>
-						</div>
-					</div>
-
-					{error ? <p className="documents-error">{error}</p> : null}
-
-					<button className="btn-primary" type="submit" disabled={loading}>
-						{loading ? 'Đang tạo đề...' : 'Tạo bài thi và bắt đầu'}
-					</button>
-				</section>
-			</form>
-
-			{loading ? (
-				<div className="practice-overlay" role="status" aria-live="polite">
-					<div className="practice-overlay-card">
-						<div className="practice-spinner" />
-						<p>{LOADING_TEXTS[loadingTextIndex]}</p>
-					</div>
-				</div>
+			{isUpdating ? (
+				<p className="documents-message practice-status" role="status" aria-live="polite">
+					Đang cập nhật danh sách đề luyện tập...
+				</p>
 			) : null}
+
+			{loading ? <p className="documents-message">Đang tải danh sách luyện tập...</p> : null}
+			{!loading && error ? <p className="documents-error">{error}</p> : null}
+
+			{!loading && !error ? (
+				<>
+					<p className="documents-count">
+						Có {items.length} đề luyện tập dành cho bạn
+					</p>
+					<section className="documents-grid">
+						{items.map((item) => (
+							<article key={item.id} className="documents-card">
+								<div className="documents-card-top">
+									<p className="documents-card-type">{item.exam_type}</p>
+									<h2 className="documents-card-title">
+										{item.subject} - {item.exam_type}
+									</h2>
+									<p className="documents-card-stat">{formatPracticePrimaryMetric(item)}</p>
+									<p className="documents-card-meta">
+										{item.source} • Năm {item.year}
+									</p>
+									<p className="documents-card-submeta">Mã đề: {item.id}</p>
+								</div>
+								<div className="documents-card-bottom">
+									<div className="documents-tags">
+										<span className="documents-tag">Luyện tập cá nhân</span>
+									</div>
+									<div className="documents-card-actions">
+										<Link href={`/exams/${item.id}?intent=practice`} className="btn-primary documents-start-btn">
+											Luyện ngay
+										</Link>
+									</div>
+								</div>
+							</article>
+						))}
+					</section>
+
+					{items.length === 0 ? (
+						<section className="documents-empty" aria-live="polite">
+							Hiện chưa có đề luyện tập nào được gán cho bạn.
+						</section>
+					) : null}
+				</>
+			) : null}
+
+			<div className="practice-composer-dock">
+				<form className="practice-composer-shell" onSubmit={onSubmitUpdate}>
+					<textarea
+						ref={textareaRef}
+						className="practice-composer-input"
+						placeholder="Nhập mong muốn luyện tập của bạn..."
+						value={requestText}
+						onChange={(event) => setRequestText(event.target.value)}
+						onKeyDown={onComposerKeyDown}
+						disabled={isUpdating}
+						rows={1}
+					/>
+					<button
+						type="submit"
+						className="practice-composer-send"
+						disabled={!requestText.trim() || isUpdating}
+						aria-label={isUpdating ? 'Đang gửi yêu cầu cập nhật' : 'Gửi yêu cầu cập nhật'}
+					>
+						{isUpdating ? (
+							<span className="exam-submit-spinner practice-composer-spinner" aria-hidden="true" />
+						) : (
+							<svg viewBox="0 0 24 24" aria-hidden="true" className="practice-composer-icon">
+								<path
+									d="M4 12.75L19.2 4.6c.6-.32 1.3.2 1.16.88l-2.33 11.44a1 1 0 01-.8.79L5.8 19.95c-.69.14-1.22-.58-.88-1.18l2.92-5.17a1 1 0 000-.98L4.92 7.45c-.34-.6.2-1.32.88-1.18"
+									fill="currentColor"
+								/>
+							</svg>
+						)}
+					</button>
+				</form>
+				{updateError ? <p className="documents-error practice-composer-error">{updateError}</p> : null}
+			</div>
 		</main>
 	);
 }

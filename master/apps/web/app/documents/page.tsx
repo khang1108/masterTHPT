@@ -10,6 +10,30 @@ function normalize(value: string) {
 	return value.toLowerCase().trim();
 }
 
+function formatDocumentPrimaryMetric(item: DocumentItem) {
+	const parts: string[] = [];
+
+	if (typeof item.total_questions === 'number') {
+		parts.push(`${item.total_questions} câu`);
+	}
+
+	if (typeof item.duration === 'number') {
+		parts.push(`${item.duration} phút`);
+	}
+
+	return parts.join(' • ') || 'Thông tin đề đang được cập nhật';
+}
+
+function formatDocumentSecondaryMeta(item: DocumentItem) {
+	const parts = [item.source ?? 'Nguồn chưa cập nhật'];
+
+	if (typeof item.year === 'number') {
+		parts.push(`Năm ${item.year}`);
+	}
+
+	return parts.join(' • ');
+}
+
 export default function DocumentsPage() {
 	const router = useRouter();
 	const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -18,6 +42,7 @@ export default function DocumentsPage() {
 	const [searchInput, setSearchInput] = useState('');
 	const [searchValue, setSearchValue] = useState('');
 	const [subjectFilter, setSubjectFilter] = useState('all');
+	const [gradeFilter, setGradeFilter] = useState('all');
 	const [yearFilter, setYearFilter] = useState('all');
 
 	useEffect(() => {
@@ -64,24 +89,34 @@ export default function DocumentsPage() {
 		return ['all', ...new Set(mapped)];
 	}, [documents]);
 
+	const grades = useMemo(() => {
+		const mapped = documents.map((item) => String(item.grade));
+		return ['all', ...Array.from(new Set(mapped)).sort((a, b) => Number(a) - Number(b))];
+	}, [documents]);
+
 	const filteredDocuments = useMemo(() => {
 		const keyword = normalize(searchValue);
 
 		return documents.filter((item) => {
+			const source = item.source ?? '';
+			const title = item.title ?? '';
 			const matchedKeyword =
 				keyword.length === 0 ||
-				normalize(item.title).includes(keyword) ||
+				normalize(title).includes(keyword) ||
 				normalize(item.subject).includes(keyword) ||
-				normalize(item.exam_type).includes(keyword);
+				normalize(item.exam_type).includes(keyword) ||
+				normalize(source).includes(keyword);
 
 			const matchedSubject =
 				subjectFilter === 'all' || item.subject === subjectFilter;
 
+			const matchedGrade = gradeFilter === 'all' || String(item.grade) === gradeFilter;
+
 			const matchedYear = yearFilter === 'all' || String(item.year) === yearFilter;
 
-			return matchedKeyword && matchedSubject && matchedYear;
+			return matchedKeyword && matchedSubject && matchedGrade && matchedYear;
 		});
-	}, [documents, searchValue, subjectFilter, yearFilter]);
+	}, [documents, gradeFilter, searchValue, subjectFilter, yearFilter]);
 
 	return (
 		<main className="documents-page">
@@ -89,24 +124,24 @@ export default function DocumentsPage() {
 				<div>
 					<p className="documents-kicker">Kho đề thi</p>
 					<h1 className="documents-title">Danh sách đề thi</h1>
-					<p className="text-soft">Tìm đề theo môn, năm và từ khóa.</p>
+					<p className="text-soft">Tìm đề theo môn, năm và từ khóa trong kho đề chuẩn đã được crawl.</p>
 				</div>
 				<Link href="/dashboard" className="btn-ghost">
-					Quay lại Dashboard
+					Quay lại tổng quan
 				</Link>
 			</header>
 
 			<section className="documents-toolbar" aria-label="Documents filters">
 				<input
 					type="text"
-					className="input-field"
+					className="input-field documents-search-input"
 					placeholder="Tìm theo tên đề, môn học, exam type..."
 					value={searchInput}
 					onChange={(event) => setSearchInput(event.target.value)}
 				/>
 
 				<select
-					className="documents-select"
+					className="documents-select documents-select-subject"
 					value={subjectFilter}
 					onChange={(event) => setSubjectFilter(event.target.value)}
 				>
@@ -118,7 +153,19 @@ export default function DocumentsPage() {
 				</select>
 
 				<select
-					className="documents-select"
+					className="documents-select documents-select-grade"
+					value={gradeFilter}
+					onChange={(event) => setGradeFilter(event.target.value)}
+				>
+					{grades.map((grade) => (
+						<option key={grade} value={grade}>
+							{grade === 'all' ? 'Tất cả lớp' : `Lớp ${grade}`}
+						</option>
+					))}
+				</select>
+
+				<select
+					className="documents-select documents-select-year"
 					value={yearFilter}
 					onChange={(event) => setYearFilter(event.target.value)}
 				>
@@ -141,18 +188,23 @@ export default function DocumentsPage() {
 					<section className="documents-grid">
 						{filteredDocuments.map((item) => (
 							<article key={item.id} className="documents-card">
-								<p className="documents-card-type">{item.type}</p>
-								<h2 className="documents-card-title">{item.title}</h2>
-								<p className="documents-card-meta">{item.subject}</p>
-								<div className="documents-tags">
-									<span className="documents-tag">Năm {item.year}</span>
-									<span className="documents-tag">{item.exam_type}</span>
-									<span className="documents-tag">ID {item.id}</span>
+								<div className="documents-card-top">
+									<p className="documents-card-type">{item.exam_type}</p>
+									<h2 className="documents-card-title">
+										{item.subject} - {item.exam_type}
+									</h2>
+									<p className="documents-card-stat">{formatDocumentPrimaryMetric(item)}</p>
+									<p className="documents-card-meta">{formatDocumentSecondaryMeta(item)}</p>
 								</div>
-								<div className="documents-card-actions">
-									<Link href={`/exams/${item.id}`} className="btn-primary documents-start-btn">
-										Làm bài
-									</Link>
+								<div className="documents-card-bottom">
+									<div className="documents-tags">
+										<span className="documents-tag">Lớp {item.grade}</span>
+									</div>
+									<div className="documents-card-actions">
+										<Link href={`/exams/${item.id}`} className="btn-primary documents-start-btn">
+											Làm bài
+										</Link>
+									</div>
 								</div>
 							</article>
 						))}

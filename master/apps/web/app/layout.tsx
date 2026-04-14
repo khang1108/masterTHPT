@@ -1,9 +1,9 @@
 import 'katex/dist/katex.min.css';
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import './globals.css';
 
-const jakarta = Plus_Jakarta_Sans({
+const inter = Inter({
 	subsets: ['latin'],
 	display: 'swap',
 });
@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en">
-			<body className={jakarta.className}>{children}</body>
+			<body className={inter.className}>{children}</body>
 		</html>
 	);
 }

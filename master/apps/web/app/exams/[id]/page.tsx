@@ -1,52 +1,40 @@
 'use client';
 
-import { DocumentDetailResponse, ExamQuestion, getDocumentDetail, submitExam } from '@/lib/api';
+import { EditableAnswerPanel } from '@/components/exam/editable-answer-panel';
+import { QuestionFeedbackPanels } from '@/components/exam/feedback-panels';
+import { MathText } from '@/components/exam/math-text';
+import { ExamQuestionHeader } from '@/components/exam/question-header';
+import { FlatQuestion, flattenExamSections } from '@/components/exam/types';
+import {
+	DocumentDetailResponse,
+	PracticeQuestionCheckResponse,
+	askHint,
+	checkPracticeQuestion,
+	createHistory,
+	getDocumentDetail,
+	reviewMistake,
+	submitExam,
+} from '@/lib/api';
 import { getStudent, getToken, updateStudent } from '@/lib/auth';
 import { cacheExamResult, getCachedExamDetail } from '@/lib/exam-session';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Latex from 'react-latex-next';
 
-type FlatQuestion = {
-	id: string;
-	index: number;
-	sectionType: 'multiple_choice' | 'true_false' | 'short_answer';
-	sectionName: string;
-	question: ExamQuestion;
-};
-
-function parseOption(option: string) {
-	const match = option.match(/^([A-Z])\.\s*(.*)$/);
-	if (!match) {
-		return {
-			label: option,
-			text: option,
-		};
+function hasAnswerValue(value?: string) {
+	if (!value) {
+		return false;
 	}
 
-	return {
-		label: match[1],
-		text: match[2],
-	};
-}
-
-function getAlphabetLabel(index: number) {
-	return String.fromCharCode(65 + index);
-}
-
-function MathText({ text }: { text: string }) {
-	return (
-		<span className="exam-math-text">
-			<Latex>{text}</Latex>
-		</span>
-	);
+	return value.split(',').some((token) => token.trim().length > 0);
 }
 
 export default function ExamRoomPage() {
 	const router = useRouter();
 	const params = useParams<{ id: string }>();
+	const searchParams = useSearchParams();
 	const examId = typeof params?.id === 'string' ? params.id : '';
+	const isPracticeMode = searchParams.get('intent') === 'practice';
 
 	const [exam, setExam] = useState<DocumentDetailResponse | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -55,10 +43,48 @@ export default function ExamRoomPage() {
 	const [answers, setAnswers] = useState<Record<string, string>>({});
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [submitError, setSubmitError] = useState('');
+	const [checkError, setCheckError] = useState('');
 	const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+	const [showExitConfirm, setShowExitConfirm] = useState(false);
 	const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+	const [checkingQuestionId, setCheckingQuestionId] = useState<string | null>(null);
+	const [checkedResults, setCheckedResults] = useState<Record<string, PracticeQuestionCheckResponse>>({});
+	const [hintFeedbacks, setHintFeedbacks] = useState<Record<string, string>>({});
+	const [loadingHintQuestionId, setLoadingHintQuestionId] = useState<string | null>(null);
+	const [hintError, setHintError] = useState('');
+	const [reviewFeedbacks, setReviewFeedbacks] = useState<Record<string, string>>({});
+	const [loadingReviewQuestionId, setLoadingReviewQuestionId] = useState<string | null>(null);
+	const [reviewError, setReviewError] = useState('');
 	const examStartAtRef = useRef<number>(Date.now());
 	const autoSubmitTriggeredRef = useRef(false);
+
+	const handlePracticeExit = useCallback(async () => {
+		const token = getToken();
+		if (!token || !examId) {
+			router.push('/practice');
+			return;
+		}
+
+		const studentAnswers = exam?.sections.flatMap((section) =>
+			section.questions.map((question) => ({
+				question_id: question.id,
+				student_answer: answers[question.id] ?? '',
+			})),
+		) ?? [];
+
+		try {
+			await createHistory(token, {
+				intent: 'EXAM_PRACTICE',
+				exam_id: examId,
+				student_ans: studentAnswers,
+				correct_count: Object.values(checkedResults).filter((item) => item.is_correct).length,
+			});
+		} catch {
+			// Keep exit smooth even if history write fails.
+		} finally {
+			router.push('/practice');
+		}
+	}, [answers, exam, examId, router]);
 
 	useEffect(() => {
 		if (!examId) {
@@ -78,6 +104,7 @@ export default function ExamRoomPage() {
 			setLoading(true);
 			setError('');
 			setSubmitError('');
+			setCheckError('');
 
 			try {
 				const cachedExam = getCachedExamDetail(examId);
@@ -105,19 +132,19 @@ export default function ExamRoomPage() {
 			return [];
 		}
 
-		return exam.sections.flatMap((section) =>
-			section.questions.map((question) => ({
-				id: question.id,
-				index: question.question_index,
-				sectionType: section.type,
-				sectionName: section.section_name,
-				question,
-			})),
-		);
+		return flattenExamSections(exam.sections);
 	}, [exam]);
 
 	const activeQuestion = flatQuestions[activeQuestionIndex];
 	const isLowTime = remainingSeconds !== null && remainingSeconds <= 10 * 60;
+	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
+	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
+	const answeredCount = useMemo(
+		() => flatQuestions.filter((question) => hasAnswerValue(answers[question.id])).length,
+		[answers, flatQuestions],
+	);
+	const remainingQuestionCount = Math.max(flatQuestions.length - answeredCount, 0);
+	const progressPercent = flatQuestions.length > 0 ? Math.round((answeredCount / flatQuestions.length) * 100) : 0;
 
 	const formattedRemainingTime = useMemo(() => {
 		if (remainingSeconds === null) {
@@ -163,6 +190,10 @@ export default function ExamRoomPage() {
 	}, [exam]);
 
 	function setAnswer(questionId: string, value: string) {
+		if (isPracticeMode && checkedResults[questionId]) {
+			return;
+		}
+
 		setAnswers((prev) => ({
 			...prev,
 			[questionId]: value,
@@ -210,8 +241,7 @@ export default function ExamRoomPage() {
 						content: question.content,
 						options: question.options,
 						statements: question.statements,
-						correct_answer: question.correct_answer,
-						answer: question.answer ?? question.correct_answer ?? '',
+						answer: question.answer ?? '',
 						student_answer: answers[question.id] ?? '',
 						has_image: question.has_image,
 						image_url: question.image_url,
@@ -235,12 +265,118 @@ export default function ExamRoomPage() {
 		}
 	}, [answers, exam, isSubmitting, router]);
 
+	const handleCheckCurrentQuestion = useCallback(async () => {
+		if (!exam || !activeQuestion || checkingQuestionId) {
+			return;
+		}
+
+		const token = getToken();
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		setCheckError('');
+		setCheckingQuestionId(activeQuestion.id);
+		try {
+			const result = await checkPracticeQuestion(token, {
+				exam_id: exam.exam_id,
+				question_id: activeQuestion.id,
+				student_answer: answers[activeQuestion.id] ?? '',
+			});
+			setCheckedResults((prev) => ({
+				...prev,
+				[activeQuestion.id]: result,
+			}));
+		} catch {
+			setCheckError('Không thể kiểm tra câu này. Vui lòng thử lại.');
+		} finally {
+			setCheckingQuestionId(null);
+		}
+	}, [activeQuestion, answers, checkingQuestionId, exam, router]);
+
+	const handleAskHint = useCallback(async () => {
+		if (!activeQuestion || !exam || loadingHintQuestionId || hintFeedbacks[activeQuestion.id]) {
+			return;
+		}
+
+		const token = getToken();
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		setHintError('');
+		setLoadingHintQuestionId(activeQuestion.id);
+		try {
+			const data = await askHint(token, {
+				exam_id: exam.exam_id,
+				question_id: activeQuestion.id,
+			});
+			setHintFeedbacks((prev) => ({
+				...prev,
+				[activeQuestion.id]: data.feedback,
+			}));
+		} catch {
+			setHintError('Không thể lấy gợi ý lúc này. Vui lòng thử lại.');
+		} finally {
+			setLoadingHintQuestionId(null);
+		}
+	}, [activeQuestion, exam, hintFeedbacks, loadingHintQuestionId, router]);
+
+	const handleReviewMistake = useCallback(async () => {
+		if (!activeQuestion || loadingReviewQuestionId || reviewFeedbacks[activeQuestion.id]) {
+			return;
+		}
+
+		const checkedCurrent = checkedResults[activeQuestion.id];
+		if (!checkedCurrent) {
+			return;
+		}
+
+		const token = getToken();
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		setReviewError('');
+		setLoadingReviewQuestionId(activeQuestion.id);
+		try {
+			const data = await reviewMistake(token, {
+				question_id: activeQuestion.id,
+				student_ans: checkedCurrent.student_answer,
+			});
+			setReviewFeedbacks((prev) => ({
+				...prev,
+				[activeQuestion.id]: data.feedback,
+			}));
+		} catch {
+			setReviewError('Không thể lấy giải thích lúc này. Vui lòng thử lại.');
+		} finally {
+			setLoadingReviewQuestionId(null);
+		}
+	}, [activeQuestion, checkedResults, loadingReviewQuestionId, reviewFeedbacks, router]);
+
 	function openSubmitConfirm() {
 		if (isSubmitting) {
 			return;
 		}
 
 		setShowSubmitConfirm(true);
+	}
+
+	function openExitConfirm() {
+		if (isSubmitting) {
+			return;
+		}
+
+		setShowExitConfirm(true);
+	}
+
+	function handleExitExamRoom() {
+		setShowExitConfirm(false);
+		router.push('/documents');
 	}
 
 	useEffect(() => {
@@ -256,93 +392,6 @@ export default function ExamRoomPage() {
 		handleSubmitExam();
 	}, [exam, handleSubmitExam, isSubmitting, remainingSeconds]);
 
-	function renderAnswerPanel(item: FlatQuestion) {
-		if (item.sectionType === 'multiple_choice') {
-			return (
-				<div className="exam-mc-grid">
-					{item.question.options?.map((option) => {
-						const parsed = parseOption(option);
-						const isSelected = answers[item.id] === parsed.label;
-
-						return (
-							<button
-								key={`${item.id}-${parsed.label}`}
-								type="button"
-								className={`exam-mc-option ${isSelected ? 'is-selected' : ''}`}
-								onClick={() => setAnswer(item.id, parsed.label)}
-							>
-								<div className="exam-mc-option-main">
-									<span className="exam-mc-badge">{parsed.label}</span>
-									<MathText text={parsed.text} />
-								</div>
-								<span className="exam-mc-tail">{parsed.label}</span>
-							</button>
-						);
-					})}
-				</div>
-			);
-		}
-
-		if (item.sectionType === 'true_false') {
-			const statements = item.question.statements ?? [];
-			const tokens = (answers[item.id] ?? '').split(',');
-
-			return (
-				<div className="exam-tf-table">
-					<div className="exam-tf-head">
-						<p>PHÁT BIỂU</p>
-						<p>ĐÚNG</p>
-						<p>SAI</p>
-					</div>
-
-					{statements.map((statement, idx) => {
-						const current = tokens[idx] ?? '';
-
-						function updateToken(next: 'T' | 'F') {
-							const clone = [...tokens];
-							clone[idx] = next;
-							setAnswer(item.id, clone.join(','));
-						}
-
-						return (
-							<div key={`${item.id}-${idx}`} className="exam-tf-item">
-								<div className="exam-tf-statement">
-									<span className="exam-tf-label">{getAlphabetLabel(idx)}</span>
-									<p><MathText text={statement} /></p>
-								</div>
-
-								<button
-									type="button"
-									className={`exam-tf-radio ${current === 'T' ? 'is-selected' : ''}`}
-									onClick={() => updateToken('T')}
-									aria-label={`Chọn đúng cho phát biểu ${getAlphabetLabel(idx)}`}
-								/>
-								<button
-									type="button"
-									className={`exam-tf-radio ${current === 'F' ? 'is-selected' : ''}`}
-									onClick={() => updateToken('F')}
-									aria-label={`Chọn sai cho phát biểu ${getAlphabetLabel(idx)}`}
-								/>
-							</div>
-						);
-					})}
-				</div>
-			);
-		}
-
-		return (
-			<div className="exam-short-wrap">
-				<input
-					type="text"
-					className="exam-short-input"
-					placeholder=""
-					value={answers[item.id] ?? ''}
-					onChange={(event) => setAnswer(item.id, event.target.value)}
-				/>
-			</div>
-		);
-	}
-
 	if (loading) {
 		return <main className="exam-room">Đang tải đề thi...</main>;
 	}
@@ -351,38 +400,76 @@ export default function ExamRoomPage() {
 		return (
 			<main className="exam-room">
 				<p className="documents-error">{error || 'Không có dữ liệu đề thi.'}</p>
-				<Link href="/documents" className="btn-ghost">
-					Quay lại Kho đề
-				</Link>
+				{isPracticeMode ? (
+					<button type="button" className="btn-ghost" onClick={handlePracticeExit}>
+						Quay lại
+					</button>
+				) : (
+					<Link href="/documents" className="btn-ghost">
+						Quay lại
+					</Link>
+				)}
 			</main>
 		);
 	}
 
+	const checkedCurrentQuestion = checkedResults[activeQuestion.id];
+	const isCurrentQuestionLocked = isPracticeMode && Boolean(checkedCurrentQuestion);
+
 	return (
 		<main className="exam-room">
 			<header className="exam-header">
-				<div>
+				<div className="exam-header-main">
 					<p className="documents-kicker">Phòng thi</p>
 					<h1 className="documents-title">{exam.subject} - {exam.exam_type}</h1>
-					<p className="text-soft">{exam.total_questions} câu | {exam.duration_minutes} phút</p>
+					<p className="text-soft">
+						{exam.grade ? `Lớp ${exam.grade} | ` : ''}
+						{exam.total_questions} câu | {exam.duration_minutes} phút
+					</p>
+					<div className="exam-progress-strip" aria-label="Tiến độ làm bài">
+						<div className="exam-progress-copy">
+							<strong>Đã làm {answeredCount}/{flatQuestions.length} câu</strong>
+							<span>Còn {remainingQuestionCount} câu • {progressPercent}%</span>
+						</div>
+						<div className="exam-progress-bar" aria-hidden="true">
+							<span style={{ width: `${progressPercent}%` }} />
+						</div>
+					</div>
 				</div>
-				<Link href="/documents" className="btn-ghost">Thoát phòng thi</Link>
+				{isPracticeMode ? (
+					<button type="button" className="btn-ghost" onClick={handlePracticeExit}>
+						Thoát luyện tập
+					</button>
+				) : (
+					<button type="button" className="btn-danger exam-exit-btn" onClick={openExitConfirm}>
+						Thoát phòng thi
+					</button>
+				)}
 			</header>
 
 			<section className="exam-layout">
 				<article className="exam-main">
 					<div className="exam-question-shell">
-						<div className="exam-question-top">
-							<div className="exam-question-chip">
-								<span>{activeQuestion.index}</span>
-								<strong>CÂU {activeQuestion.index}</strong>
-							</div>
-							<button type="button" className="exam-bookmark-btn">
-								Đánh dấu để xem lại
-							</button>
-						</div>
+						<ExamQuestionHeader
+							questionIndex={activeQuestion.index}
+							showHintButton={isPracticeMode}
+							onAskHint={handleAskHint}
+							isHintLoading={loadingHintQuestionId === activeQuestion.id}
+							hasHint={Boolean(activeHint)}
+							showReviewButton={isPracticeMode && Boolean(checkedCurrentQuestion)}
+							onReviewMistake={handleReviewMistake}
+							isReviewLoading={loadingReviewQuestionId === activeQuestion.id}
+							hasReview={Boolean(activeReview)}
+						/>
 
 						<div className="exam-question-content"><MathText text={activeQuestion.question.content} /></div>
+
+						<QuestionFeedbackPanels
+							hintError={hintError}
+							hintFeedback={activeHint}
+							reviewError={reviewError}
+							reviewFeedback={activeReview}
+						/>
 
 						{activeQuestion.question.has_image && activeQuestion.question.image_url ? (
 							<div className="exam-image-wrap">
@@ -390,7 +477,23 @@ export default function ExamRoomPage() {
 							</div>
 						) : null}
 
-						{renderAnswerPanel(activeQuestion)}
+						<EditableAnswerPanel
+							question={activeQuestion}
+							answer={answers[activeQuestion.id] ?? ''}
+							onChange={(value) => setAnswer(activeQuestion.id, value)}
+							disabled={isCurrentQuestionLocked}
+						/>
+
+						{isPracticeMode && checkedCurrentQuestion ? (
+							<div className={`exam-result-short ${checkedCurrentQuestion.is_correct ? 'is-correct' : 'is-wrong'}`}>
+								<p>
+									<strong>Kết quả:</strong> {checkedCurrentQuestion.is_correct ? 'Đúng' : 'Sai'}
+								</p>
+								<p>
+									<strong>Đáp án đúng:</strong> {checkedCurrentQuestion.correct_answer || 'Chưa có'}
+								</p>
+							</div>
+						) : null}
 					</div>
 
 					<div className="exam-main-actions">
@@ -424,12 +527,18 @@ export default function ExamRoomPage() {
 						{flatQuestions.map((item, idx) => {
 							const active = idx === activeQuestionIndex;
 							const answered = Boolean(answers[item.id]);
+							const checkedResult = checkedResults[item.id];
+							const stateClass = checkedResult
+								? (checkedResult.is_correct ? 'is-correct' : 'is-wrong')
+								: answered
+									? 'is-answered'
+									: 'is-unanswered';
 
 							return (
 								<button
 									key={item.id}
 									type="button"
-									className={`exam-index-btn ${active ? 'is-active' : ''} ${answered ? 'is-answered' : ''}`}
+									className={`exam-index-btn ${stateClass} ${active ? 'is-active' : ''}`}
 									onClick={() => setActiveQuestionIndex(idx)}
 								>
 									{item.index}
@@ -439,27 +548,52 @@ export default function ExamRoomPage() {
 					</div>
 
 					<div className="exam-submit-wrap">
-						<button
-							type="button"
-							className="exam-submit-btn"
-							onClick={openSubmitConfirm}
-							disabled={isSubmitting}
-						>
-							{isSubmitting ? (
-								<>
-									<span className="exam-submit-spinner" aria-hidden="true" />
-									Đang nộp bài...
-								</>
-							) : (
-								'Nộp bài'
-							)}
-						</button>
-						{submitError ? <p className="documents-error exam-submit-error">{submitError}</p> : null}
+						{isPracticeMode ? (
+							<>
+								<button
+									type="button"
+									className="exam-submit-btn"
+									onClick={handleCheckCurrentQuestion}
+									disabled={checkingQuestionId === activeQuestion.id || isCurrentQuestionLocked}
+								>
+									{checkingQuestionId === activeQuestion.id ? (
+										<>
+											<span className="exam-submit-spinner" aria-hidden="true" />
+											Đang check...
+										</>
+									) : isCurrentQuestionLocked ? (
+										'Đã check câu này'
+									) : (
+										'Check câu này'
+									)}
+								</button>
+								{checkError ? <p className="documents-error exam-submit-error">{checkError}</p> : null}
+							</>
+						) : (
+							<>
+								<button
+									type="button"
+									className="exam-submit-btn"
+									onClick={openSubmitConfirm}
+									disabled={isSubmitting}
+								>
+									{isSubmitting ? (
+										<>
+											<span className="exam-submit-spinner" aria-hidden="true" />
+											Đang nộp bài...
+										</>
+									) : (
+										'Nộp bài'
+									)}
+								</button>
+								{submitError ? <p className="documents-error exam-submit-error">{submitError}</p> : null}
+							</>
+						)}
 					</div>
 				</aside>
 			</section>
 
-			{showSubmitConfirm ? (
+			{!isPracticeMode && showSubmitConfirm ? (
 				<div className="exam-submit-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="submit-confirm-title">
 					<div className="exam-submit-confirm-card">
 						<h3 id="submit-confirm-title">Xác nhận nộp bài?</h3>
@@ -482,6 +616,36 @@ export default function ExamRoomPage() {
 								disabled={isSubmitting}
 							>
 								{isSubmitting ? 'Đang nộp bài...' : 'Xác nhận nộp bài'}
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
+
+			{!isPracticeMode && showExitConfirm ? (
+				<div className="exam-submit-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="exit-confirm-title">
+					<div className="exam-submit-confirm-card exam-exit-confirm-card">
+						<p className="exam-exit-confirm-kicker">Cảnh báo</p>
+						<h3 id="exit-confirm-title">Thoát phòng thi?</h3>
+						<p>
+							Nếu thoát phòng thi lúc này, bài làm hiện tại sẽ không được lưu lại.
+						</p>
+						<div className="exam-submit-confirm-actions">
+							<button
+								type="button"
+								className="btn-ghost"
+								onClick={() => setShowExitConfirm(false)}
+								disabled={isSubmitting}
+							>
+								Ở lại làm bài
+							</button>
+							<button
+								type="button"
+								className="btn-danger"
+								onClick={handleExitExamRoom}
+								disabled={isSubmitting}
+							>
+								Thoát và bỏ bài làm
 							</button>
 						</div>
 					</div>

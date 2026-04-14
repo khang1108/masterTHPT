@@ -11,7 +11,6 @@ export class ExamsController {
 	constructor(private readonly examsService: ExamsService) { }
 
 	@Post('submit')
-	// MOCKTEST
 	submit(@CurrentUser() user: JwtPayload, @Body() dto: SubmitExamDto) {
 		return this.examsService.submit({
 			...dto,

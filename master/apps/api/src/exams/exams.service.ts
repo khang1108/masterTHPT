@@ -1,39 +1,54 @@
 import { Injectable } from '@nestjs/common';
-import { ExternalApiService } from 'src/integrations/external-api.service';
-import { MockAiService } from 'src/mocks/mock-ai.service';
+import { buildEvaluationFromAnswerMap } from 'src/common/exams/evaluation';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SubmitExamDto } from './dto/submit-exam.dto';
 
 @Injectable()
 export class ExamsService {
 	constructor(
-		private readonly mockAiService: MockAiService,
 		private readonly prisma: PrismaService,
-		private readonly externalApiService: ExternalApiService,
 	) { }
 
 	async submit(dto: SubmitExamDto) {
-		const aiPayload = {
-			exam_id: dto.full_exam.exam_id,
-			source: dto.full_exam.source ?? 'unknown',
-			subject: dto.full_exam.subject,
-			exam_type: dto.full_exam.exam_type,
-			total_questions: dto.full_exam.total_questions,
-			sections: dto.full_exam.sections,
-			uuid: dto.student_id,
-		};
-
-		// REAL API
-		const externalEvaluation = await this.externalApiService.evaluateExam({
-			...aiPayload,
+		const exam = await this.prisma.exam.findUnique({
+			where: {
+				id: dto.exam_id,
+			},
+			select: {
+				generated: true,
+			},
 		});
-		const evaluation =
-			externalEvaluation ??
-			(this.externalApiService.isMockEnabled() ? this.mockAiService.evaluate(dto) : null);
-
-		if (!evaluation) {
-			throw new Error('External evaluate API returned no data while USE_MOCK_SERVICES=false');
-		}
+		const submittedQuestionIds = dto.full_exam.sections.flatMap((section) =>
+			section.questions.map((question) => question.id),
+		);
+		const questions = submittedQuestionIds.length === 0
+			? []
+			: await this.prisma.question.findMany({
+				where: {
+					id: {
+						in: submittedQuestionIds,
+					},
+				},
+				select: {
+					id: true,
+					type: true,
+					correct_answer: true,
+				},
+			});
+		const answerMap = new Map(
+			questions.map((question) => [question.id, question]),
+		);
+		const submittedAnswerMap = new Map(
+			dto.full_exam.sections.flatMap((section) =>
+				section.questions.map((question) => [question.id, question.student_answer ?? ''] as const),
+			),
+		);
+		const orderedQuestions = submittedQuestionIds.map((questionId) => ({
+			id: questionId,
+			type: answerMap.get(questionId)?.type ?? null,
+			correct_answer: answerMap.get(questionId)?.correct_answer ?? '',
+		}));
+		const evaluation = buildEvaluationFromAnswerMap(orderedQuestions, submittedAnswerMap);
 
 		await this.prisma.student.updateMany({
 			where: {
@@ -45,6 +60,9 @@ export class ExamsService {
 			},
 		});
 
-		return evaluation;
+		return {
+			...evaluation,
+			score: exam?.generated ? null : evaluation.score,
+		};
 	}
 }

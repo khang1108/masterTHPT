@@ -19,3 +19,62 @@ model Student {
 
   @@map("students")
 }
+
+model Exam {
+  mongo_id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  id               String   @unique
+  subject          String
+  grade            Int
+  exam_type        String
+  year             Int
+  source           String
+  generated        Boolean  @default(false)
+  questions     String[]
+  total_questions  Int
+  duration         Int
+  metadata         Json?
+  created_at       String?
+
+  @@map("exams")
+}
+
+model Question {
+  mongo_id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  id             String   @unique
+  question_index Int
+  type           String
+  content        String
+  content_latex  String?
+  options        String[]
+  statements     String[]
+  correct_answer String?
+  has_image      Boolean  @default(false)
+  image_url      String?
+  difficulty_a   Int?
+  difficulty_b   Int?
+  topic_tags     String[]
+  max_score      Float?
+
+  @@map("questions")
+}
+
+model Practice {
+  mongo_id   String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id    String   @unique
+  exam_ids   String[]
+
+  @@map("practices")
+}
+
+model History {
+  mongo_id   String   @id @default(auto()) @map("_id") @db.ObjectId
+  intent     String
+  user_id    String
+  exam_id    String
+  student_ans Json
+  correct_count Int     @default(0)
+  score      Float?
+  created_at DateTime @default(now())
+
+  @@map("histories")
+}
