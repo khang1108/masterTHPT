@@ -30,27 +30,46 @@ def build_pipeline_graph(
     async def teacher_finalize_node(state: dict) -> dict:
         outputs = state.get("debate_outputs", [])
         request = state.get("request")
+        is_ask_hint = bool(request and request.intent == Intent.ASK_HINT)
 
         lines = []
         for out in outputs:
             dr = out.draft_result
             if dr is None:
                 continue
-            lines.append(
-                f"Câu {out.student_ans.question_id}:\n"
-                f"-{'Đúng' if dr.is_correct else 'Sai'}" + (f" ({dr.score} điểm)\n" if dr.score is not None else "\n") + 
-                f"-confidence={dr.confidence:.2f}\n" +
-                f"-{dr.feedback}\n\n" if dr.feedback else "\n\n"
-            )
+            if is_ask_hint:
+                if dr.feedback:
+                    lines.append(f"Câu {out.student_ans.question_id}: {dr.feedback}")
+            else:
+                line = (
+                    f"Câu {out.student_ans.question_id}:\n"
+                    f"- {'Đúng' if dr.is_correct else 'Sai'}"
+                    + (f" ({dr.score} điểm)" if dr.score is not None else "")
+                    + f"\n- confidence={dr.confidence:.2f}"
+                )
+                if dr.feedback:
+                    line += f"\n- {dr.feedback}"
+                lines.append(line)
 
-        feedback = "\n".join(lines) if lines else "Teacher đã hoàn tất chấm bài."
+        if is_ask_hint:
+            feedback = (
+                "\n".join(lines)
+                if lines
+                else "Teacher đã nhận yêu cầu gợi ý. Hãy cung cấp đáp án hiện tại để nhận gợi ý chi tiết hơn."
+            )
+        else:
+            feedback = "\n\n".join(lines) if lines else "Teacher đã hoàn tất chấm bài."
+
         response = MessageResponse(
             student_id=request.student_id if request else "",
             exam_id=state.get("exam_id") or (request.exam_id if request else None),
             question_id=request.question_id if request else None,
             feedback=feedback,
         )
-        print("Teacher confidence passed threshold; skip verifier/debate")
+        if is_ask_hint:
+            print("ASK_HINT: skip verifier/debate and return Teacher response")
+        else:
+            print("Teacher confidence passed threshold; skip verifier/debate")
         return {**state, "response": response, "phase": "finalize", "_pipeline_verdict": "agree"}
 
     async def teacher_debate_node(state: dict) -> dict:
@@ -78,6 +97,10 @@ def build_pipeline_graph(
         return "teacher_debate"
 
     def route_after_teacher_draft(state: dict) -> str:
+        request = state.get("request")
+        if request and request.intent == Intent.ASK_HINT:
+            return "teacher_finalize"
+
         outputs = state.get("debate_outputs", [])
         threshold = float(state.get("_teacher_confidence_threshold", 0.9))
         if not outputs:
@@ -134,6 +157,9 @@ async def run_grading_pipeline(
     
     teacher = TeacherAgent()
     await teacher.setup()
+
+    if request.intent == Intent.ASK_HINT:
+        return await teacher.run_hint(request=request, exam_id=exam_id)
     
     verifier = VerifierAgent()
     await verifier.setup()
@@ -163,7 +189,21 @@ async def run_grading_pipeline(
 
 
 async def demo():
-    request = MessageRequest(
+    # Example 1: ASK_HINT -> Teacher trả MessageResponse trực tiếp, bỏ qua Verifier/Debate
+    ask_hint_request = MessageRequest(
+        intent=Intent.ASK_HINT,
+        student_id="69dca9498a492d985a43f808",
+        question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
+        student_answers=[
+            StudentAnswer(
+                question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
+                student_answer="B"
+            )
+        ]
+    )
+
+    # Example 2: REVIEW_MISTAKE -> flow đầy đủ Teacher/Verifier (nếu cần)
+    review_request = MessageRequest(
         intent=Intent.REVIEW_MISTAKE,
         student_id="69dca9498a492d985a43f808",
         question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
@@ -177,19 +217,27 @@ async def demo():
     
     print("GRADING PIPELINE DEMO")
     print("=" * 80)
-    print(f"Student: {request.student_id}")
-    print(f"Question: {request.question_id}")
-    print(f"Answer: {request.student_answers[0].student_answer}")
+    print("Case 1: ASK_HINT")
+    print(f"Student: {ask_hint_request.student_id}")
+    print(f"Question: {ask_hint_request.question_id}")
+    print(f"Answer: {ask_hint_request.student_answers[0].student_answer}")
     print()
     
     try:
-        response = await run_grading_pipeline(request, max_rounds=3)
+        response = await run_grading_pipeline(ask_hint_request, max_rounds=3)
         
         print("RESULT")
         print("=" * 80)
         print(f"Student ID: {response.student_id}")
         print(f"Exam ID: {response.exam_id}")
         print(f"Feedback:\n{response.feedback}")
+
+        print("\n" + "=" * 80)
+        print("Case 2: REVIEW_MISTAKE")
+        response2 = await run_grading_pipeline(review_request, max_rounds=3)
+        print(f"Student ID: {response2.student_id}")
+        print(f"Exam ID: {response2.exam_id}")
+        print(f"Feedback:\n{response2.feedback}")
         
     except Exception as e:
         print(f"ERROR: {e}")
