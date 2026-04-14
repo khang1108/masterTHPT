@@ -1,271 +1,273 @@
-from __future__ import annotations
-
-from typing import Optional, Literal
-from typing_extensions import TypedDict
+from typing import Any, Awaitable, Callable, List, Optional, Literal
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
-from master.agents.common.message import (
-    StudentAnswer, Intent, MessageRequest, ExamQuestion,
-)
-from master.agents.common import tools
+from master.agents.common.message import StudentAnswer
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
 
 import asyncio
+import os
 
 load_dotenv(override=True)
 
 
-# ── Internal models ────────────────────────────────────────────────────────────
+# ── Pydantic Models ────────────────────────────────────────────────────────────
 
 class DraftResult(BaseModel):
-    """Kết quả Teacher tạo ra ở vòng đầu, tuỳ intent."""
-    question_id: Optional[str] = None
-    # GRADE / VIEW_ANALYSIS
-    is_correct: Optional[bool] = None
+    """Kết quả chấm nháp của Teacher."""
+    question_id: str
+    is_correct: bool
     score: Optional[float] = None
-    # ASK_HINT / REVIEW_MISTAKE
-    response_text: Optional[str] = None
-    # PREPROCESS
-    parsed_questions: Optional[list[ExamQuestion]] = None
-    # Mọi intent
-    reasoning: str = ""
-    feedback: str = ""        # Gửi cho Verifier
+    reasoning: str                      # Lập luận chấm điểm
+    feedback: str                       # Nhận xét gửi cho Verifier
 
 
 class DebateResult(BaseModel):
-    """Phản biện của Teacher sau khi nghe Verifier."""
-    question_id: Optional[str] = None
-    teacher_rebuttal: str
-    final_response: str        # Kết quả cuối: text, JSON, ...
+    """Kết quả tranh luận sau khi nhận feedback từ Verifier."""
+    question_id: str
+    teacher_rebuttal: str               # Phản biện hoặc đồng ý với Verifier
+    final_feedback: str                 # Nhận xét tổng hợp cuối
     final_score: Optional[float] = None
-    accepted_verifier: bool = False
+    accepted_verifier: bool             # Có chấp nhận ý kiến Verifier không
 
 
 class Output(BaseModel):
-    """Đơn vị xử lý xuyên suốt pipeline — 1 câu hỏi hoặc 1 đơn vị xử lý."""
-    student_ans: Optional[StudentAnswer] = None   # None với PREPROCESS / ASK_HINT
+    """Unit xử lý cho một câu hỏi xuyên suốt cả pipeline."""
+    student_ans: StudentAnswer          # KHÔNG thay đổi
     draft_result: Optional[DraftResult] = None
-    verifier_feedback: list[str] = Field(default_factory=list)
+    verifier_feedback: List[str] = Field(default_factory=list)
     debate_result: Optional[DebateResult] = None
 
 
-# ── AgentState ─────────────────────────────────────────────────────────────────
+# ── Teacher Agent ──────────────────────────────────────────────────────────────
 
-class AgentState(TypedDict):
-    outputs: list[Output]
-    round: int
-    max_round: int
-    phase: Literal["draft", "debate"]
-    intent: Intent
-    exam_id: Optional[str]
-    student_id: Optional[str]
-    raw_request: MessageRequest
-
-
-# Backward-compat alias cho VerifierAgent
-DebateState = AgentState
-
-
-# ── TeacherAgent ───────────────────────────────────────────────────────────────
-
-class TeacherAgent(BaseAgent, ToolsRegistry):
+class TeacherAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="teacher")
-        self.memory = MemorySaver()
-        self.graph  = None
+        self._llm        = None
+        self._llm_draft  = None         # structured output → DraftResult
+        self._llm_debate = None         # structured output → DebateResult
+        self.memory      = MemorySaver()
+        self.graph       = None
+        self._event_callback: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None
+
+    # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup(self):
-        await self.setup_tools(LLMClient.chat_model())
+        self.logger.agent_node("Teacher setup started")
+        llm = LLMClient.chat_model(
+            provider="openai_compatible",
+            base_url=os.getenv("FPT_BASE_URL"),
+            api_key=os.getenv("FPT_API_KEY"),
+            model="gemma-4-31B-it",
+            temperature=0.7,
+            max_tokens=2000  # Cân bằng chi phí & timeout
+        )
+        await self.setup_tools(llm)
+        self._llm_draft  = self._llm.with_structured_output(DraftResult)
+        self._llm_debate = self._llm.with_structured_output(DebateResult)
         self.graph = self._build_graph()
+        self.logger.agent_node("Teacher setup completed")
 
     def _build_graph(self):
-        builder = StateGraph(AgentState)
+        builder = StateGraph(dict)
+
         builder.add_node("draft",  self._draft_batch)
         builder.add_node("debate", self._debate_batch)
+        builder.add_node("tools",  self.get_tool_node())
+
+        # Routing: phase quyết định node nào chạy
         builder.add_conditional_edges(
             START,
             lambda s: s["phase"],
             {"draft": "draft", "debate": "debate"},
         )
-        builder.add_edge("draft",  END)
-        builder.add_edge("debate", END)
+        builder.add_conditional_edges(
+            "draft",
+            self._route_after_teacher_phase,
+            {"tools": "tools", "done": END},
+        )
+        builder.add_conditional_edges(
+            "debate",
+            self._route_after_teacher_phase,
+            {"tools": "tools", "done": END},
+        )
+        builder.add_edge("tools", END)
+
         return builder.compile(checkpointer=self.memory)
 
-    # ── Build initial AgentState from MessageRequest ───────────────────────────
+    def _route_after_teacher_phase(self, state: dict[str, Any]) -> str:
+        if state.get("enable_teacher_tools_node", False):
+            return "tools"
+        return "done"
 
-    def _build_state(self, request: MessageRequest, max_round: int) -> AgentState:
-        """
-        Mọi intent đều được đưa vào 1 state duy nhất.
-        - ASK_HINT / PREPROCESS: 1 Output duy nhất, không có student_ans.
-        - REVIEW_MISTAKE / VIEW_ANALYSIS / EXAM_PRACTICE: 1 Output mỗi StudentAnswer.
-        """
-        match request.intent:
-            case Intent.ASK_HINT:
-                outputs = [Output()]          # 1 đơn vị, không có student_ans
-
-            case Intent.PREPROCESS:
-                outputs = [Output()]          # 1 đơn vị cho cả block câu hỏi
-
-            case _:
-                # REVIEW_MISTAKE, VIEW_ANALYSIS, EXAM_PRACTICE
-                outputs = [
-                    Output(student_ans=sa)
-                    for sa in (request.student_answers or [])
-                ]
-
-        return AgentState(
-            outputs     = outputs,
-            round       = 0,
-            max_round   = max_round,
-            phase       = "draft",
-            intent      = request.intent,
-            exam_id     = request.exam_id,
-            student_id  = request.student_id,
-            raw_request = request,
-        )
+    async def _emit_event(self, event: dict[str, Any]):
+        if self._event_callback is None:
+            return
+        result = self._event_callback(event)
+        if asyncio.iscoroutine(result):
+            await result
 
     # ── Draft Phase ────────────────────────────────────────────────────────────
 
-    async def _draft_single(self, output: Output, state: AgentState) -> Output:
-        req    = state["raw_request"]
-        intent = state["intent"]
+    async def _draft_single(self, output: Output) -> Output:
+        """Chấm nháp 1 câu hỏi."""
+        sa = output.student_ans
+        self.logger.agent_node(f"Teacher draft start question_id={sa.question_id}")
+        question = await self.get_data(
+            "masterthpt", "questions", query={"id": sa.question_id}
+        )
 
-        match intent:
-            case Intent.ASK_HINT:
-                question = await tools.get_data(
-                    "masterthpt", "questions", query={"id": req.question_id}
-                )
-                prompt = f"""Bạn là giáo viên tạo gợi ý cho học sinh.
-Câu hỏi    : {question}
-Thắc mắc HS: {req.student_message or "Không có"}
+        prompt = f"""Giáo viên: Chấm nháp 1 câu hỏi
+            Câu hỏi   : {question}
+            Trả lời HS: {sa.student_answer}
+            Đáp án    : {sa.question_id}
 
-Tạo gợi ý giúp học sinh tự tìm ra đáp án, KHÔNG tiết lộ đáp án trực tiếp.
-Ghi rõ reasoning (lý luận) và feedback (nhận xét gửi Verifier)."""
-                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
-                result.question_id = req.question_id
+            Hãy chấm điểm, lập luận rõ ràng và đưa ra nhận xét để gửi cho Verifier kiểm tra lại.
+            question_id phải là: {sa.question_id}"""
 
-            case Intent.REVIEW_MISTAKE:
-                sa       = output.student_ans
-                question = await tools.get_data(
-                    "masterthpt", "questions", query={"id": sa.question_id}
-                )
-                prompt = f"""Bạn là giáo viên phân tích lỗi sai của học sinh.
-Câu hỏi    : {question}
-Trả lời HS : {sa.student_answer}
-
-Phân tích nguyên nhân sai, phân loại lỗi, đưa ra hướng khắc phục.
-Ghi rõ reasoning và feedback (nhận xét gửi Verifier).
-question_id phải là: {sa.question_id}"""
-                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
-                result.question_id = sa.question_id
-
-            case Intent.PREPROCESS:
-                prompt = f"""Bạn là giáo viên parse đề thi thành cấu trúc ExamQuestion.
-Nội dung thô: {req.parser_output}
-
-Parse thành list ExamQuestion chuẩn JSON, ghi vào parsed_questions.
-Ghi rõ reasoning và feedback (nhận xét gửi Verifier)."""
-                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
-
-            case _:
-                # VIEW_ANALYSIS / EXAM_PRACTICE — chấm điểm câu hỏi
-                sa       = output.student_ans
-                question = await tools.get_data(
-                    "masterthpt", "questions", query={"id": sa.question_id}
-                )
-                prompt = f"""Bạn là giáo viên chấm thi.
-Câu hỏi    : {question}
-Trả lời HS : {sa.student_answer}
-
-Chấm điểm, đưa ra nhận xét để Verifier kiểm tra.
-question_id phải là: {sa.question_id}"""
-                result: DraftResult = await self._run_with_tools(prompt, DraftResult)
-                result.question_id = sa.question_id
-
+        result: DraftResult = await asyncio.to_thread(
+            self._llm_draft.invoke, prompt
+        )
+        result.question_id = sa.question_id
+        self.logger.agent_node(f"Teacher draft end question_id={sa.question_id} score={result.score}")
         return output.model_copy(update={"draft_result": result})
 
-    async def _draft_batch(self, state: AgentState) -> AgentState:
-        updated = await asyncio.gather(
-            *[self._draft_single(o, state) for o in state["outputs"]]
-        )
-        return {**state, "outputs": list(updated)}
+    async def _draft_batch(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Chấm nháp toàn bộ debate_outputs song song."""
+        outputs: list[Output] = state["debate_outputs"]
+        tasks = [asyncio.create_task(self._draft_single(o)) for o in outputs]
+        completed: dict[str, Output] = {}
+
+        total = len(tasks)
+        done_count = 0
+        for task in asyncio.as_completed(tasks):
+            out = await task
+            done_count += 1
+            qid = out.student_ans.question_id
+            completed[qid] = out
+            await self._emit_event(
+                {
+                    "type": "agent_partial",
+                    "agent": "teacher",
+                    "stage": "draft",
+                    "question_id": qid,
+                    "done": done_count,
+                    "total": total,
+                    "score": out.draft_result.score if out.draft_result else None,
+                    "is_correct": out.draft_result.is_correct if out.draft_result else None,
+                }
+            )
+
+        ordered = [completed[o.student_ans.question_id] for o in outputs]
+        return {**state, "debate_outputs": ordered, "phase": "verify"}
 
     # ── Debate Phase ───────────────────────────────────────────────────────────
 
-    async def _debate_single(self, output: Output, state: AgentState) -> Output:
-        req    = state["raw_request"]
-        intent = state["intent"]
-        draft  = output.draft_result
+    async def _debate_single(self, output: Output) -> Output:
+        """Tranh luận 1 câu hỏi với feedback từ Verifier."""
+        sa = output.student_ans
+        self.logger.agent_node(f"Teacher debate start question_id={sa.question_id}")
+        question = await self.get_data(
+            "masterthpt", "questions", query={"id": sa.question_id}
+        )
 
-        match intent:
-            case Intent.ASK_HINT:
-                prompt = f"""Verifier phản biện gợi ý của bạn. Hãy bảo vệ hoặc cải thiện.
-Gợi ý ban đầu    : {draft.response_text if draft else "Chưa có"}
-Feedback Verifier: {output.verifier_feedback}
+        prompt = f"""Giáo viên: Tranh luận với Verifier về bài chấm
+            Câu hỏi          : {question}
+            Trả lời HS        : {sa.student_answer}
+            Chấm nháp của bạn : {output.draft_result.model_dump() if output.draft_result else "Chưa có"}
+            Feedback Verifier : {output.verifier_feedback}
 
-Trả về final_response là gợi ý đã cải thiện."""
+            Hãy phân tích feedback, phản biện hoặc đồng ý có lập luận, và đưa ra nhận xét cuối cùng.
+            question_id phải là: {sa.question_id}"""
 
-            case Intent.REVIEW_MISTAKE:
-                sa = output.student_ans
-                prompt = f"""Verifier phản biện phân tích lỗi của bạn. Hãy bảo vệ hoặc cải thiện.
-Phân tích ban đầu: {draft.response_text if draft else "Chưa có"}
-Feedback Verifier: {output.verifier_feedback}
-question_id phải là: {sa.question_id}
-
-Trả về final_response là phân tích đã cải thiện."""
-
-            case Intent.PREPROCESS:
-                prompt = f"""Verifier phản biện câu hỏi bạn parse. Hãy sửa lại nếu cần.
-Parse ban đầu    : {draft.parsed_questions if draft else "Chưa có"}
-Feedback Verifier: {output.verifier_feedback}
-
-Trả về final_response là JSON list ExamQuestion đã sửa."""
-
-            case _:
-                sa = output.student_ans
-                prompt = f"""Verifier phản biện kết quả chấm. Hãy bảo vệ hoặc cải thiện.
-Chấm ban đầu     : {draft.model_dump() if draft else "Chưa có"}
-Feedback Verifier: {output.verifier_feedback}
-question_id phải là: {sa.question_id}
-
-Trả về final_response và final_score đã cập nhật."""
-
-        result: DebateResult = await self._run_with_tools(prompt, DebateResult)
-        if output.student_ans:
-            result.question_id = output.student_ans.question_id
+        result: DebateResult = await asyncio.to_thread(
+            self._llm_debate.invoke, prompt
+        )
+        result.question_id = sa.question_id
+        self.logger.agent_node(
+            f"Teacher debate end question_id={sa.question_id} final_score={result.final_score}"
+        )
         return output.model_copy(update={"debate_result": result})
 
-    async def _debate_batch(self, state: AgentState) -> AgentState:
-        updated = await asyncio.gather(
-            *[self._debate_single(o, state) for o in state["outputs"]]
-        )
-        return {**state, "outputs": list(updated), "round": state["round"] + 1}
+    async def _debate_batch(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Tranh luận toàn bộ debate_outputs song song."""
+        outputs: list[Output] = state["debate_outputs"]
+        tasks = [asyncio.create_task(self._debate_single(o)) for o in outputs]
+        completed: dict[str, Output] = {}
+
+        total = len(tasks)
+        done_count = 0
+        for task in asyncio.as_completed(tasks):
+            out = await task
+            done_count += 1
+            qid = out.student_ans.question_id
+            completed[qid] = out
+            await self._emit_event(
+                {
+                    "type": "agent_partial",
+                    "agent": "teacher",
+                    "stage": "debate",
+                    "question_id": qid,
+                    "done": done_count,
+                    "total": total,
+                    "final_score": out.debate_result.final_score if out.debate_result else None,
+                }
+            )
+
+        updated = [completed[o.student_ans.question_id] for o in outputs]
+        return {
+            **state,
+            "debate_outputs": list(updated),
+            "round": state["round"] + 1,
+            "phase": "verify",
+        }
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
     async def run_draft(
         self,
-        request: MessageRequest,
-        max_round: int = 3,
+        state: dict[str, Any],
         thread_id: str = "default",
-    ) -> AgentState:
-        """MessageRequest → AgentState sau draft phase."""
-        state  = self._build_state(request, max_round)
+        on_event: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None,
+    ) -> dict[str, Any]:
+        """Phase 1: Khởi tạo debate_outputs từ student_answers, chạy draft."""
+        self.logger.agent_node(f"Teacher run_draft called thread_id={thread_id}")
+        # Khởi tạo debate_outputs nếu chưa có
+        if not state.get("debate_outputs"):
+            outputs = [
+                Output(student_ans=sa)
+                for sa in (state.get("student_answers") or [])
+            ]
+            state = {**state, "debate_outputs": outputs}
+
+        state = {**state, "phase": "draft"}
         config = {"configurable": {"thread_id": thread_id}}
-        return await self.graph.ainvoke(state, config=config)
+        self._event_callback = on_event
+        result = await self.graph.ainvoke(state, config=config)
+        self._event_callback = None
+        self.logger.agent_node("Teacher run_draft completed")
+        return result
 
     async def run_debate(
         self,
-        state: AgentState,
+        state: dict[str, Any],
         thread_id: str = "default",
-    ) -> AgentState:
-        """AgentState có verifier_feedback → AgentState sau debate phase."""
+        on_event: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None,
+    ) -> dict[str, Any]:
+        """Phase 2: Nhận AgentState (đã có verifier_feedback), tranh luận batch."""
+        self.logger.agent_node(f"Teacher run_debate called thread_id={thread_id}")
+        state = {**state, "phase": "debate"}
         config = {"configurable": {"thread_id": thread_id}}
-        return await self.graph.ainvoke({**state, "phase": "debate"}, config=config)
+        self._event_callback = on_event
+        result = await self.graph.ainvoke(state, config=config)
+        self._event_callback = None
+        self.logger.agent_node("Teacher run_debate completed")
+        return result
 
     async def run(self, input: str) -> str:
-        return "Use run_draft(MessageRequest) or run_debate(AgentState)."
+        return "Use run_draft() or run_debate() instead."

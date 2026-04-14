@@ -5,6 +5,7 @@ from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_experimental.tools import PythonREPLTool
 from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langgraph.prebuilt import ToolNode
 from playwright.async_api import async_playwright
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
@@ -21,41 +22,59 @@ class ToolsRegistry:
     Mixin duy nhất cho tất cả agent:
       - Khởi tạo và cache tools (Playwright, File, PythonREPL)
       - MongoDB get/insert
-      - ReAct loop (_run_with_tools)
+      - LangGraph ToolNode (LangSmith tracking)
 
     Class sử dụng phải gọi setup_tools(llm) trong setup() của mình.
     Tools được cache ở class-level → Teacher và Verifier dùng chung,
     không khởi tạo browser nhiều lần.
+    
+    Cách sử dụng trong graph:
+      builder.add_node("tools", self.get_tool_node())
+      builder.add_edge("tools", "agent")
     """
 
     # ── Class-level cache (dùng chung toàn bộ agent instances) ────────────────
     _shared_tools: list[BaseTool] | None = None
     _shared_tool_map: dict[str, BaseTool] | None = None
+    _shared_tool_node: ToolNode | None = None
     _shared_browser = None
     _shared_playwright = None
     _mongo_client = AsyncIOMotorClient(MONGO_URI)
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
+    def _log_tools(self, message: str):
+        if hasattr(self, "logger") and hasattr(self.logger, "tools_node"):
+            self.logger.tools_node(message)
+        else:
+            print(f"[INFO] [tools] {message}")
+
     async def setup_tools(self, llm):
         """
         Gọi trong setup() của agent.
         llm: base LLM chưa bind tools (LLMClient.chat_model()).
         """
+        self._log_tools("setup_tools started")
         if ToolsRegistry._shared_tools is None:
+            self._log_tools("tool cache miss; initializing shared tools")
             await self._init_tools()
+        else:
+            self._log_tools("tool cache hit; reusing shared tools")
 
         self._tools          = ToolsRegistry._shared_tools
         self._tool_map       = ToolsRegistry._shared_tool_map
+        self._tool_node      = ToolsRegistry._shared_tool_node
         self.browser         = ToolsRegistry._shared_browser
         self.playwright      = ToolsRegistry._shared_playwright
         self._llm            = llm
         self._llm_with_tools = llm.bind_tools(self._tools)
+        self._log_tools(f"setup_tools completed; total tools={len(self._tools)}")
 
     async def _init_tools(self):
         """Khởi tạo tất cả tools một lần duy nhất."""
+        self._log_tools("initializing Playwright browser and toolkits")
         playwright    = await async_playwright().start()
-        browser       = await playwright.chromium.launch(headless=False)
+        browser       = await playwright.chromium.launch(headless=True)
         browser_tools = PlayWrightBrowserToolkit.from_browser(
             async_browser=browser
         ).get_tools()
@@ -63,10 +82,15 @@ class ToolsRegistry:
         repl_tool     = PythonREPLTool()
         all_tools     = browser_tools + file_tools + [repl_tool]
 
+        # Tạo ToolNode cho LangSmith tracking
+        tool_node = ToolNode(all_tools)
+
         ToolsRegistry._shared_tools      = all_tools
         ToolsRegistry._shared_tool_map   = {t.name: t for t in all_tools}
+        ToolsRegistry._shared_tool_node  = tool_node
         ToolsRegistry._shared_browser    = browser
         ToolsRegistry._shared_playwright = playwright
+        self._log_tools(f"shared tools initialized; names={[t.name for t in all_tools]}")
 
     # ── MongoDB ────────────────────────────────────────────────────────────────
 
@@ -94,9 +118,20 @@ class ToolsRegistry:
 
     # ── ReAct loop ─────────────────────────────────────────────────────────────
 
+    def get_tool_node(self) -> ToolNode:
+        """
+        Trả về ToolNode đã khởi tạo cho việc add vào LangGraph.
+        ToolNode này sẽ tự động gọi tools và LangSmith sẽ track được.
+        
+        Cách sử dụng:
+          builder.add_node("tools", agent.get_tool_node())
+        """
+        return self._tool_node
+
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolMessage]:
         """Thực thi tất cả tool calls song song."""
         async def _call_one(tc) -> ToolMessage:
+            self._log_tools(f"tool call start: {tc.get('name')}")
             tool = self._tool_map.get(tc["name"])
             if tool is None:
                 content = f"Tool '{tc['name']}' không tồn tại"
@@ -105,6 +140,7 @@ class ToolsRegistry:
                     content = str(await tool.ainvoke(tc["args"]))
                 except Exception as e:
                     content = f"Tool error: {e}"
+            self._log_tools(f"tool call end: {tc.get('name')}")
             return ToolMessage(content=content, tool_call_id=tc["id"])
 
         return await asyncio.gather(*[_call_one(tc) for tc in tool_calls])
@@ -122,12 +158,19 @@ class ToolsRegistry:
           3. Dùng toàn bộ message history để extract structured output
         """
         messages = [HumanMessage(content=prompt)]
+        self._log_tools(
+            f"_run_with_tools start; max_tool_rounds={max_tool_rounds}, prompt_len={len(prompt)}"
+        )
 
-        for _ in range(max_tool_rounds):
+        for round_idx in range(max_tool_rounds):
             response: AIMessage = await asyncio.to_thread(
                 self._llm_with_tools.invoke, messages
             )
             messages.append(response)
+
+            self._log_tools(
+                f"tool round {round_idx + 1}/{max_tool_rounds}; tool_calls={len(response.tool_calls or [])}"
+            )
 
             if not response.tool_calls:
                 break
@@ -135,10 +178,12 @@ class ToolsRegistry:
             tool_messages = await self._execute_tool_calls(response.tool_calls)
             messages.extend(tool_messages)
 
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             self._llm.with_structured_output(output_schema).invoke,
             messages,
         )
+        self._log_tools("_run_with_tools completed")
+        return result
 
     # ── Cleanup ────────────────────────────────────────────────────────────────
 
@@ -151,5 +196,6 @@ class ToolsRegistry:
             await cls._shared_playwright.stop()
         cls._shared_tools      = None
         cls._shared_tool_map   = None
+        cls._shared_tool_node  = None
         cls._shared_browser    = None
         cls._shared_playwright = None

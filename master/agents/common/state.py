@@ -1,6 +1,6 @@
 from typing import Literal, Optional, TypedDict
-from message import MessageRequest, MessageResponse
-from learner_profile import LearnerProfile
+from master.agents.common.message import MessageRequest, MessageResponse
+from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import ExamQuestion, StudentAnswer
 from master.agents.teacher import Output
 from master.common.message import GradeResult, Solution

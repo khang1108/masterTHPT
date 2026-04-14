@@ -1,23 +1,18 @@
-from __future__ import annotations
-
-from typing import Optional, Literal, Union
-from typing_extensions import TypedDict
+from typing import Any, Awaitable, Callable, List, Optional, Literal
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
-from master.agents.common import tools
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
-from master.agents.common.message import (
-    Intent, MessageRequest, MessageResponse, ExamQuestion,
-)
-from master.agents.teacher import (
-    AgentState, DebateState, Output, DraftResult, DebateResult,
-)
+from master.agents.common.message import MessageResponse
+from master.agents.common.state import AgentState
+from master.agents.teacher import Output, DraftResult, DebateResult
 
 import asyncio
+import os
 
 load_dotenv(override=True)
 
@@ -25,316 +20,276 @@ load_dotenv(override=True)
 # ── Verifier internal models ───────────────────────────────────────────────────
 
 class VerifierVerdict(BaseModel):
-    question_id: Optional[str] = None
+    question_id: str
     agreed: bool
-    confidence: float = 1.0
-    feedback: list[str] = Field(default_factory=list)
+    confidence: float
+    feedback: list[str]
     reasoning: str
     suggested_score: Optional[float] = None
 
 
-class VerifierState(TypedDict):
-    agent_state: AgentState                  # Từ Teacher
+class VerifierBatchVerdict(BaseModel):
     verdicts: list[VerifierVerdict]
-    pending_ids: list[str]                   # question_id hoặc ["__single__"]
-    satisfied_ids: list[str]
-    phase: Literal["verify", "finalize"]
 
 
-# ── Public output models ───────────────────────────────────────────────────────
-
-class VerifiedQuestion(BaseModel):
-    exam_id: str
-    question_id: str
-    final_score: Optional[float] = None
-    is_correct: bool
-    reasoning_chain: list[str]
-    consensus_note: str
+class FinalSummary(BaseModel):
+    feedback: str
 
 
-class VerifiedResult(BaseModel):
-    exam_id: str
-    student_id: Optional[str] = None
-    questions: list[VerifiedQuestion]
-    total_questions: int
-    total_correct: int
-    total_score: float
-
-
-# ── VerifierAgent ──────────────────────────────────────────────────────────────
-
-class VerifierAgent(BaseAgent, ToolsRegistry):
+class VerifierAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="verifier")
+        self._llm = None
+        self._llm_verdict = None
+        self._llm_summary = None
         self.memory = MemorySaver()
-        self.graph  = None
+        self.graph = None
+        self._event_callback: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None
 
     async def setup(self):
-        await self.setup_tools(LLMClient.chat_model())
+        self.logger.agent_node("Verifier setup started")
+        llm = LLMClient.chat_model(
+            # provider="openai_compatible",
+            # base_url=os.getenv("FPT_BASE_URL"),
+            # api_key=os.getenv("FPT_API_KEY"),
+            # model="gemma-4-31B-it",
+            # temperature=0.7,
+            # max_tokens=1500
+        )
+        await self.setup_tools(llm)
+        self._llm_verdict = self._llm.with_structured_output(
+            VerifierBatchVerdict
+        )
+        self._llm_summary = self._llm.with_structured_output(FinalSummary)
         self.graph = self._build_graph()
+        self.logger.agent_node("Verifier setup completed")
 
     def _build_graph(self):
-        builder = StateGraph(VerifierState)
+        builder = StateGraph(AgentState)
+
         builder.add_node("verify",   self._verify_batch)
         builder.add_node("finalize", self._finalize)
+        builder.add_node("tools",    self.get_tool_node())
 
         builder.add_conditional_edges(
             START,
             lambda s: s["phase"],
             {"verify": "verify", "finalize": "finalize"},
         )
+
         builder.add_conditional_edges(
             "verify",
-            lambda s: "finalize" if not s["pending_ids"] else "done",
-            {"finalize": "finalize", "done": END},
+            self._route_after_verify,
+            {"return_to_teacher": END, "finalize": "finalize"},
         )
-        builder.add_edge("finalize", END)
+        builder.add_conditional_edges(
+            "finalize",
+            self._route_after_finalize,
+            {"tools": "tools", "done": END},
+        )
+        builder.add_edge("tools", END)
+
         return builder.compile(checkpointer=self.memory)
 
-    # ── Key: mỗi Output → 1 VerifierVerdict ───────────────────────────────────
+    def _route_after_verify(self, state: AgentState) -> str:
+        verdicts: list[VerifierVerdict] = state.get("_verdicts", [])
+        pending = [v for v in verdicts if not v.agreed]
+        if pending:
+            return "return_to_teacher"
+        return "finalize"
 
-    async def _verify_one(self, output: Output, agent_state: AgentState) -> VerifierVerdict:
-        intent  = agent_state["intent"]
-        draft   = output.draft_result
-        debate  = output.debate_result
-        content = (
-            debate.final_response if debate
-            else (draft.response_text or str(draft.model_dump())) if draft
-            else "Chưa có"
+    def _route_after_finalize(self, state: AgentState) -> str:
+        if state.get("enable_verifier_tools_node", False):
+            return "tools"
+        return "done"
+
+    async def _emit_event(self, event: dict[str, Any]):
+        if self._event_callback is None:
+            return
+        result = self._event_callback(event)
+        if asyncio.iscoroutine(result):
+            await result
+
+    async def _verify_single(
+        self,
+        output: Output,
+        exam_id: Optional[str],
+    ) -> VerifierVerdict:
+        sa = output.student_ans
+        self.logger.agent_node(f"Verifier verify start question_id={sa.question_id}")
+        question = await self.get_data(
+            "masterthpt", "questions", query={"id": sa.question_id}
         )
-        qid = (output.student_ans.question_id if output.student_ans else "__single__")
 
-        match intent:
-            case Intent.ASK_HINT:
-                req    = agent_state["raw_request"]
-                question = await tools.get_data(
-                    "masterthpt", "questions", query={"id": req.question_id}
-                )
-                prompt = f"""Bạn là Verifier kiểm tra gợi ý của Teacher.
-Câu hỏi   : {question}
-Gợi ý     : {content}
-Feedback cũ: {output.verifier_feedback}
+        teacher_grade = "Chưa chấm"
+        if output.draft_result:
+            teacher_grade = f"{'Đúng' if output.draft_result.is_correct else 'Sai'} (Điểm: {output.draft_result.score})"
+        
+        prompt = f"""Kiểm tra viên: Kiểm tra xem trả lời là Đúng hay Sai. Nhận xét của giáo viên: {teacher_grade}
+            Câu hỏi: {question}
+            Trả lời học sinh: {sa.student_answer}
+            Trả về JSON với các trường: agreed, confidence (0-1), feedback (list), reasoning
+            question_id: {sa.question_id}"""
 
-Kiểm tra: gợi ý có đúng hướng, không lộ đáp án không?
-agreed=True nếu OK, agreed=False + feedback nếu cần sửa."""
+        verdict_batch: VerifierBatchVerdict = await self._run_with_tools(
+            prompt,
+            output_schema=VerifierBatchVerdict,
+            max_tool_rounds=3
+        )
+        result = (
+            verdict_batch.verdicts[0]
+            if verdict_batch.verdicts
+            else VerifierVerdict(
+                question_id=sa.question_id,
+                agreed=True,
+                confidence=0.5,
+                feedback=[],
+                reasoning="No model response",
+            )
+        )
+        result.question_id = sa.question_id
+        self.logger.agent_node(
+            f"Verifier verify end question_id={sa.question_id} agreed={result.agreed}"
+        )
+        return result
 
-            case Intent.REVIEW_MISTAKE:
-                sa       = output.student_ans
-                question = await tools.get_data(
-                    "masterthpt", "questions", query={"id": sa.question_id}
-                )
-                prompt = f"""Bạn là Verifier kiểm tra phân tích lỗi của Teacher.
-Câu hỏi      : {question}
-Trả lời HS   : {sa.student_answer}
-Phân tích    : {content}
-Feedback cũ  : {output.verifier_feedback}
+    async def _verify_batch(self, state: AgentState) -> AgentState:
+        outputs: list[Output] = state.get("debate_outputs", [])
 
-Kiểm tra: phân tích có chính xác, phân loại lỗi đúng không?
-agreed=True nếu OK, agreed=False + feedback nếu cần sửa.
-question_id phải là: {sa.question_id}"""
+        old_verdicts: list[VerifierVerdict] = state.get("_verdicts", [])
+        satisfied_ids: set[str] = {v.question_id for v in old_verdicts if v.agreed}
 
-            case Intent.PREPROCESS:
-                prompt = f"""Bạn là Verifier kiểm tra câu hỏi Teacher đã parse.
-Câu hỏi parsed: {content}
-Feedback cũ   : {output.verifier_feedback}
+        targets = [o for o in outputs if o.student_ans.question_id not in satisfied_ids]
 
-Kiểm tra: parse đúng format ExamQuestion, đáp án hợp lý không?
-agreed=True nếu OK, agreed=False + feedback nếu cần sửa."""
+        tasks = [asyncio.create_task(self._verify_single(o, state.get("exam_id"))) for o in targets]
+        new_verdicts: list[VerifierVerdict] = []
 
-            case _:
-                # VIEW_ANALYSIS / EXAM_PRACTICE — kiểm tra chấm điểm
-                sa       = output.student_ans
-                question = await tools.get_data(
-                    "masterthpt", "questions", query={"id": sa.question_id}
-                )
-                prompt = f"""Bạn là Verifier kiểm tra kết quả chấm thi của Teacher.
-Câu hỏi  : {question}
-Trả lời HS: {sa.student_answer}
-Kết quả  : {content}
-Feedback cũ: {output.verifier_feedback}
+        total = len(tasks)
+        done_count = 0
+        for task in asyncio.as_completed(tasks):
+            verdict = await task
+            done_count += 1
+            new_verdicts.append(verdict)
+            await self._emit_event(
+                {
+                    "type": "agent_partial",
+                    "agent": "verifier",
+                    "stage": "verify",
+                    "question_id": verdict.question_id,
+                    "done": done_count,
+                    "total": total,
+                    "agreed": verdict.agreed,
+                    "confidence": verdict.confidence,
+                }
+            )
 
-agreed=True nếu đồng ý, agreed=False + feedback nếu không.
-question_id phải là: {sa.question_id}"""
-
-        verdict: VerifierVerdict = await self._run_with_tools(prompt, VerifierVerdict)
-        verdict.question_id = qid
-        return verdict
-
-    async def _verify_batch(self, state: VerifierState) -> VerifierState:
-        agent_state = state["agent_state"]
-        pending_set = set(state["pending_ids"])
-
-        targets = [
-            o for o in agent_state["outputs"]
-            if (o.student_ans.question_id if o.student_ans else "__single__") in pending_set
-        ]
-
-        new_verdicts = list(await asyncio.gather(
-            *[self._verify_one(o, agent_state) for o in targets]
-        ))
-
-        # Merge verdicts
-        verdict_map = {v.question_id: v for v in state["verdicts"]}
+        verdict_map = {v.question_id: v for v in old_verdicts}
         for v in new_verdicts:
             verdict_map[v.question_id] = v
 
-        # Cập nhật verifier_feedback vào outputs
-        output_map = {
-            (o.student_ans.question_id if o.student_ans else "__single__"): o
-            for o in agent_state["outputs"]
-        }
+        all_verdicts = list(verdict_map.values())
+        output_map = {o.student_ans.question_id: o for o in outputs}
         for v in new_verdicts:
             if not v.agreed and v.question_id in output_map:
                 output_map[v.question_id] = output_map[v.question_id].model_copy(
                     update={"verifier_feedback": v.feedback}
                 )
 
-        all_verdicts  = list(verdict_map.values())
-        still_pending = [v.question_id for v in all_verdicts if not v.agreed]
-        satisfied     = [v.question_id for v in all_verdicts if v.agreed]
-
-        updated_agent_state = {
-            **agent_state,
-            "outputs": list(output_map.values()),
-            "phase": "debate",
-        }
-
         return {
             **state,
-            "agent_state":   updated_agent_state,
-            "verdicts":      all_verdicts,
-            "pending_ids":   still_pending,
-            "satisfied_ids": satisfied,
-            "phase":         "verify",
+            "debate_outputs": list(output_map.values()),
+            "_verdicts":      all_verdicts,
+            "phase":          "verify",
         }
 
-    # ── Finalize: Verifier làm hành động cuối theo intent ─────────────────────
+    # ── Finalize Phase ─────────────────────────────────────────────────────────
 
-    async def _finalize(self, state: VerifierState) -> VerifierState:
-        agent_state = state["agent_state"]
-        intent      = agent_state["intent"]
-        req         = agent_state["raw_request"]
-        outputs     = agent_state["outputs"]
+    async def _finalize(self, state: AgentState) -> AgentState:
+        outputs: list[Output]          = state.get("debate_outputs", [])
+        verdicts: list[VerifierVerdict] = state.get("_verdicts", [])
+        verdict_map = {v.question_id: v for v in verdicts}
+        request     = state.get("request")
 
-        match intent:
-            case Intent.ASK_HINT | Intent.REVIEW_MISTAKE:
-                # Lấy final_response từ debate (hoặc draft nếu không có debate)
-                o = outputs[0]
-                text = (
-                    o.debate_result.final_response if o.debate_result
-                    else o.draft_result.response_text if o.draft_result
-                    else ""
-                )
-                result = MessageResponse(
-                    student_id  = agent_state["student_id"],
-                    exam_id     = agent_state["exam_id"],
-                    question_id = req.question_id,
-                    feedback    = text,
-                )
+        lines = []
+        for output in outputs:
+            qid     = output.student_ans.question_id
+            verdict = verdict_map.get(qid)
+            draft   = output.draft_result
+            debate  = output.debate_result
 
-            case Intent.PREPROCESS:
-                # Ghi questions vào DB
-                o = outputs[0]
-                questions_raw = (
-                    o.debate_result.final_response if o.debate_result
-                    else o.draft_result.parsed_questions if o.draft_result
-                    else []
-                )
-                # Nếu final_response là string JSON, parse lại
-                if isinstance(questions_raw, str):
-                    import json
-                    try:
-                        questions_raw = [ExamQuestion(**q) for q in json.loads(questions_raw)]
-                    except Exception:
-                        questions_raw = []
+            parts = []
+            if draft:
+                parts.append(f"[Draft] {draft.reasoning}")
+            if debate:
+                parts.append(f"[Debate] {debate.teacher_rebuttal}")
+            if verdict:
+                parts.append(f"[Verifier] {verdict.reasoning}")
 
-                if isinstance(questions_raw, list) and questions_raw:
-                    for q in questions_raw:
-                        q_data = q.model_dump() if isinstance(q, ExamQuestion) else q
-                        await tools.insert_data("masterthpt", "questions", q_data)
+            is_correct = (
+                debate.accepted_verifier if debate
+                else draft.is_correct if draft
+                else False
+            )
+            score = (
+                debate.final_score if debate and debate.final_score is not None
+                else draft.score if draft
+                else verdict.suggested_score if verdict
+                else None
+            )
+            lines.append(
+                f"Câu {qid}: {'Đúng' if is_correct else 'Sai'}"
+                + (f" ({score} điểm)" if score is not None else "")
+                + " | " + " | ".join(parts)
+            )
 
-                result = questions_raw  # list[ExamQuestion]
+        summary_prompt = (
+            "Dựa trên kết quả chấm và phân tích dưới đây, hãy viết một đoạn nhận xét ngắn gọn cho học sinh:\n\n"
+            + "\n".join(lines)
+        )
 
-            case _:
-                # VIEW_ANALYSIS / EXAM_PRACTICE — trả VerifiedResult
-                verdict_map = {v.question_id: v for v in state["verdicts"]}
-                questions: list[VerifiedQuestion] = []
-                for o in outputs:
-                    qid    = o.student_ans.question_id if o.student_ans else ""
-                    draft  = o.draft_result
-                    debate = o.debate_result
-                    verdict= verdict_map.get(qid)
+        summary: FinalSummary = await asyncio.to_thread(
+            self._llm_summary.invoke, summary_prompt
+        )
 
-                    chain = (
-                        ([f"[Draft] {draft.reasoning}"] if draft else []) +
-                        ([f"[Debate] {debate.teacher_rebuttal}"] if debate else []) +
-                        ([f"[Verifier] {verdict.reasoning}"] if verdict else [])
-                    )
-                    final_score = (
-                        debate.final_score if debate and debate.final_score is not None
-                        else draft.score if draft
-                        else verdict.suggested_score if verdict
-                        else None
-                    )
-                    is_correct = (
-                        debate.accepted_verifier if debate
-                        else draft.is_correct if draft
-                        else False
-                    )
-                    questions.append(VerifiedQuestion(
-                        exam_id         = agent_state["exam_id"] or "",
-                        question_id     = qid,
-                        final_score     = final_score,
-                        is_correct      = is_correct,
-                        reasoning_chain = chain,
-                        consensus_note  = verdict.reasoning if verdict else "",
-                    ))
+        response = MessageResponse(
+            student_id  = request.student_id if request else "",
+            exam_id     = state.get("exam_id") or (request.exam_id if request else None),
+            question_id = request.question_id if request else None,
+            feedback    = summary.feedback,
+        )
 
-                result = VerifiedResult(
-                    exam_id         = agent_state["exam_id"] or "",
-                    student_id      = agent_state["student_id"],
-                    questions       = questions,
-                    total_questions = len(questions),
-                    total_correct   = sum(1 for q in questions if q.is_correct),
-                    total_score     = sum(q.final_score or 0.0 for q in questions),
-                )
-
-        return {**state, "_final_result": result}
+        return {**state, "response": response, "phase": "finalize"}
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
     async def verify(
         self,
-        agent_state: AgentState,
+        state: AgentState,
         thread_id: str = "default",
-    ) -> tuple[Literal["disagree", "agree"], AgentState | MessageResponse | VerifiedResult | list]:
-        """
-        Nhận AgentState từ Teacher → verify → finalize nếu agree.
+        on_event: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None,
+    ) -> tuple[Literal["disagree", "agree"], AgentState]:
+        """Verify grading and return disagreement status.
 
         Returns:
-            ("disagree", AgentState) — còn pending, cần Teacher debate tiếp
-            ("agree",    result)     — finalize: MessageResponse | VerifiedResult | list[ExamQuestion]
+            ("disagree", AgentState) → Verifier disagreed, AgentState contains verifier_feedback
+            ("agree", AgentState) → All questions passed, state contains final response
         """
-        all_ids = [
-            (o.student_ans.question_id if o.student_ans else "__single__")
-            for o in agent_state["outputs"]
-        ]
+        self.logger.agent_node(f"Verifier verify called thread_id={thread_id}")
+        state  = {**state, "phase": "verify"}
+        config = {"configurable": {"thread_id": thread_id}}
+        self._event_callback = on_event
+        final  = await self.graph.ainvoke(state, config=config)
+        self._event_callback = None
 
-        init: VerifierState = {
-            "agent_state":   agent_state,
-            "verdicts":      [],
-            "pending_ids":   all_ids,
-            "satisfied_ids": [],
-            "phase":         "verify",
-        }
+        verdicts: list[VerifierVerdict] = final.get("_verdicts", [])
+        still_pending = [v for v in verdicts if not v.agreed]
 
-        config      = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.graph.ainvoke(init, config=config)
+        if still_pending:
+            self.logger.agent_node("Verifier verify result=disagree")
+            return "disagree", final
 
-        if final_state["pending_ids"]:
-            return "disagree", final_state["agent_state"]
-
-        return "agree", final_state["_final_result"]
+        self.logger.agent_node("Verifier verify result=agree")
+        return "agree", final
 
     async def run(self, input: str) -> str:
-        return "Use verify(agent_state) instead."
+        return "Use verify(state) instead."
