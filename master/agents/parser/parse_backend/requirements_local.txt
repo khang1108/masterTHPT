@@ -12,3 +12,6 @@ python-dotenv>=1.0.0
 
 # --- PDF PROCESSING ---
 PyMuPDF>=1.24.0
+
+# --- KNOWLEDGE GRAPH ---
+neo4j>=5.20.0

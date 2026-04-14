@@ -1,4 +1,4 @@
-.agents/
+
 .venv/
 .cursor/
 img/
@@ -6,7 +6,3 @@ Tabs_Engineers.md
 gdgoc/
 .env
 __pycache__/
-.env
-infra/.env.api
-infra/.env.web
-infra/.env.db

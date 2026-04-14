@@ -46,7 +46,7 @@
       "topic": "Hàm số và đồ thị",
       "display_name": "Hàm số và đồ thị",
       "prerequisites": [
-        "math.10.cd.ch2.b2"
+        "math.10.cd.ch1.b2"
       ]
     },
     {
@@ -76,7 +76,8 @@
       "topic": "Bất phương trình bậc hai một ẩn",
       "display_name": "Bất phương trình bậc hai một ẩn",
       "prerequisites": [
-        "math.10.cd.ch3.b3"
+        "math.10.cd.ch3.b3",
+        "math.10.cd.ch2.b2"
       ]
     },
     {
@@ -96,7 +97,7 @@
       "topic": "Giá trị lượng giác. Định lý cosin, sin",
       "display_name": "Giá trị lượng giác của một góc từ 0 đến 180 độ. Định lý côsin và sin",
       "prerequisites": [
-        "math.10.cd.ch3.b5"
+        "math.10.cd.ch3.b2"
       ]
     },
     {
@@ -115,9 +116,7 @@
       "chapter": 4,
       "topic": "Khái niệm vectơ",
       "display_name": "Khái niệm vectơ",
-      "prerequisites": [
-        "math.10.cd.ch4.b2"
-      ]
+      "prerequisites": []
     },
     {
       "id": "math.10.cd.ch4.b4",
@@ -196,9 +195,7 @@
       "chapter": 6,
       "topic": "Số gần đúng. Sai số",
       "display_name": "Số gần đúng. Sai số",
-      "prerequisites": [
-        "math.10.cd.ch3.b1"
-      ]
+      "prerequisites": []
     },
     {
       "id": "math.10.cd.ch6.b2",
@@ -227,7 +224,8 @@
       "topic": "Xác suất của biến cố trong trò chơi đơn giản",
       "display_name": "Xác suất của biến cố trong một số trò chơi đơn giản",
       "prerequisites": [
-        "math.10.cd.ch5.b3"
+        "math.10.cd.ch5.b3",
+        "math.10.cd.ch6.b1"
       ]
     },
     {
@@ -267,7 +265,8 @@
       "topic": "Phương trình đường thẳng",
       "display_name": "Phương trình đường thẳng",
       "prerequisites": [
-        "math.10.cd.ch7.b2"
+        "math.10.cd.ch7.b2",
+        "math.10.cd.ch3.b1"
       ]
     },
     {
@@ -297,7 +296,8 @@
       "topic": "Ba đường conic",
       "display_name": "Ba đường conic",
       "prerequisites": [
-        "math.10.cd.ch7.b5"
+        "math.10.cd.ch7.b5",
+        "math.10.cd.ch3.b2"
       ]
     },
     {
@@ -337,7 +337,8 @@
       "topic": "Mở rộng Nhị thức Newton",
       "display_name": "Nhị thức Newton",
       "prerequisites": [
-        "math.10.cd.ch5.b4"
+        "math.10.cd.ch5.b4",
+        "math.10.cd.chm2.b1"
       ]
     },
     {
@@ -380,6 +381,7 @@
         "math.10.cd.chm3.b3"
       ]
     },
+
     {
       "id": "math.11.cd.ch1.b1",
       "grade": 11,
@@ -458,7 +460,7 @@
       "topic": "Giới hạn của dãy số",
       "display_name": "Giới hạn của dãy số",
       "prerequisites": [
-        "math.11.cd.ch2.b3"
+        "math.11.cd.ch2.b1"
       ]
     },
     {
@@ -468,7 +470,8 @@
       "topic": "Giới hạn của hàm số",
       "display_name": "Giới hạn của hàm số",
       "prerequisites": [
-        "math.11.cd.ch3.b1"
+        "math.11.cd.ch3.b1",
+        "math.10.cd.ch3.b1"
       ]
     },
     {
@@ -488,7 +491,7 @@
       "topic": "Đường thẳng và mặt phẳng không gian",
       "display_name": "Đường thẳng và mặt phẳng trong không gian",
       "prerequisites": [
-        "math.10.cd.ch7.b4"
+        "math.10.cd.ch1.b1"
       ]
     },
     {
@@ -568,7 +571,7 @@
       "topic": "Phép tính lũy thừa",
       "display_name": "Phép tính lũy thừa",
       "prerequisites": [
-        "math.11.cd.ch3.b3"
+        "math.10.cd.ch3.b5"
       ]
     },
     {
@@ -588,7 +591,8 @@
       "topic": "Hàm số mũ và lôgarit",
       "display_name": "Hàm số mũ. Hàm số lôgarit",
       "prerequisites": [
-        "math.11.cd.ch6.b2"
+        "math.11.cd.ch6.b2",
+        "math.10.cd.ch3.b1"
       ]
     },
     {
@@ -598,7 +602,8 @@
       "topic": "Phương trình, bất phương trình mũ",
       "display_name": "Phương trình, bất phương trình mũ và lôgarit",
       "prerequisites": [
-        "math.11.cd.ch6.b3"
+        "math.11.cd.ch6.b3",
+        "math.10.cd.ch3.b4"
       ]
     },
     {
@@ -608,7 +613,7 @@
       "topic": "Định nghĩa đạo hàm",
       "display_name": "Định nghĩa đạo hàm. Ý nghĩa hình học của đạo hàm",
       "prerequisites": [
-        "math.11.cd.ch3.b3"
+        "math.11.cd.ch3.b2"
       ]
     },
     {
@@ -638,7 +643,8 @@
       "topic": "Hai đường thẳng vuông góc",
       "display_name": "Hai đường thẳng vuông góc",
       "prerequisites": [
-        "math.11.cd.ch4.b1"
+        "math.11.cd.ch4.b2",
+        "math.10.cd.ch4.b6"
       ]
     },
     {
@@ -688,7 +694,8 @@
       "topic": "Thể tích không gian",
       "display_name": "Hình lăng trụ đứng. Hình chóp đều. Thể tích",
       "prerequisites": [
-        "math.11.cd.ch8.b5"
+        "math.11.cd.ch8.b5",
+        "math.11.cd.ch4.b5"
       ]
     },
     {
@@ -698,7 +705,8 @@
       "topic": "Phép dời hình",
       "display_name": "Phép dời hình",
       "prerequisites": [
-        "math.10.cd.ch7.b6"
+        "math.10.cd.ch7.b4",
+        "math.10.cd.ch4.b5"
       ]
     },
     {
@@ -718,7 +726,8 @@
       "topic": "Yếu tố đồ thị, Đường đi Euler",
       "display_name": "Một vài yếu tố của Lí thuyết đồ thị. Đường đi Euler và đường đi Hamilton",
       "prerequisites": [
-        "math.10.cd.ch1.b1"
+        "math.10.cd.ch1.b1",
+        "math.10.cd.ch5.b1"
       ]
     },
     {
@@ -751,6 +760,7 @@
         "math.11.cd.chm3.b1"
       ]
     },
+
     {
       "id": "math.12.cd.ch1.b1",
       "grade": 12,
@@ -809,8 +819,8 @@
       "topic": "Vectơ và các phép toán",
       "display_name": "Vectơ và các phép toán vectơ trong không gian",
       "prerequisites": [
-        "math.11.cd.ch8.b5",
-        "math.10.cd.ch4.b4"
+        "math.10.cd.ch4.b5",
+        "math.11.cd.ch4.b1"
       ]
     },
     {
@@ -820,7 +830,8 @@
       "topic": "Toạ độ của vectơ",
       "display_name": "Toạ độ của vectơ trong không gian",
       "prerequisites": [
-        "math.12.cd.ch2.b1"
+        "math.12.cd.ch2.b1",
+        "math.10.cd.ch7.b1"
       ]
     },
     {
@@ -850,7 +861,8 @@
       "topic": "Phương sai, độ lệch chuẩn",
       "display_name": "Phương sai, độ lệch chuẩn của mẫu số liệu ghép nhóm",
       "prerequisites": [
-        "math.12.cd.ch3.b1"
+        "math.12.cd.ch3.b1",
+        "math.10.cd.ch6.b3"
       ]
     },
     {
@@ -860,7 +872,7 @@
       "topic": "Nguyên hàm",
       "display_name": "Nguyên hàm",
       "prerequisites": [
-        "math.12.cd.ch1.b5"
+        "math.11.cd.ch7.b2"
       ]
     },
     {
@@ -870,7 +882,8 @@
       "topic": "Nguyên hàm hàm số sơ cấp",
       "display_name": "Nguyên hàm của một số hàm số sơ cấp",
       "prerequisites": [
-        "math.12.cd.ch4.b1"
+        "math.12.cd.ch4.b1",
+        "math.11.cd.ch6.b3"
       ]
     },
     {
@@ -890,7 +903,8 @@
       "topic": "Ứng dụng hình học của tích phân",
       "display_name": "Ứng dụng hình học của tích phân",
       "prerequisites": [
-        "math.12.cd.ch4.b3"
+        "math.12.cd.ch4.b3",
+        "math.12.cd.ch1.b5"
       ]
     },
     {
@@ -900,7 +914,8 @@
       "topic": "Phương trình mặt phẳng",
       "display_name": "Phương trình mặt phẳng",
       "prerequisites": [
-        "math.12.cd.ch2.b3"
+        "math.12.cd.ch2.b3",
+        "math.11.cd.ch8.b2"
       ]
     },
     {
@@ -920,7 +935,8 @@
       "topic": "Phương trình mặt cầu",
       "display_name": "Phương trình mặt cầu",
       "prerequisites": [
-        "math.12.cd.ch5.b2"
+        "math.12.cd.ch5.b2",
+        "math.10.cd.ch7.b5"
       ]
     },
     {
@@ -961,7 +977,8 @@
       "topic": "Phân bố Bernoulli",
       "display_name": "Phân bố Bernoulli",
       "prerequisites": [
-        "math.12.cd.chm1.b1"
+        "math.12.cd.chm1.b1",
+        "math.10.cd.ch5.b3"
       ]
     },
     {
@@ -981,7 +998,7 @@
       "topic": "Vận dụng đạo hàm",
       "display_name": "Vận dụng đạo hàm để giải quyết một số bài toán tối ưu",
       "prerequisites": [
-        "math.12.cd.ch1.b5",
+        "math.12.cd.ch1.b3",
         "math.12.cd.chm2.b1"
       ]
     },
@@ -993,7 +1010,8 @@
       "display_name": "Một số vấn đề về tiền tệ, lãi suất",
       "prerequisites": [
         "math.11.cd.ch6.b4",
-        "math.11.cd.ch2.b3"
+        "math.11.cd.ch2.b3",
+        "math.11.cd.ch2.b2"
       ]
     },
     {
