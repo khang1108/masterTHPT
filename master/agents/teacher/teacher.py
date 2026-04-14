@@ -1,7 +1,6 @@
-from typing import Any, Awaitable, Callable, List, Optional, Literal
+from typing import Any, List, Optional
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
@@ -22,6 +21,7 @@ class DraftResult(BaseModel):
     question_id: str
     is_correct: bool
     score: Optional[float] = None
+    confidence: float = 0.5
     reasoning: str                      # Lập luận chấm điểm
     feedback: str                       # Nhận xét gửi cho Verifier
 
@@ -47,13 +47,12 @@ class Output(BaseModel):
 
 class TeacherAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
-        super().__init__(agent_role="teacher")
+        super().__init__(agent_role="Teacher")
         self._llm        = None
         self._llm_draft  = None         # structured output → DraftResult
         self._llm_debate = None         # structured output → DebateResult
         self.memory      = MemorySaver()
         self.graph       = None
-        self._event_callback: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -63,9 +62,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
-            model="gemma-4-31B-it",
+            model="Qwen3-32B",
             temperature=0.7,
-            max_tokens=2000  # Cân bằng chi phí & timeout
+            # max_tokens=2000  # Cân bằng chi phí & timeout
         )
         await self.setup_tools(llm)
         self._llm_draft  = self._llm.with_structured_output(DraftResult)
@@ -105,13 +104,6 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             return "tools"
         return "done"
 
-    async def _emit_event(self, event: dict[str, Any]):
-        if self._event_callback is None:
-            return
-        result = self._event_callback(event)
-        if asyncio.iscoroutine(result):
-            await result
-
     # ── Draft Phase ────────────────────────────────────────────────────────────
 
     async def _draft_single(self, output: Output) -> Output:
@@ -127,13 +119,15 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             Trả lời HS: {sa.student_answer}
             Đáp án    : {sa.question_id}
 
-            Hãy chấm điểm, lập luận rõ ràng và đưa ra nhận xét để gửi cho Verifier kiểm tra lại.
+            Hãy chấm điểm, ước lượng confidence trong khoảng [0,1],
+            lập luận rõ ràng và đưa ra nhận xét để gửi cho Verifier kiểm tra lại.
             question_id phải là: {sa.question_id}"""
 
         result: DraftResult = await asyncio.to_thread(
             self._llm_draft.invoke, prompt
         )
         result.question_id = sa.question_id
+        result.confidence = max(0.0, min(1.0, float(getattr(result, "confidence", 0.5))))
         self.logger.agent_node(f"Teacher draft end question_id={sa.question_id} score={result.score}")
         return output.model_copy(update={"draft_result": result})
 
@@ -143,25 +137,10 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         tasks = [asyncio.create_task(self._draft_single(o)) for o in outputs]
         completed: dict[str, Output] = {}
 
-        total = len(tasks)
-        done_count = 0
         for task in asyncio.as_completed(tasks):
             out = await task
-            done_count += 1
             qid = out.student_ans.question_id
             completed[qid] = out
-            await self._emit_event(
-                {
-                    "type": "agent_partial",
-                    "agent": "teacher",
-                    "stage": "draft",
-                    "question_id": qid,
-                    "done": done_count,
-                    "total": total,
-                    "score": out.draft_result.score if out.draft_result else None,
-                    "is_correct": out.draft_result.is_correct if out.draft_result else None,
-                }
-            )
 
         ordered = [completed[o.student_ans.question_id] for o in outputs]
         return {**state, "debate_outputs": ordered, "phase": "verify"}
@@ -200,24 +179,10 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         tasks = [asyncio.create_task(self._debate_single(o)) for o in outputs]
         completed: dict[str, Output] = {}
 
-        total = len(tasks)
-        done_count = 0
         for task in asyncio.as_completed(tasks):
             out = await task
-            done_count += 1
             qid = out.student_ans.question_id
             completed[qid] = out
-            await self._emit_event(
-                {
-                    "type": "agent_partial",
-                    "agent": "teacher",
-                    "stage": "debate",
-                    "question_id": qid,
-                    "done": done_count,
-                    "total": total,
-                    "final_score": out.debate_result.final_score if out.debate_result else None,
-                }
-            )
 
         updated = [completed[o.student_ans.question_id] for o in outputs]
         return {
@@ -233,7 +198,6 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self,
         state: dict[str, Any],
         thread_id: str = "default",
-        on_event: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None,
     ) -> dict[str, Any]:
         """Phase 1: Khởi tạo debate_outputs từ student_answers, chạy draft."""
         self.logger.agent_node(f"Teacher run_draft called thread_id={thread_id}")
@@ -247,9 +211,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
         state = {**state, "phase": "draft"}
         config = {"configurable": {"thread_id": thread_id}}
-        self._event_callback = on_event
         result = await self.graph.ainvoke(state, config=config)
-        self._event_callback = None
         self.logger.agent_node("Teacher run_draft completed")
         return result
 
@@ -257,15 +219,12 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self,
         state: dict[str, Any],
         thread_id: str = "default",
-        on_event: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None,
     ) -> dict[str, Any]:
         """Phase 2: Nhận AgentState (đã có verifier_feedback), tranh luận batch."""
         self.logger.agent_node(f"Teacher run_debate called thread_id={thread_id}")
         state = {**state, "phase": "debate"}
         config = {"configurable": {"thread_id": thread_id}}
-        self._event_callback = on_event
         result = await self.graph.ainvoke(state, config=config)
-        self._event_callback = None
         self.logger.agent_node("Teacher run_debate completed")
         return result
 

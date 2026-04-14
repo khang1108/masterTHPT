@@ -1,18 +1,17 @@
-from typing import Any, Awaitable, Callable, List, Optional, Literal
+from typing import List, Optional, Literal
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from master.agents import BaseAgent
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.message import MessageResponse
 from master.agents.common.state import AgentState
-from master.agents.teacher import Output, DraftResult, DebateResult
+from master.agents.teacher import Output
+import os
 
 import asyncio
-import os
 
 load_dotenv(override=True)
 
@@ -38,23 +37,20 @@ class FinalSummary(BaseModel):
 
 class VerifierAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
-        super().__init__(agent_role="verifier")
+        super().__init__(agent_role="Verifier")
         self._llm = None
         self._llm_verdict = None
         self._llm_summary = None
         self.memory = MemorySaver()
         self.graph = None
-        self._event_callback: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None
 
     async def setup(self):
         self.logger.agent_node("Verifier setup started")
         llm = LLMClient.chat_model(
-            # provider="openai_compatible",
-            # base_url=os.getenv("FPT_BASE_URL"),
-            # api_key=os.getenv("FPT_API_KEY"),
-            # model="gemma-4-31B-it",
-            # temperature=0.7,
-            # max_tokens=1500
+            provider="openai_compatible",
+            base_url=os.getenv("FPT_BASE_URL"),
+            api_key=os.getenv("FPT_API_KEY"),
+            model="gemma-4-31B-it",
         )
         await self.setup_tools(llm)
         self._llm_verdict = self._llm.with_structured_output(
@@ -102,13 +98,6 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         if state.get("enable_verifier_tools_node", False):
             return "tools"
         return "done"
-
-    async def _emit_event(self, event: dict[str, Any]):
-        if self._event_callback is None:
-            return
-        result = self._event_callback(event)
-        if asyncio.iscoroutine(result):
-            await result
 
     async def _verify_single(
         self,
@@ -164,24 +153,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         tasks = [asyncio.create_task(self._verify_single(o, state.get("exam_id"))) for o in targets]
         new_verdicts: list[VerifierVerdict] = []
 
-        total = len(tasks)
-        done_count = 0
         for task in asyncio.as_completed(tasks):
             verdict = await task
-            done_count += 1
             new_verdicts.append(verdict)
-            await self._emit_event(
-                {
-                    "type": "agent_partial",
-                    "agent": "verifier",
-                    "stage": "verify",
-                    "question_id": verdict.question_id,
-                    "done": done_count,
-                    "total": total,
-                    "agreed": verdict.agreed,
-                    "confidence": verdict.confidence,
-                }
-            )
 
         verdict_map = {v.question_id: v for v in old_verdicts}
         for v in new_verdicts:
@@ -266,7 +240,6 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         self,
         state: AgentState,
         thread_id: str = "default",
-        on_event: Optional[Callable[[dict[str, Any]], Awaitable[None] | None]] = None,
     ) -> tuple[Literal["disagree", "agree"], AgentState]:
         """Verify grading and return disagreement status.
 
@@ -277,9 +250,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         self.logger.agent_node(f"Verifier verify called thread_id={thread_id}")
         state  = {**state, "phase": "verify"}
         config = {"configurable": {"thread_id": thread_id}}
-        self._event_callback = on_event
         final  = await self.graph.ainvoke(state, config=config)
-        self._event_callback = None
 
         verdicts: list[VerifierVerdict] = final.get("_verdicts", [])
         still_pending = [v for v in verdicts if not v.agreed]

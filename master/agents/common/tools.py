@@ -90,7 +90,7 @@ class ToolsRegistry:
         ToolsRegistry._shared_tool_node  = tool_node
         ToolsRegistry._shared_browser    = browser
         ToolsRegistry._shared_playwright = playwright
-        self._log_tools(f"shared tools initialized; names={[t.name for t in all_tools]}")
+        self._log_tools(f"shared tools initialized")
 
     # ── MongoDB ────────────────────────────────────────────────────────────────
 

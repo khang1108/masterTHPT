@@ -21,7 +21,7 @@ class BaseAgent(ABC):
         self._llm: Optional[BaseChatModel] = None
         self._tools: list = []
         self._trial: list[str] = []
-        self.logger = Logger(f"agent.{agent_role}", service_prefix="Agent Service")
+        self.logger = Logger(agent_role)
 
     @abstractmethod
     async def run(self, input: str) -> str:

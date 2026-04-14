@@ -43,10 +43,8 @@ class ConsoleFormatter(logging.Formatter):
     RESET = "\033[0m"
     BOLD = "\033[1m"
 
-    def __init__(self, service_prefix: Optional[str] = None):
+    def __init__(self):
         super().__init__()
-
-        self.service_prefix = service_prefix
         
         # Check TTY status once during initialization
         stdout_tty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
@@ -69,8 +67,6 @@ class ConsoleFormatter(logging.Formatter):
         message = record.getMessage()
 
         prefix_parts: list[str] = [f"[{display_level}]", f"[{module}]"]
-        if self.service_prefix:
-            prefix_parts.insert(0, f"[{self.service_prefix}]")
         prefix = " ".join(prefix_parts)
 
         if self.use_colors:
@@ -91,7 +87,7 @@ class Logger:
         - File logging to user/logs/
         - WebSocket streaming support
         - Success/progress/complete methods
-        - Optional prefix layer prefix (Backend/Frontend/Agent)
+        - Lightweight, consistent prefix format
 
     Usage:
         logger = Logger("my_module")   
@@ -107,14 +103,12 @@ class Logger:
         console_output: bool = True,
         file_output: bool = True,
         log_dir: Optional[Union[str, Path]] = None,
-        service_prefix: Optional[str] = None,
     ):
         self.name = name
         self.level = level
         self.console_output = console_output
         self.file_output = file_output
         self.log_dir = log_dir
-        self.service_prefix = service_prefix
 
         self.logger = logging.getLogger(f"masterTHPT.{name}")
         self.logger.setLevel(level)
@@ -124,7 +118,7 @@ class Logger:
         if self.console_output:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(level)
-            console_handler.setFormatter(ConsoleFormatter(service_prefix=service_prefix))
+            console_handler.setFormatter(ConsoleFormatter())
             self.logger.addHandler(console_handler)
 
         if self.file_output:
