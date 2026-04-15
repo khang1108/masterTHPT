@@ -44,10 +44,6 @@ jobs:
           tags: |
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:latest
-          build-args: |
-            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
-            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
-            API_PROXY_TARGET=${{ secrets.API_PROXY_TARGET }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
@@ -60,6 +56,10 @@ jobs:
           tags: |
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:${{ github.sha }}
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:latest
+          build-args: |
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            API_PROXY_TARGET=${{ secrets.API_PROXY_TARGET }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
