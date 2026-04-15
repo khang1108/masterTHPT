@@ -9,13 +9,17 @@ datasource db {
 }
 
 model Student {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  email         String    @unique
-  password_hash String
-  grade         Int
-  is_first_login Boolean @default(true)
-  created_at    DateTime  @default(now())
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  name              String?
+  email             String   @unique
+  password_hash     String?
+  google_sub        String?
+  grade             Int?
+  school            String?
+  learning_goal     String?
+  profile_completed Boolean  @default(false)
+  is_first_login    Boolean  @default(true)
+  created_at        DateTime @default(now())
 
   @@map("students")
 }

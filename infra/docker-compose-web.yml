@@ -13,6 +13,8 @@ services:
     build:
       context: ../master/apps/web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: 978891343510-2nviljbjanbebolj7ul1lpm75d1b86kg.apps.googleusercontent.com
     container_name: masterthpt-web
     restart: unless-stopped
     env_file:

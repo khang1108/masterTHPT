@@ -1,13 +1,13 @@
 'use client';
 
-import { QuestionFeedbackPanels } from '@/components/exam/feedback-panels';
-import { formatDateTime, formatScore } from '@/components/exam/helpers';
-import { MathText } from '@/components/exam/math-text';
-import { ExamQuestionHeader } from '@/components/exam/question-header';
-import { ResultAnswerPanel } from '@/components/exam/result-answer-panel';
-import { FlatQuestion, flattenExamSections } from '@/components/exam/types';
-import { ExamEvaluationItem, HistoryDetailResponse, askHint, getHistoryDetail, reviewMistake } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { QuestionFeedbackPanels } from '@/features/exams/components/feedback-panels';
+import { formatDateTime, formatScore } from '@/features/exams/lib/helpers';
+import { MathText } from '@/features/exams/components/math-text';
+import { ExamQuestionHeader } from '@/features/exams/components/question-header';
+import { ResultAnswerPanel } from '@/features/exams/components/result-answer-panel';
+import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
+import { ExamEvaluationItem, HistoryDetailResponse, askHint, getHistoryDetail, reviewMistake } from '@/shared/api/client';
+import { getToken } from '@/shared/auth/storage';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -83,6 +83,15 @@ export default function HistoryDetailPage() {
 	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.id) : null;
 	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
 	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
+	const scoreSummaryValue = history?.score !== null && history?.score !== undefined
+		? formatScore(history.score)
+		: `${history?.correct_count ?? 0}/${history?.evaluation.total_questions ?? 0}`;
+	const scoreSummaryLabel = history?.score !== null && history?.score !== undefined
+		? 'Điểm tổng'
+		: 'Số câu đúng';
+	const scoreSummaryMeta = history?.score !== null && history?.score !== undefined
+		? ''
+		: 'Câu đúng trên tổng số câu';
 
 	const handleAskHint = useCallback(async () => {
 		if (!activeQuestion || !history || loadingHintQuestionId || hintFeedbacks[activeQuestion.id]) {
@@ -167,13 +176,17 @@ export default function HistoryDetailPage() {
 						{history.grade ? `Lớp ${history.grade} | ` : ''}
 						{intentToLabel(history.intent)} | {formatDateTime(history.created_at)}
 					</p>
-					<p className="text-soft">
-						{history.score !== null && history.score !== undefined
-							? `Điểm: ${formatScore(history.score)}`
-							: `Số câu đúng: ${history.correct_count} / ${history.evaluation.total_questions}`}
-					</p>
 				</div>
-				<Link href="/dashboard" className="btn-ghost">Về tổng quan</Link>
+				<div className="exam-header-side">
+					<Link href="/dashboard" className="btn-ghost">Về tổng quan</Link>
+					<div className="exam-result-hero">
+						<p className="exam-result-hero-label">{scoreSummaryLabel}</p>
+						<p className="exam-result-hero-value">{scoreSummaryValue}</p>
+						{scoreSummaryMeta ? (
+							<p className="exam-result-hero-meta">{scoreSummaryMeta}</p>
+						) : null}
+					</div>
+				</div>
 			</header>
 
 			<section className="exam-layout">

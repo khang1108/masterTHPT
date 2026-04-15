@@ -1,23 +1,28 @@
 'use client';
 
-import { formatDateTime, formatScore } from '@/components/exam/helpers';
-import { GenerateOnboardingExamBody, HistoryListItem, generateOnboardingExam, getHistoryList } from '@/lib/api';
-import { clearAuth, getStudent, getToken } from '@/lib/auth';
-import { cacheExamDetail } from '@/lib/exam-session';
+import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
+import { StudentProfileFields } from '@/features/students/components/student-profile-fields';
+import { formatDateTime, formatScore } from '@/features/exams/lib/helpers';
+import {
+	GenerateOnboardingExamBody,
+	HistoryListItem,
+	generateOnboardingExam,
+	getCurrentStudent,
+	getHistoryList,
+	updateCurrentStudent,
+} from '@/shared/api/client';
+import { clearAuth, getToken, saveStudent } from '@/shared/auth/storage';
+import { cacheExamDetail } from '@/features/exams/lib/exam-runtime-store';
+import { Student } from '@/shared/models/student';
+import {
+	createStudentProfileDraft,
+	StudentProfileFormValue,
+} from '@/features/students/lib/student-profile';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-
-type Student = {
-	id: string;
-	name: string;
-	email: string;
-	grade: number;
-	is_first_login: boolean;
-};
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 const SUBJECT_OPTIONS = ['Toán'] as const;
-const GRADE_OPTIONS = [10, 11, 12] as const;
 const EXAM_TYPE_OPTIONS = ['Giữa kì 1', 'Cuối kì 1', 'Giữa kì 2', 'Cuối kì 2'] as const;
 
 type HistoryGroup = {
@@ -25,6 +30,33 @@ type HistoryGroup = {
 	title: string;
 	items: HistoryListItem[];
 };
+
+function getErrorMessage(error: unknown, fallback: string) {
+	if (typeof error === 'object' && error !== null && 'response' in error) {
+		const maybeResponse = error as {
+			response?: { data?: { message?: string | string[] }; status?: number };
+		};
+		const message = maybeResponse.response?.data?.message;
+		if (Array.isArray(message)) {
+			return message[0] ?? fallback;
+		}
+
+		if (typeof message === 'string') {
+			return message;
+		}
+	}
+
+	return fallback;
+}
+
+function isUnauthorizedError(error: unknown) {
+	if (typeof error !== 'object' || error === null || !('response' in error)) {
+		return false;
+	}
+
+	const maybeResponse = error as { response?: { status?: number } };
+	return maybeResponse.response?.status === 401;
+}
 
 function intentToLabel(intent: HistoryListItem['intent']) {
 	return intent === 'EXAM_PRACTICE' ? 'Luyện tập' : 'Đề thi';
@@ -37,7 +69,6 @@ function calculateAverageScore(items: HistoryListItem[]) {
 	}
 
 	const totalScore = scoredItems.reduce((sum, item) => sum + (item.score ?? 0), 0);
-
 	return Number((totalScore / scoredItems.length).toFixed(1));
 }
 
@@ -93,11 +124,14 @@ function groupHistoryItems(items: HistoryListItem[]): HistoryGroup[] {
 
 export default function DashboardPage() {
 	const router = useRouter();
-	const menuRef = useRef<HTMLDivElement | null>(null);
 	const [student, setStudent] = useState<Student | null>(null);
-	const [menuOpen, setMenuOpen] = useState(false);
+	const [pageLoading, setPageLoading] = useState(true);
+	const [studentError, setStudentError] = useState('');
+	const [profileDraft, setProfileDraft] = useState<StudentProfileFormValue>(createStudentProfileDraft());
+	const [profileSaving, setProfileSaving] = useState(false);
+	const [profileError, setProfileError] = useState('');
 	const [subject, setSubject] = useState<(typeof SUBJECT_OPTIONS)[number]>('Toán');
-	const [grade, setGrade] = useState<(typeof GRADE_OPTIONS)[number]>(12);
+	const [grade, setGrade] = useState<GenerateOnboardingExamBody['grade']>(12);
 	const [examType, setExamType] = useState<(typeof EXAM_TYPE_OPTIONS)[number]>('Giữa kì 1');
 	const [onboardingError, setOnboardingError] = useState('');
 	const [onboardingLoading, setOnboardingLoading] = useState(false);
@@ -111,66 +145,96 @@ export default function DashboardPage() {
 			router.replace('/login');
 			return;
 		}
-
-		setStudent(getStudent());
-	}, [router]);
-
-	useEffect(() => {
-		const current = getStudent();
-		if (!current) {
-			return;
-		}
-
-		if (current.grade >= 10 && current.grade <= 12) {
-			setGrade(current.grade as (typeof GRADE_OPTIONS)[number]);
-		}
-	}, []);
-
-	useEffect(() => {
-		function onDocumentClick(event: MouseEvent) {
-			if (!menuRef.current) {
-				return;
-			}
-
-			const target = event.target;
-			if (target instanceof Node && !menuRef.current.contains(target)) {
-				setMenuOpen(false);
-			}
-		}
-
-		document.addEventListener('mousedown', onDocumentClick);
-		return () => {
-			document.removeEventListener('mousedown', onDocumentClick);
-		};
-	}, []);
-
-	useEffect(() => {
-		const token = getToken();
-		if (!token) {
-			return;
-		}
 		const authToken = token;
 
-		async function loadHistory() {
+		let cancelled = false;
+
+		async function loadDashboard() {
+			setPageLoading(true);
+			setStudentError('');
 			setHistoryLoading(true);
 			setHistoryError('');
 
-			try {
-				const data = await getHistoryList(authToken);
-				setHistoryItems(data);
-			} catch {
-				setHistoryError('Không thể tải lịch sử làm bài lúc này.');
-			} finally {
-				setHistoryLoading(false);
+			const [studentResult, historyResult] = await Promise.allSettled([
+				getCurrentStudent(authToken),
+				getHistoryList(authToken),
+			]);
+
+			if (cancelled) {
+				return;
 			}
+
+			if (studentResult.status === 'rejected') {
+				if (isUnauthorizedError(studentResult.reason)) {
+					clearAuth();
+					router.replace('/login');
+					return;
+				}
+
+				setStudentError(getErrorMessage(studentResult.reason, 'Không thể tải hồ sơ học sinh.'));
+				setPageLoading(false);
+				setHistoryLoading(false);
+				return;
+			}
+
+			setStudent(studentResult.value);
+			setProfileDraft(createStudentProfileDraft(studentResult.value));
+			saveStudent(studentResult.value);
+			setPageLoading(false);
+
+			if (historyResult.status === 'fulfilled') {
+				setHistoryItems(historyResult.value);
+				setHistoryError('');
+			} else {
+				setHistoryError('Không thể tải lịch sử làm bài lúc này.');
+			}
+
+			setHistoryLoading(false);
 		}
 
-		loadHistory();
-	}, []);
+		void loadDashboard();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [router]);
+
+	useEffect(() => {
+		if (!student) {
+			return;
+		}
+
+		if (student.grade && student.grade >= 10 && student.grade <= 12) {
+			setGrade(student.grade as GenerateOnboardingExamBody['grade']);
+		}
+	}, [student]);
 
 	function logout() {
 		clearAuth();
 		router.replace('/login');
+	}
+
+	async function onSubmitProfile(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		setProfileError('');
+
+		const token = getToken();
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		setProfileSaving(true);
+		try {
+			const updatedStudent = await updateCurrentStudent(token, profileDraft);
+			setStudent(updatedStudent);
+			setProfileDraft(createStudentProfileDraft(updatedStudent));
+			saveStudent(updatedStudent);
+		} catch (error: unknown) {
+			setProfileError(getErrorMessage(error, 'Không thể lưu thông tin cá nhân.'));
+		} finally {
+			setProfileSaving(false);
+		}
 	}
 
 	async function onSubmitOnboarding(event: FormEvent<HTMLFormElement>) {
@@ -192,8 +256,8 @@ export default function DashboardPage() {
 			});
 			cacheExamDetail(exam);
 			router.push(`/exams/${exam.exam_id}`);
-		} catch {
-			setOnboardingError('Không tìm thấy đề phù hợp lúc này. Vui lòng thử lại.');
+		} catch (error: unknown) {
+			setOnboardingError(getErrorMessage(error, 'Không tìm thấy đề phù hợp lúc này. Vui lòng thử lại.'));
 			setOnboardingLoading(false);
 		}
 	}
@@ -201,62 +265,39 @@ export default function DashboardPage() {
 	const averageScore = useMemo(() => calculateAverageScore(historyItems), [historyItems]);
 	const groupedHistoryItems = useMemo(() => groupHistoryItems(historyItems), [historyItems]);
 
-	if (!student) {
-		return null;
+	if (pageLoading) {
+		return <main className="dashboard-root">Đang tải dữ liệu học sinh...</main>;
 	}
 
-	const showOnboarding = student.is_first_login;
+	if (!student) {
+		return (
+			<main className="dashboard-root">
+				<section className="dash-panel dash-error-panel">
+					<h2>Không thể mở dashboard</h2>
+					<p className="text-soft">{studentError || 'Thiếu thông tin đăng nhập hoặc hồ sơ học sinh.'}</p>
+					<div className="dash-inline-actions">
+						<Link href="/login" className="btn-primary">
+							Về trang đăng nhập
+						</Link>
+					</div>
+				</section>
+			</main>
+		);
+	}
+
+	const showProfileModal = !student.profile_completed;
+	const showExamModal = student.profile_completed && student.is_first_login;
 
 	return (
-		<main className="dashboard-shell">
-			<header className="dash-topbar">
-				<div className="dash-brand">
-					<span className="dash-dot" />
-					<strong>MASTER THPT</strong>
-				</div>
+			<main className="dashboard-shell">
+				<DashboardTopbar student={student} onLogout={logout} />
 
-				<nav className="dash-nav" aria-label="Main navigation">
-					<Link href="/dashboard" className="dash-nav-link is-active">
-						Tổng quan
-					</Link>
-					<Link href="/documents" className="dash-nav-link">
-						Kho đề thi
-					</Link>
-					<Link href="/practice" className="dash-nav-link">
-						Luyện tập
-					</Link>
-				</nav>
-
-				<div className="dash-userbar" ref={menuRef}>
-					<button
-						type="button"
-						className="dash-avatar-btn"
-						onClick={() => setMenuOpen((prev) => !prev)}
-						aria-haspopup="menu"
-						aria-expanded={menuOpen}
-						aria-label="Mở menu người dùng"
-					>
-						<span className="dash-avatar-dot" />
-					</button>
-
-					{menuOpen ? (
-						<div className="dash-user-menu" role="menu">
-							<p className="dash-user-menu-name">{student.name}</p>
-							<p className="dash-user-menu-email">{student.email}</p>
-							<button type="button" className="dash-user-menu-item" onClick={logout}>
-								Đăng xuất
-							</button>
-						</div>
-					) : null}
-				</div>
-			</header>
-
-			<section className="dash-progress-layout">
-				<div className="dash-history-column">
-					<section className="dash-panel dash-history-panel">
-						<div className="dash-panel-head">
-							<h2>Lịch sử làm bài</h2>
-							<p>Bấm vào từng đề để xem lại chi tiết bài làm.</p>
+				<section className="dash-progress-layout">
+					<div className="dash-history-column">
+						<section className="dash-panel dash-history-panel">
+							<div className="dash-panel-head">
+								<h2>Lịch sử làm bài</h2>
+								<p>Bấm vào từng đề để xem lại chi tiết bài làm.</p>
 						</div>
 
 						{historyLoading ? <p className="documents-message">Đang tải lịch sử...</p> : null}
@@ -308,41 +349,64 @@ export default function DashboardPage() {
 					</section>
 				</div>
 
-				<div className="dash-insights-column">
-					<section className="dash-grid-cards dash-grid-cards-side">
-						<article className="dash-card">
-							<p className="dash-card-label">Số bài đã làm</p>
+					<div className="dash-insights-column">
+						<section className="dash-grid-cards dash-grid-cards-side">
+							<article className="dash-card">
+								<p className="dash-card-label">Số bài đã làm</p>
 							<p className="dash-card-value">{historyItems.length}</p>
 							<p className="dash-card-hint">Bao gồm cả đề thi trong kho đề và các phiên luyện tập đã hoàn tất.</p>
 						</article>
 
-						<article className="dash-card">
-							<p className="dash-card-label">Điểm trung bình</p>
-							<p className="dash-card-value">{formatScore(averageScore)}</p>
-							<p className="dash-card-hint">Chỉ tính từ các bài làm đã có điểm số được lưu trong lịch sử.</p>
-						</article>
-					</section>
+							<article className="dash-card">
+								<p className="dash-card-label">Điểm trung bình</p>
+								<p className="dash-card-value">{formatScore(averageScore)}</p>
+								<p className="dash-card-hint">Chỉ tính từ các bài làm đã có điểm số được lưu trong lịch sử.</p>
+							</article>
+						</section>
+					</div>
+				</section>
 
-					<section className="dash-panel">
-						<div className="dash-panel-head">
-							<h2>Thống kê</h2>
-							<p>Phần này sẽ hiển thị các nhóm kiến thức và xu hướng làm bài sau khi bạn thêm logic phân tích.</p>
+			{showProfileModal ? (
+				<div className="onboarding-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-onboarding-title">
+					<form className="onboarding-modal onboarding-modal-profile" onSubmit={onSubmitProfile}>
+						<div className="onboarding-head">
+							<p className="documents-kicker">Điền thông tin cá nhân</p>
+							<h2 id="profile-onboarding-title">Hoàn thiện hồ sơ học tập</h2>
+							<p className="text-soft">
+								Hãy nhập họ tên, lớp, trường và mục tiêu học tập. Sau bước này
+								hệ thống sẽ mở form chọn bài đầu vào mà bạn đã có sẵn.
+							</p>
 						</div>
-						<div className="dash-placeholder-box">
-							Chưa có dữ liệu hiển thị.
+
+						<StudentProfileFields
+							idPrefix="onboarding-profile"
+							value={profileDraft}
+							onChange={setProfileDraft}
+							disabled={profileSaving}
+						/>
+
+						<div className="onboarding-actions">
+							<p className="onboarding-side-copy">
+								Thông tin này sẽ được lưu vào database và bạn có thể chỉnh sửa lại ở trang hồ sơ.
+							</p>
+							<button type="submit" className="btn-primary" disabled={profileSaving}>
+								{profileSaving ? 'Đang lưu...' : 'Lưu và tiếp tục'}
+							</button>
 						</div>
-					</section>
+
+						{profileError ? <p className="error-text">{profileError}</p> : null}
+					</form>
 				</div>
-			</section>
+			) : null}
 
-			{showOnboarding ? (
-				<div className="onboarding-overlay" role="dialog" aria-modal="true">
+			{showExamModal ? (
+				<div className="onboarding-overlay" role="dialog" aria-modal="true" aria-labelledby="exam-onboarding-title">
 					<form className="onboarding-modal" onSubmit={onSubmitOnboarding}>
 						<div className="onboarding-head">
-							<p className="documents-kicker">Khởi tạo hồ sơ học tập</p>
-							<h2>Bạn mới đăng nhập lần đầu</h2>
+							<p className="documents-kicker">Bài đầu vào</p>
+							<h2 id="exam-onboarding-title">Chọn đề khởi tạo năng lực</h2>
 							<p className="text-soft">
-								Chọn môn học, lớp và mốc kiến thức hiện tại để hệ thống lấy đề phù hợp trong kho đề.
+								Chọn môn học, học kì và lớp hiện tại. Hệ thống sẽ lấy một đề phù hợp trong kho đề để bạn bắt đầu.
 							</p>
 						</div>
 
@@ -377,17 +441,15 @@ export default function DashboardPage() {
 									onChange={(event) => setGrade(Number(event.target.value) as GenerateOnboardingExamBody['grade'])}
 									disabled={onboardingLoading}
 								>
-									{GRADE_OPTIONS.map((option) => (
-										<option key={option} value={option}>
-											Lớp {option}
-										</option>
-									))}
+									<option value={10}>Lớp 10</option>
+									<option value={11}>Lớp 11</option>
+									<option value={12}>Lớp 12</option>
 								</select>
 							</div>
 
 							<div className="onboarding-form-full">
 								<label className="input-label" htmlFor="onboarding-exam-type">
-									Kiến thức hiện tại
+									Học kì
 								</label>
 								<select
 									id="onboarding-exam-type"
@@ -406,9 +468,11 @@ export default function DashboardPage() {
 						</div>
 
 						<div className="onboarding-actions">
-							<div />
+							<p className="onboarding-side-copy">
+								Bạn chỉ cần làm bài này một lần. Kết quả sẽ được dùng để khởi tạo lộ trình ôn luyện.
+							</p>
 							<button type="submit" className="btn-primary" disabled={onboardingLoading}>
-								{onboardingLoading ? 'Đang tìm đề...' : 'OK'}
+								{onboardingLoading ? 'Đang tìm đề...' : 'Bắt đầu làm bài'}
 							</button>
 						</div>
 

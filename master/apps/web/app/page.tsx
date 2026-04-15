@@ -1,6 +1,6 @@
 'use client';
 
-import { getToken } from '@/lib/auth';
+import { getToken } from '@/shared/auth/storage';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 

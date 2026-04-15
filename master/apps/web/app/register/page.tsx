@@ -1,7 +1,8 @@
 'use client';
 
-import { register } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { GoogleLoginButton } from '@/features/auth/components/google-login-button';
+import { loginWithGoogle, register } from '@/shared/api/client';
+import { getToken, saveAuth } from '@/shared/auth/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
@@ -27,12 +28,12 @@ function getErrorMessage(error: unknown) {
 
 export default function RegisterPage() {
 	const router = useRouter();
-	const [name, setName] = useState('');
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
-	const [grade, setGrade] = useState(12);
+	const [confirmPassword, setConfirmPassword] = useState('');
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
+	const [googleLoading, setGoogleLoading] = useState(false);
 
 	useEffect(() => {
 		if (getToken()) {
@@ -47,16 +48,30 @@ export default function RegisterPage() {
 
 		try {
 			await register({
-				name,
 				email,
 				password,
-				grade,
+				confirm_password: confirmPassword,
 			});
 			router.replace('/login');
 		} catch (err: unknown) {
 			setError(getErrorMessage(err));
 		} finally {
 			setLoading(false);
+		}
+	}
+
+	async function onGoogleCredential(credential: string) {
+		setError('');
+		setGoogleLoading(true);
+
+		try {
+			const data = await loginWithGoogle({ credential });
+			saveAuth(data.access_token, data.student);
+			router.replace('/dashboard');
+		} catch (err: unknown) {
+			setError(getErrorMessage(err));
+		} finally {
+			setGoogleLoading(false);
 		}
 	}
 
@@ -76,19 +91,12 @@ export default function RegisterPage() {
 
 				<div className="auth-form-wrap">
 					<h2>Đăng ký</h2>
-					<form className="auth-form" onSubmit={onSubmit}>
-						<label className="input-label" htmlFor="name">
-							Họ và Tên
-						</label>
-						<input
-							id="name"
-							type="text"
-							className="input-field"
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-							required
-						/>
+					<p className="auth-note">
+						Tạo tài khoản bằng email hoặc dùng Google để vào thẳng hệ thống.
+						Thông tin cá nhân sẽ được hỏi ở lần đăng nhập đầu tiên.
+					</p>
 
+					<form className="auth-form" onSubmit={onSubmit}>
 						<label className="input-label" htmlFor="email">
 							Email
 						</label>
@@ -97,7 +105,7 @@ export default function RegisterPage() {
 							type="email"
 							className="input-field"
 							value={email}
-							onChange={(e) => setEmail(e.target.value)}
+							onChange={(event) => setEmail(event.target.value)}
 							required
 						/>
 
@@ -111,23 +119,22 @@ export default function RegisterPage() {
 									type="password"
 									className="input-field"
 									value={password}
-									onChange={(e) => setPassword(e.target.value)}
+									onChange={(event) => setPassword(event.target.value)}
 									minLength={6}
 									required
 								/>
 							</div>
 							<div>
-								<label className="input-label" htmlFor="grade">
-									Lớp (10-12)
+								<label className="input-label" htmlFor="confirm-password">
+									Xác nhận mật khẩu
 								</label>
 								<input
-									id="grade"
-									type="number"
+									id="confirm-password"
+									type="password"
 									className="input-field"
-									min={10}
-									max={12}
-									value={grade}
-									onChange={(e) => setGrade(Number(e.target.value))}
+									value={confirmPassword}
+									onChange={(event) => setConfirmPassword(event.target.value)}
+									minLength={6}
 									required
 								/>
 							</div>
@@ -139,6 +146,16 @@ export default function RegisterPage() {
 							{loading ? 'Tạo tài khoản...' : 'Đăng ký'}
 						</button>
 					</form>
+
+					<div className="auth-divider" aria-hidden="true">
+						<span>hoặc</span>
+					</div>
+
+					<GoogleLoginButton
+						label="Vào nhanh bằng Google"
+						loading={googleLoading}
+						onCredential={onGoogleCredential}
+					/>
 
 					<p className="muted-link">
 						Đã có tài khoản? <Link href="/login">Đăng nhập</Link>
