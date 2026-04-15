@@ -12,6 +12,8 @@ env:
   DATABASE_URL: ${{ secrets.DATABASE_URL}}
   NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL}}
   API_PROXY_TARGET: ${{ secrets.API_PROXY_TARGET}}
+  NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID}}
+  NEXT_PUBLIC_GOOGLE_SECRET: ${{ secrets.NEXT_PUBLIC_GOOGLE_SECRET}}
 
 jobs:
   build-and-push:
@@ -42,6 +44,10 @@ jobs:
           tags: |
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:latest
+          build-args: |
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            API_PROXY_TARGET=${{ secrets.API_PROXY_TARGET }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
