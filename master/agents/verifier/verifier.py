@@ -50,7 +50,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
-            model="gemma-4-31B-it",
+            model="Qwen3-32B",
         )
         await self.setup_tools(llm)
         self._llm_verdict = self._llm.with_structured_output(

@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, START, END
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from master.agents import BaseAgent
-from master.agents.common.message import StudentAnswer
+from master.agents.common.message import MessageRequest, MessageResponse, StudentAnswer
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
 
@@ -35,6 +35,11 @@ class DebateResult(BaseModel):
     accepted_verifier: bool             # Có chấp nhận ý kiến Verifier không
 
 
+class HintResult(BaseModel):
+    """Kết quả gợi ý cho intent ASK_HINT."""
+    feedback: str
+
+
 class Output(BaseModel):
     """Unit xử lý cho một câu hỏi xuyên suốt cả pipeline."""
     student_ans: StudentAnswer          # KHÔNG thay đổi
@@ -51,6 +56,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self._llm        = None
         self._llm_draft  = None         # structured output → DraftResult
         self._llm_debate = None         # structured output → DebateResult
+        self._llm_hint   = None         # structured output → HintResult
         self.memory      = MemorySaver()
         self.graph       = None
 
@@ -62,13 +68,14 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
-            model="Qwen3-32B",
+            model="gemma-4-31B-it",
             temperature=0.7,
             # max_tokens=2000  # Cân bằng chi phí & timeout
         )
         await self.setup_tools(llm)
         self._llm_draft  = self._llm.with_structured_output(DraftResult)
         self._llm_debate = self._llm.with_structured_output(DebateResult)
+        self._llm_hint   = self._llm.with_structured_output(HintResult)
         self.graph = self._build_graph()
         self.logger.agent_node("Teacher setup completed")
 
@@ -227,6 +234,50 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         result = await self.graph.ainvoke(state, config=config)
         self.logger.agent_node("Teacher run_debate completed")
         return result
+
+    async def run_hint(
+        self,
+        request: MessageRequest,
+        exam_id: Optional[str] = None,
+    ) -> MessageResponse:
+        """ASK_HINT: trả về gợi ý trực tiếp, không đi qua verifier/debate."""
+        question_id = request.question_id
+        if not question_id and request.student_answers:
+            question_id = request.student_answers[0].question_id
+
+        student_answer = None
+        if request.student_answers:
+            student_answer = request.student_answers[0].student_answer
+
+        if question_id:
+            question = await self.get_data(
+                "masterthpt", "questions", query={"id": question_id}
+            )
+        else:
+            question = "Không có question_id trong request"
+
+        prompt = f"""Bạn là giáo viên hỗ trợ học sinh.
+            Nhiệm vụ: đưa ra gợi ý ngắn gọn để học sinh tự giải, KHÔNG tiết lộ đáp án trực tiếp.
+            Nếu thông tin chưa đủ, hãy hỏi lại tối đa 1 câu để làm rõ.
+
+            Câu hỏi: {question}
+            Câu trả lời hiện tại của học sinh: {student_answer}
+            Tin nhắn học sinh: {request.student_message}
+
+            Trả về JSON với trường feedback là nội dung gợi ý thân thiện, rõ ràng, tối đa 5 câu.
+        """
+
+        result: HintResult = await asyncio.to_thread(self._llm_hint.invoke, prompt)
+        feedback = (result.feedback or "").strip()
+        if not feedback:
+            feedback = "Mình cần thêm thông tin để gợi ý chính xác hơn. Bạn hãy gửi cách làm hiện tại của bạn nhé."
+
+        return MessageResponse(
+            student_id=request.student_id,
+            exam_id=exam_id or request.exam_id,
+            question_id=question_id,
+            feedback=feedback,
+        )
 
     async def run(self, input: str) -> str:
         return "Use run_draft() or run_debate() instead."
