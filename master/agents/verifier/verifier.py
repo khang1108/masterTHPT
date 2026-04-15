@@ -6,10 +6,11 @@ from pydantic import BaseModel
 from master.agents import BaseAgent
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
-from master.agents.common.message import MessageResponse
+from master.agents.common.message import MessageResponse, Intent
 from master.agents.common.state import AgentState
 from master.agents.teacher import Output
 import os
+import json
 
 import asyncio
 
@@ -99,49 +100,6 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             return "tools"
         return "done"
 
-    async def _verify_single(
-        self,
-        output: Output,
-        exam_id: Optional[str],
-    ) -> VerifierVerdict:
-        sa = output.student_ans
-        self.logger.agent_node(f"Verifier verify start question_id={sa.question_id}")
-        question = await self.get_data(
-            "masterthpt", "questions", query={"id": sa.question_id}
-        )
-
-        teacher_grade = "Chưa chấm"
-        if output.draft_result:
-            teacher_grade = f"{'Đúng' if output.draft_result.is_correct else 'Sai'} (Điểm: {output.draft_result.score})"
-        
-        prompt = f"""Kiểm tra viên: Kiểm tra xem trả lời là Đúng hay Sai. Nhận xét của giáo viên: {teacher_grade}
-            Câu hỏi: {question}
-            Trả lời học sinh: {sa.student_answer}
-            Trả về JSON với các trường: agreed, confidence (0-1), feedback (list), reasoning
-            question_id: {sa.question_id}"""
-
-        verdict_batch: VerifierBatchVerdict = await self._run_with_tools(
-            prompt,
-            output_schema=VerifierBatchVerdict,
-            max_tool_rounds=3
-        )
-        result = (
-            verdict_batch.verdicts[0]
-            if verdict_batch.verdicts
-            else VerifierVerdict(
-                question_id=sa.question_id,
-                agreed=True,
-                confidence=0.5,
-                feedback=[],
-                reasoning="No model response",
-            )
-        )
-        result.question_id = sa.question_id
-        self.logger.agent_node(
-            f"Verifier verify end question_id={sa.question_id} agreed={result.agreed}"
-        )
-        return result
-
     async def _verify_batch(self, state: AgentState) -> AgentState:
         outputs: list[Output] = state.get("debate_outputs", [])
 
@@ -150,12 +108,175 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
         targets = [o for o in outputs if o.student_ans.question_id not in satisfied_ids]
 
-        tasks = [asyncio.create_task(self._verify_single(o, state.get("exam_id"))) for o in targets]
         new_verdicts: list[VerifierVerdict] = []
+        if targets:
+            try:
+                try:
+                    llm_batch_size = max(1, int(os.getenv("VERIFIER_LLM_BATCH_SIZE", "6")))
+                except ValueError:
+                    llm_batch_size = 6
+                try:
+                    max_question_chars = max(1, int(os.getenv("VERIFIER_MAX_QUESTION_CHARS", "800")))
+                except ValueError:
+                    max_question_chars = 800
 
-        for task in asyncio.as_completed(tasks):
-            verdict = await task
-            new_verdicts.append(verdict)
+                def _is_length_limit_error(exc: Exception) -> bool:
+                    msg = str(exc).lower()
+                    return (
+                        "length limit" in msg
+                        or "maximum context length" in msg
+                        or "too many tokens" in msg
+                        or "max_tokens" in msg
+                    )
+
+                question_ids = [o.student_ans.question_id for o in targets]
+                question_docs = await self.get_data(
+                    "masterthpt",
+                    "questions",
+                    query={"id": {"$in": question_ids}},
+                    length=max(len(question_ids), 1),
+                )
+                question_map = {str(q.get("id")): q for q in question_docs}
+                for q in (state.get("questions", []) or []):
+                    q_dict = q.model_dump() if hasattr(q, "model_dump") else dict(q)
+                    qid = str(q_dict.get("id") or "")
+                    if qid and qid not in question_map:
+                        question_map[qid] = q_dict
+
+                items: list[dict] = []
+                solve_mode = True
+                for output in targets:
+                    sa = output.student_ans
+                    teacher_grade = "Chưa chấm"
+                    if output.draft_result:
+                        teacher_grade = (
+                            f"{'Đúng' if output.draft_result.is_correct else 'Sai'} "
+                            f"(Điểm: {output.draft_result.score})"
+                        )
+
+                    q_doc = question_map.get(sa.question_id, {})
+                    q_payload = {
+                        "id": q_doc.get("id"),
+                        "question_index": q_doc.get("question_index"),
+                        "type": q_doc.get("type"),
+                        "content": q_doc.get("content"),
+                        "content_latex": q_doc.get("content_latex"),
+                        "options": q_doc.get("options"),
+                        "correct_answer": q_doc.get("correct_answer"),
+                    }
+                    q_payload = {k: v for k, v in q_payload.items() if v not in (None, "", [])}
+                    q_text = json.dumps(q_payload or q_doc, ensure_ascii=False, default=str)
+                    if len(q_text) > max_question_chars:
+                        q_text = q_text[:max_question_chars] + " ...[truncated]"
+
+                    student_answer = (sa.student_answer or "").strip()
+                    if student_answer:
+                        solve_mode = False
+
+                    items.append(
+                        {
+                            "question_id": sa.question_id,
+                            "teacher_grade": teacher_grade,
+                            "student_answer": student_answer,
+                            "question": q_text,
+                        }
+                    )
+
+                mode_instruction = (
+                    "Chế độ PREPROCESS: không có đáp án học sinh, hãy phản biện lời giải của teacher."
+                    if solve_mode
+                    else "Chế độ REVIEW: phản biện bài làm học sinh và chấm nháp của teacher."
+                )
+
+                self.logger.agent_node(
+                    f"Verifier batching items={len(items)} llm_batch_size={llm_batch_size} max_q_chars={max_question_chars}"
+                )
+
+                verdict_by_qid: dict[str, VerifierVerdict] = {}
+
+                async def _run_chunk(chunk_items: list[dict]) -> None:
+                    prompt = f"""Bạn là Verifier.
+Nhiệm vụ: kiểm tra batch theo hướng dẫn sau: {mode_instruction}
+
+Yêu cầu output:
+- Trả về đúng schema VerifierBatchVerdict.
+- verdicts phải chứa đúng tất cả question_id bên dưới (mỗi id đúng 1 verdict).
+- reasoning ngắn gọn (<= 60 từ mỗi câu).
+- feedback tối đa 2 ý ngắn mỗi câu.
+- confidence trong [0,1].
+
+Ràng buộc ngôn ngữ (bắt buộc):
+- Toàn bộ nội dung text trong output (reasoning, feedback) PHẢI bằng tiếng Việt.
+- Không dùng tiếng Anh, trừ ký hiệu toán học hoặc tên riêng bắt buộc.
+- Dù đề bài có tiếng Anh, vẫn diễn giải và phản hồi bằng tiếng Việt.
+
+BATCH_INPUT:
+{json.dumps(chunk_items, ensure_ascii=False, default=str)}
+"""
+                    try:
+                        verdict_batch: VerifierBatchVerdict = await asyncio.to_thread(
+                            self._llm_verdict.invoke,
+                            prompt,
+                        )
+                        by_qid = {v.question_id: v for v in (verdict_batch.verdicts or [])}
+
+                        for item in chunk_items:
+                            qid = item["question_id"]
+                            verdict = by_qid.get(qid)
+                            if verdict is None:
+                                verdict = VerifierVerdict(
+                                    question_id=qid,
+                                    agreed=True,
+                                    confidence=0.3,
+                                    feedback=["Verifier thiếu kết quả trong lô xử lý, dùng kết quả dự phòng."],
+                                    reasoning="Thiếu kết quả verdict trong đầu ra của lô xử lý.",
+                                )
+                            verdict.question_id = qid
+                            verdict.confidence = max(0.0, min(1.0, float(verdict.confidence)))
+                            verdict_by_qid[qid] = verdict
+                    except Exception as exc:
+                        if _is_length_limit_error(exc) and len(chunk_items) > 1:
+                            mid = len(chunk_items) // 2
+                            self.logger.warning(
+                                "Verifier chunk exceeded model length; splitting chunk "
+                                f"size={len(chunk_items)} into {mid} and {len(chunk_items) - mid}"
+                            )
+                            await _run_chunk(chunk_items[:mid])
+                            await _run_chunk(chunk_items[mid:])
+                            return
+
+                        self.logger.warning(
+                            "Verifier chunk failed; using deterministic fallback for "
+                            f"{len(chunk_items)} item(s): {exc}"
+                        )
+                        for item in chunk_items:
+                            qid = item["question_id"]
+                            verdict_by_qid[qid] = VerifierVerdict(
+                                question_id=qid,
+                                agreed=True,
+                                confidence=0.2,
+                                feedback=["Verifier dùng kết quả dự phòng do lỗi lô xử lý."],
+                                reasoning="Lô verifier lỗi; đã tạo kết quả dự phòng.",
+                            )
+
+                for i in range(0, len(items), llm_batch_size):
+                    await _run_chunk(items[i:i + llm_batch_size])
+
+                new_verdicts = [verdict_by_qid[qid] for qid in question_ids]
+
+            except Exception as e:
+                self.logger.warning(f"Verifier batch mode failed, using deterministic fallback: {e}")
+                for o in targets:
+                    qid = o.student_ans.question_id
+                    new_verdicts.append(
+                        VerifierVerdict(
+                            question_id=qid,
+                            agreed=True,
+                            confidence=0.2,
+                            feedback=["Verifier dùng kết quả dự phòng do lỗi lô xử lý."],
+                            reasoning="Lô verifier lỗi; đã tạo kết quả dự phòng.",
+                        )
+                    )
 
         verdict_map = {v.question_id: v for v in old_verdicts}
         for v in new_verdicts:
@@ -183,6 +304,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         verdicts: list[VerifierVerdict] = state.get("_verdicts", [])
         verdict_map = {v.question_id: v for v in verdicts}
         request     = state.get("request")
+        is_preprocess = bool(request and request.intent == Intent.PREPROCESS)
 
         lines = []
         for output in outputs:
@@ -216,20 +338,54 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 + " | " + " | ".join(parts)
             )
 
-        summary_prompt = (
-            "Dựa trên kết quả chấm và phân tích dưới đây, hãy viết một đoạn nhận xét ngắn gọn cho học sinh:\n\n"
-            + "\n".join(lines)
-        )
+        if is_preprocess:
+            solved_lines = []
+            for output in outputs:
+                qid = output.student_ans.question_id
+                verdict = verdict_map.get(qid)
+                draft = output.draft_result
+                debate = output.debate_result
 
-        summary: FinalSummary = await asyncio.to_thread(
-            self._llm_summary.invoke, summary_prompt
-        )
+                confidence = (
+                    float(getattr(verdict, "confidence", 0.0))
+                    if verdict is not None
+                    else float(getattr(draft, "confidence", 0.0))
+                    if draft is not None
+                    else 0.0
+                )
+                reasoning = (
+                    debate.final_feedback if debate and debate.final_feedback
+                    else draft.feedback if draft and draft.feedback
+                    else verdict.reasoning if verdict and verdict.reasoning
+                    else "Da xu ly cau hoi o che do PREPROCESS."
+                )
+                solved_lines.append(
+                    f"Cau {qid}: confidence={confidence:.2f} | {reasoning}"
+                )
+
+            summary_text = (
+                "PREPROCESS hoan tat. Da giai va xac minh cac cau hoi:\n"
+                + "\n".join(solved_lines)
+                if solved_lines
+                else "PREPROCESS hoan tat nhung khong co cau hoi de tong hop."
+            )
+        else:
+            summary_prompt = (
+                "Dựa trên kết quả chấm và phân tích dưới đây, hãy viết một đoạn nhận xét ngắn gọn cho học sinh.\n"
+                "Bắt buộc: phản hồi hoàn toàn bằng tiếng Việt, không dùng tiếng Anh.\n\n"
+                + "\n".join(lines)
+            )
+
+            summary: FinalSummary = await asyncio.to_thread(
+                self._llm_summary.invoke, summary_prompt
+            )
+            summary_text = summary.feedback
 
         response = MessageResponse(
             student_id  = request.student_id if request else "",
             exam_id     = state.get("exam_id") or (request.exam_id if request else None),
             question_id = request.question_id if request else None,
-            feedback    = summary.feedback,
+            feedback    = summary_text,
         )
 
         return {**state, "response": response, "phase": "finalize"}

@@ -1,15 +1,42 @@
 import asyncio
+import os
+import json
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 
 load_dotenv(override=True)
 
+from master.agents.parser.parser import ParserAgent
 from master.agents.teacher.teacher import TeacherAgent
 from master.agents.verifier.verifier import VerifierAgent
 from master.agents.common.state import AgentState
 from master.agents.common.message import MessageRequest, MessageResponse, Intent, StudentAnswer
 from master.agents.common.tools import ToolsRegistry
+from master.logging.logger import Logger
 
+pipeline_logger = Logger("Pipeline")
+
+_teacher_agent: TeacherAgent | None = None
+_verifier_agent: VerifierAgent | None = None
+_agent_setup_lock = asyncio.Lock()
+
+
+async def _get_teacher_agent() -> TeacherAgent:
+    global _teacher_agent
+    async with _agent_setup_lock:
+        if _teacher_agent is None:
+            _teacher_agent = TeacherAgent()
+            await _teacher_agent.setup()
+        return _teacher_agent
+
+
+async def _get_verifier_agent() -> VerifierAgent:
+    global _verifier_agent
+    async with _agent_setup_lock:
+        if _verifier_agent is None:
+            _verifier_agent = VerifierAgent()
+            await _verifier_agent.setup()
+        return _verifier_agent
 
 def build_pipeline_graph(
     teacher: TeacherAgent,
@@ -17,14 +44,40 @@ def build_pipeline_graph(
 ):
     builder = StateGraph(dict)
 
+    def _log_outputs(stage: str, outputs: list) -> None:
+        for out in outputs:
+            qid = out.student_ans.question_id
+            payload = {
+                "question_id": qid,
+                "draft_result": out.draft_result.model_dump() if out.draft_result else None,
+                "verifier_feedback": out.verifier_feedback,
+                "debate_result": out.debate_result.model_dump() if out.debate_result else None,
+            }
+            pipeline_logger.agent_node(
+                f"{stage} | {json.dumps(payload, ensure_ascii=False)}"
+            )
+
+    def _log_verdicts(stage: str, verdicts: list) -> None:
+        for verdict in verdicts:
+            payload = verdict.model_dump() if hasattr(verdict, "model_dump") else dict(verdict)
+            pipeline_logger.agent_node(
+                f"{stage} | {json.dumps(payload, ensure_ascii=False)}"
+            )
+
     async def teacher_draft_node(state: dict) -> dict:
         thread_id = state.get("_thread_id", "pipeline")
         next_state = await teacher.run_draft(state, thread_id=thread_id)
+        _log_outputs("TEACHER_DRAFT", next_state.get("debate_outputs", []))
+
+        request = state.get("request")
+        if request and request.intent == Intent.PREPROCESS:
+            outputs = next_state.get("debate_outputs", [])
         return next_state
 
     async def verifier_check_node(state: dict) -> dict:
         thread_id = state.get("_thread_id", "pipeline")
         verdict, next_state = await verifier.verify(state, thread_id=thread_id)
+        _log_verdicts("VERIFIER_CHECK", next_state.get("_verdicts", []))
         return {**next_state, "_pipeline_verdict": verdict}
 
     async def teacher_finalize_node(state: dict) -> dict:
@@ -66,16 +119,14 @@ def build_pipeline_graph(
             question_id=request.question_id if request else None,
             feedback=feedback,
         )
-        if is_ask_hint:
-            print("ASK_HINT: skip verifier/debate and return Teacher response")
-        else:
-            print("Teacher confidence passed threshold; skip verifier/debate")
+        pipeline_logger.agent_node(f"PIPELINE_FINALIZE | feedback={response.feedback}")
         return {**state, "response": response, "phase": "finalize", "_pipeline_verdict": "agree"}
 
     async def teacher_debate_node(state: dict) -> dict:
         thread_id = state.get("_thread_id", "pipeline")
-        print(f"Round {state.get('round', 0) + 1}: Verifier disagreed, Teacher debating...")
-        return await teacher.run_debate(state, thread_id=thread_id)
+        next_state = await teacher.run_debate(state, thread_id=thread_id)
+        _log_outputs("TEACHER_DEBATE", next_state.get("debate_outputs", []))
+        return next_state
 
     async def verifier_finalize_node(state: dict) -> dict:
         thread_id = state.get("_thread_id", "pipeline")
@@ -88,7 +139,6 @@ def build_pipeline_graph(
     def route_after_verify(state: dict) -> str:
         verdict = state.get("_pipeline_verdict")
         if verdict == "agree":
-            print(f"Round {state.get('round', 0)}: Verifier agreed")
             return "done"
 
         if state.get("round", 0) >= state.get("max_round", 3):
@@ -112,6 +162,12 @@ def build_pipeline_graph(
             if dr is None:
                 return "verifier_check"
             confidences.append(float(getattr(dr, "confidence", 0.0)))
+
+        if request and request.intent == Intent.PREPROCESS:
+            # PREPROCESS: chỉ verify/debate khi teacher tự giải có confidence cao.
+            if confidences and min(confidences) >= threshold:
+                return "verifier_check"
+            return "teacher_finalize"
 
         if confidences and min(confidences) >= threshold:
             return "teacher_finalize"
@@ -155,14 +211,58 @@ async def run_grading_pipeline(
     confidence_threshold: float = 0.9,
 ) -> MessageResponse:
     
-    teacher = TeacherAgent()
-    await teacher.setup()
+    teacher = await _get_teacher_agent()
 
     if request.intent == Intent.ASK_HINT:
         return await teacher.run_hint(request=request, exam_id=exam_id)
+
+    if request.intent == Intent.PREPROCESS:
+        preprocess_response = await teacher.run_preprocess(request=request, exam_id=exam_id)
+        payload = preprocess_response.preprocess_payload
+
+        if payload is None or not payload.questions:
+            return preprocess_response
+
+        verifier = await _get_verifier_agent()
+        pipeline_graph = build_pipeline_graph(teacher, verifier)
+
+        preprocess_pipeline_request = MessageRequest(
+            intent=Intent.PREPROCESS,
+            student_id=request.student_id,
+            exam_id=(payload.exam.id if payload and payload.exam else exam_id),
+            student_answers=[
+                StudentAnswer(question_id=(q.id or f"q_{idx}"), student_answer="")
+                for idx, q in enumerate(payload.questions, start=1)
+            ],
+        )
+
+        state = AgentState(
+            request=preprocess_pipeline_request,
+            questions=payload.questions,
+            student_answers=preprocess_pipeline_request.student_answers,
+            debate_outputs=[],
+            _verdicts=[],
+            exam_id=preprocess_pipeline_request.exam_id,
+            round=0,
+            max_round=max_rounds,
+            _teacher_confidence_threshold=float(confidence_threshold),
+            _thread_id="pipeline-preprocess",
+        )
+
+        config = {"configurable": {"thread_id": "pipeline-preprocess"}}
+        final_state = await pipeline_graph.ainvoke(state, config=config)
+        final_response = final_state.get(
+            "response",
+            MessageResponse(
+                student_id=request.student_id,
+                exam_id=preprocess_pipeline_request.exam_id,
+                feedback="PREPROCESS debate completed",
+            ),
+        )
+        final_response.preprocess_payload = payload
+        return final_response
     
-    verifier = VerifierAgent()
-    await verifier.setup()
+    verifier = await _get_verifier_agent()
 
     pipeline_graph = build_pipeline_graph(teacher, verifier)
     
@@ -189,56 +289,37 @@ async def run_grading_pipeline(
 
 
 async def demo():
-    # Example 1: ASK_HINT -> Teacher trả MessageResponse trực tiếp, bỏ qua Verifier/Debate
-    ask_hint_request = MessageRequest(
-        intent=Intent.ASK_HINT,
-        student_id="69dca9498a492d985a43f808",
-        question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
-        student_answers=[
-            StudentAnswer(
-                question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
-                student_answer="B"
-            )
-        ]
-    )
+    student_id = "parser-pdf-demo"
 
-    # Example 2: REVIEW_MISTAKE -> flow đầy đủ Teacher/Verifier (nếu cần)
-    review_request = MessageRequest(
-        intent=Intent.REVIEW_MISTAKE,
-        student_id="69dca9498a492d985a43f808",
-        question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
-        student_answers=[
-            StudentAnswer(
-                question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
-                student_answer="B"
-            )
+    def find_demo_pdf() -> str:
+        base_dir = os.path.dirname(__file__)
+        pdf_candidates = [
+            os.path.join(base_dir, name)
+            for name in os.listdir(base_dir)
+            if name.lower().endswith(".pdf")
         ]
-    )
-    
-    print("GRADING PIPELINE DEMO")
-    print("=" * 80)
-    print("Case 1: ASK_HINT")
-    print(f"Student: {ask_hint_request.student_id}")
-    print(f"Question: {ask_hint_request.question_id}")
-    print(f"Answer: {ask_hint_request.student_answers[0].student_answer}")
-    print()
-    
+        if not pdf_candidates:
+            raise FileNotFoundError(
+                "Không tìm thấy PDF trong thư mục master/agents để chạy demo server.py"
+            )
+        return sorted(pdf_candidates)[0]
+
     try:
-        response = await run_grading_pipeline(ask_hint_request, max_rounds=3)
-        
-        print("RESULT")
-        print("=" * 80)
-        print(f"Student ID: {response.student_id}")
-        print(f"Exam ID: {response.exam_id}")
-        print(f"Feedback:\n{response.feedback}")
+        pdf_path = find_demo_pdf()
 
-        print("\n" + "=" * 80)
-        print("Case 2: REVIEW_MISTAKE")
-        response2 = await run_grading_pipeline(review_request, max_rounds=3)
-        print(f"Student ID: {response2.student_id}")
-        print(f"Exam ID: {response2.exam_id}")
-        print(f"Feedback:\n{response2.feedback}")
-        
+        parser = ParserAgent()
+        parser_request = await parser.process(file_path=pdf_path, student_id=student_id)
+        if parser_request is None:
+            raise RuntimeError("Parser không OCR được PDF -> MessageRequest rỗng.")
+
+        parser_request.intent = Intent.PREPROCESS
+        response = await run_grading_pipeline(
+            parser_request,
+            exam_id=parser_request.exam_id,
+            max_rounds=3,
+            confidence_threshold=0.9,
+        )
+
     except Exception as e:
         print(f"ERROR: {e}")
         import traceback

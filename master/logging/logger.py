@@ -40,6 +40,11 @@ class ConsoleFormatter(logging.Formatter):
         "AGENT_NODE": "\033[34m",  # Blue
         "TOOLS_NODE": "\033[96m",  # Light cyan
     }
+    AGENT_ROLE_COLORS = {
+        "parser": "\033[95m",   # Bright magenta
+        "teacher": "\033[34m",  # Blue
+        "verifier": "\033[32m", # Green
+    }
     RESET = "\033[0m"
     BOLD = "\033[1m"
 
@@ -71,6 +76,8 @@ class ConsoleFormatter(logging.Formatter):
 
         if self.use_colors:
             color = self.COLORS.get(display_level, "")
+            if display_level == LogLevel.AGENT_NODE.value:
+                color = self.AGENT_ROLE_COLORS.get(str(module).lower(), color)
             if color:
                 prefix = f"{self.BOLD}{color}{prefix}{self.RESET}"
 
