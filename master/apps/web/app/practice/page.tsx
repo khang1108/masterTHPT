@@ -1,7 +1,9 @@
 'use client';
 
-import { PracticeExamItem, getPracticeExams, updatePractice } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
+import { PracticeExamItem, getPracticeExams, updatePractice } from '@/shared/api/client';
+import { clearAuth, getStudent, getToken } from '@/shared/auth/storage';
+import { Student } from '@/shared/models/student';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
@@ -13,6 +15,7 @@ function formatPracticePrimaryMetric(item: PracticeExamItem) {
 export default function PracticePage() {
 	const router = useRouter();
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
 	const [items, setItems] = useState<PracticeExamItem[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -41,6 +44,7 @@ export default function PracticePage() {
 			return;
 		}
 
+		setCurrentStudent(getStudent());
 		loadPracticeExams(storedToken);
 	}, [router]);
 
@@ -102,18 +106,14 @@ export default function PracticePage() {
 		void submitPracticeUpdate();
 	}
 
+	function logout() {
+		clearAuth();
+		router.replace('/login');
+	}
+
 	return (
-		<main className="documents-page practice-page">
-			<header className="documents-header">
-				<div>
-					<p className="documents-kicker">Phòng luyện thi</p>
-					<h1 className="documents-title">Trang luyện tập</h1>
-					<p className="text-soft">Danh sách đề đang được gán riêng cho tài khoản của bạn, có thể cập nhật lại bằng yêu cầu mới.</p>
-				</div>
-				<Link href="/dashboard" className="btn-ghost">
-					Quay lại tổng quan
-				</Link>
-			</header>
+		<main className="dashboard-shell documents-page practice-page">
+			{currentStudent ? <DashboardTopbar student={currentStudent} onLogout={logout} /> : null}
 
 			{isUpdating ? (
 				<p className="documents-message practice-status" role="status" aria-live="polite">

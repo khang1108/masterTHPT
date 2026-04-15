@@ -19,7 +19,7 @@ async function bootstrap() {
 
 	const port = configService.get<number>('PORT', 3001);
 
-	await app.listen(port, '0.0.0.0');
+	await app.listen(port);
 
 	console.log(`Backend is listening on port ${port} and bound to 0.0.0.0`);
 }

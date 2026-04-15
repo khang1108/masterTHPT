@@ -1,7 +1,8 @@
 'use client';
 
-import { login } from '@/lib/api';
-import { getToken, saveAuth } from '@/lib/auth';
+import { GoogleLoginButton } from '@/features/auth/components/google-login-button';
+import { login, loginWithGoogle } from '@/shared/api/client';
+import { getToken, saveAuth } from '@/shared/auth/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
@@ -31,6 +32,7 @@ export default function LoginPage() {
 	const [password, setPassword] = useState('');
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
+	const [googleLoading, setGoogleLoading] = useState(false);
 
 	useEffect(() => {
 		if (getToken()) {
@@ -54,6 +56,21 @@ export default function LoginPage() {
 		}
 	}
 
+	async function onGoogleCredential(credential: string) {
+		setError('');
+		setGoogleLoading(true);
+
+		try {
+			const data = await loginWithGoogle({ credential });
+			saveAuth(data.access_token, data.student);
+			router.replace('/dashboard');
+		} catch (err: unknown) {
+			setError(getErrorMessage(err));
+		} finally {
+			setGoogleLoading(false);
+		}
+	}
+
 	return (
 		<main className="auth-page">
 			<section className="auth-grid">
@@ -70,6 +87,11 @@ export default function LoginPage() {
 
 				<div className="auth-form-wrap">
 					<h2>Đăng nhập</h2>
+					<p className="auth-note">
+						Đăng nhập bằng email hoặc dùng Google. Nếu đây là lần đầu vào hệ
+						thống, bạn sẽ hoàn thiện hồ sơ học tập trước khi làm bài đầu vào.
+					</p>
+
 					<form className="auth-form" onSubmit={onSubmit}>
 						<label className="input-label" htmlFor="email">
 							Email
@@ -79,7 +101,7 @@ export default function LoginPage() {
 							type="email"
 							className="input-field"
 							value={email}
-							onChange={(e) => setEmail(e.target.value)}
+							onChange={(event) => setEmail(event.target.value)}
 							required
 						/>
 
@@ -91,7 +113,7 @@ export default function LoginPage() {
 							type="password"
 							className="input-field"
 							value={password}
-							onChange={(e) => setPassword(e.target.value)}
+							onChange={(event) => setPassword(event.target.value)}
 							minLength={6}
 							required
 						/>
@@ -99,9 +121,19 @@ export default function LoginPage() {
 						{error ? <p className="error-text">{error}</p> : null}
 
 						<button className="btn-primary" type="submit" disabled={loading}>
-							{loading ? 'Signing in...' : 'Đăng nhập'}
+							{loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
 						</button>
 					</form>
+
+					<div className="auth-divider" aria-hidden="true">
+						<span>hoặc</span>
+					</div>
+
+					<GoogleLoginButton
+						label="Tiếp tục với Google"
+						loading={googleLoading}
+						onCredential={onGoogleCredential}
+					/>
 
 					<p className="muted-link">
 						Chưa có tài khoản? <Link href="/register">Tạo tài khoản</Link>

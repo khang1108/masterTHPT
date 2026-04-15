@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
+const GENERIC_PROXY_ERROR_MESSAGE = 'Không thể kết nối tới hệ thống lúc này. Vui lòng thử lại sau.';
 
 function normalizeProxyTarget(value?: string) {
 	if (!value) {
@@ -61,11 +62,15 @@ async function forwardRequest(request: NextRequest, context: { params: { path: s
 			headers: responseHeaders,
 		});
 	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Unable to reach backend service.';
+		console.error('[web-api-proxy] Failed to proxy request', {
+			method: request.method,
+			path: context.params.path.join('/'),
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+
 		return Response.json(
 			{
-				message,
-				error: 'Bad Gateway',
+				message: GENERIC_PROXY_ERROR_MESSAGE,
 				statusCode: 502,
 			},
 			{ status: 502 },

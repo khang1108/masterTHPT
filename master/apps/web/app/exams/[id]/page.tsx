@@ -1,10 +1,10 @@
 'use client';
 
-import { EditableAnswerPanel } from '@/components/exam/editable-answer-panel';
-import { QuestionFeedbackPanels } from '@/components/exam/feedback-panels';
-import { MathText } from '@/components/exam/math-text';
-import { ExamQuestionHeader } from '@/components/exam/question-header';
-import { FlatQuestion, flattenExamSections } from '@/components/exam/types';
+import { EditableAnswerPanel } from '@/features/exams/components/editable-answer-panel';
+import { QuestionFeedbackPanels } from '@/features/exams/components/feedback-panels';
+import { MathText } from '@/features/exams/components/math-text';
+import { ExamQuestionHeader } from '@/features/exams/components/question-header';
+import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
 import {
 	DocumentDetailResponse,
 	PracticeQuestionCheckResponse,
@@ -14,9 +14,17 @@ import {
 	getDocumentDetail,
 	reviewMistake,
 	submitExam,
-} from '@/lib/api';
-import { getStudent, getToken, updateStudent } from '@/lib/auth';
-import { cacheExamResult, getCachedExamDetail } from '@/lib/exam-session';
+} from '@/shared/api/client';
+import { getStudent, getToken, updateStudent } from '@/shared/auth/storage';
+import {
+	cacheExamDetail,
+	cacheExamQuestionTimings,
+	cacheExamResult,
+	clearCachedExamQuestionTimings,
+	clearCachedExamResult,
+	clearExamRuntimeCache,
+	getCachedExamDetail,
+} from '@/features/exams/lib/exam-runtime-store';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -57,20 +65,77 @@ export default function ExamRoomPage() {
 	const [reviewError, setReviewError] = useState('');
 	const examStartAtRef = useRef<number>(Date.now());
 	const autoSubmitTriggeredRef = useRef(false);
+	const questionTimeMsByIdRef = useRef<Record<string, number>>({});
+	const activeQuestionIdRef = useRef<string | null>(null);
+	const activeQuestionStartedAtRef = useRef<number | null>(null);
+
+	function commitCurrentQuestionTime() {
+		if (!activeQuestionIdRef.current || activeQuestionStartedAtRef.current === null) {
+			return;
+		}
+
+		const elapsedMs = Math.max(0, Date.now() - activeQuestionStartedAtRef.current);
+		questionTimeMsByIdRef.current[activeQuestionIdRef.current] =
+			(questionTimeMsByIdRef.current[activeQuestionIdRef.current] ?? 0) + elapsedMs;
+		activeQuestionStartedAtRef.current = null;
+	}
+
+	function resumeCurrentQuestionTime() {
+		if (
+			!activeQuestionIdRef.current ||
+			activeQuestionStartedAtRef.current !== null ||
+			document.visibilityState === 'hidden'
+		) {
+			return;
+		}
+
+		activeQuestionStartedAtRef.current = Date.now();
+	}
+
+	function getQuestionTimeSecondsMap() {
+		return Object.fromEntries(
+			Object.entries(questionTimeMsByIdRef.current).map(([questionId, elapsedMs]) => [
+				questionId,
+				Math.max(0, Math.round(elapsedMs / 1000)),
+			]),
+		);
+	}
+
+	function buildStudentAnswerRecords() {
+		const questionTimeSecondsById = getQuestionTimeSecondsMap();
+
+		return exam?.sections.flatMap((section) =>
+			section.questions.map((question) => ({
+				question_id: question.id,
+				student_answer: answers[question.id] ?? '',
+				time_spent_seconds: questionTimeSecondsById[question.id] ?? 0,
+			})),
+		) ?? [];
+	}
+
+	const flatQuestions = useMemo<FlatQuestion[]>(() => {
+		if (!exam) {
+			return [];
+		}
+
+		return flattenExamSections(exam.sections);
+	}, [exam]);
+
+	const activeQuestion = flatQuestions[activeQuestionIndex];
 
 	const handlePracticeExit = useCallback(async () => {
 		const token = getToken();
 		if (!token || !examId) {
+			if (examId) {
+				clearExamRuntimeCache(examId);
+			}
+
 			router.push('/practice');
 			return;
 		}
 
-		const studentAnswers = exam?.sections.flatMap((section) =>
-			section.questions.map((question) => ({
-				question_id: question.id,
-				student_answer: answers[question.id] ?? '',
-			})),
-		) ?? [];
+		commitCurrentQuestionTime();
+		const studentAnswers = buildStudentAnswerRecords();
 
 		try {
 			await createHistory(token, {
@@ -82,9 +147,10 @@ export default function ExamRoomPage() {
 		} catch {
 			// Keep exit smooth even if history write fails.
 		} finally {
+			clearExamRuntimeCache(examId);
 			router.push('/practice');
 		}
-	}, [answers, exam, examId, router]);
+	}, [answers, checkedResults, exam, examId, router]);
 
 	useEffect(() => {
 		if (!examId) {
@@ -92,6 +158,9 @@ export default function ExamRoomPage() {
 			setLoading(false);
 			return;
 		}
+
+		clearCachedExamResult(examId);
+		clearCachedExamQuestionTimings(examId);
 
 		const token = getToken();
 		if (!token) {
@@ -115,6 +184,7 @@ export default function ExamRoomPage() {
 				}
 
 				const data = await getDocumentDetail(examId, authToken);
+				cacheExamDetail(data);
 				setExam(data);
 				examStartAtRef.current = Date.now();
 			} catch {
@@ -127,15 +197,56 @@ export default function ExamRoomPage() {
 		loadExam();
 	}, [examId, router]);
 
-	const flatQuestions = useMemo<FlatQuestion[]>(() => {
-		if (!exam) {
-			return [];
+	useEffect(() => {
+		if (!activeQuestion?.id) {
+			commitCurrentQuestionTime();
+			activeQuestionIdRef.current = null;
+			return;
 		}
 
-		return flattenExamSections(exam.sections);
-	}, [exam]);
+		if (activeQuestionIdRef.current !== activeQuestion.id) {
+			commitCurrentQuestionTime();
+			activeQuestionIdRef.current = activeQuestion.id;
+		}
 
-	const activeQuestion = flatQuestions[activeQuestionIndex];
+		resumeCurrentQuestionTime();
+	}, [activeQuestion?.id]);
+
+	useEffect(() => {
+		function handleVisibilityChange() {
+			if (document.visibilityState === 'hidden') {
+				commitCurrentQuestionTime();
+				return;
+			}
+
+			resumeCurrentQuestionTime();
+		}
+
+		function handlePageHide() {
+			commitCurrentQuestionTime();
+		}
+
+		function handleWindowBlur() {
+			commitCurrentQuestionTime();
+		}
+
+		function handleWindowFocus() {
+			resumeCurrentQuestionTime();
+		}
+
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		window.addEventListener('pagehide', handlePageHide);
+		window.addEventListener('blur', handleWindowBlur);
+		window.addEventListener('focus', handleWindowFocus);
+
+		return () => {
+			commitCurrentQuestionTime();
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
+			window.removeEventListener('pagehide', handlePageHide);
+			window.removeEventListener('blur', handleWindowBlur);
+			window.removeEventListener('focus', handleWindowFocus);
+		};
+	}, []);
 	const isLowTime = remainingSeconds !== null && remainingSeconds <= 10 * 60;
 	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
 	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
@@ -224,6 +335,7 @@ export default function ExamRoomPage() {
 
 		try {
 			const timeTakenSeconds = Math.max(1, Math.floor((Date.now() - examStartAtRef.current) / 1000));
+			commitCurrentQuestionTime();
 
 			const fullExam = {
 				exam_id: exam.exam_id,
@@ -256,6 +368,7 @@ export default function ExamRoomPage() {
 				full_exam: fullExam,
 			});
 
+			cacheExamQuestionTimings(exam.exam_id, getQuestionTimeSecondsMap());
 			cacheExamResult(exam.exam_id, result);
 			updateStudent({ is_first_login: false });
 			router.push(`/exams/${exam.exam_id}/results`);
@@ -376,6 +489,7 @@ export default function ExamRoomPage() {
 
 	function handleExitExamRoom() {
 		setShowExitConfirm(false);
+		clearExamRuntimeCache(examId);
 		router.push('/documents');
 	}
 

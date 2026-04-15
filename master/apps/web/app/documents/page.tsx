@@ -1,7 +1,9 @@
 'use client';
 
-import { DocumentItem, getDocuments } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
+import { DocumentItem, getDocuments } from '@/shared/api/client';
+import { clearAuth, getStudent, getToken } from '@/shared/auth/storage';
+import { Student } from '@/shared/models/student';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -36,6 +38,7 @@ function formatDocumentSecondaryMeta(item: DocumentItem) {
 
 export default function DocumentsPage() {
 	const router = useRouter();
+	const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
 	const [documents, setDocuments] = useState<DocumentItem[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -61,6 +64,8 @@ export default function DocumentsPage() {
 			router.replace('/login');
 			return;
 		}
+
+		setCurrentStudent(getStudent());
 		const authToken = token;
 
 		async function loadDocuments() {
@@ -118,18 +123,14 @@ export default function DocumentsPage() {
 		});
 	}, [documents, gradeFilter, searchValue, subjectFilter, yearFilter]);
 
+	function logout() {
+		clearAuth();
+		router.replace('/login');
+	}
+
 	return (
-		<main className="documents-page">
-			<header className="documents-header">
-				<div>
-					<p className="documents-kicker">Kho đề thi</p>
-					<h1 className="documents-title">Danh sách đề thi</h1>
-					<p className="text-soft">Tìm đề theo môn, năm và từ khóa trong kho đề chuẩn đã được crawl.</p>
-				</div>
-				<Link href="/dashboard" className="btn-ghost">
-					Quay lại tổng quan
-				</Link>
-			</header>
+		<main className="dashboard-shell documents-page">
+			{currentStudent ? <DashboardTopbar student={currentStudent} onLogout={logout} /> : null}
 
 			<section className="documents-toolbar" aria-label="Documents filters">
 				<input

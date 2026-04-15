@@ -1,14 +1,19 @@
 'use client';
 
-import { QuestionFeedbackPanels } from '@/components/exam/feedback-panels';
-import { formatScore } from '@/components/exam/helpers';
-import { MathText } from '@/components/exam/math-text';
-import { ExamQuestionHeader } from '@/components/exam/question-header';
-import { ResultAnswerPanel } from '@/components/exam/result-answer-panel';
-import { FlatQuestion, flattenExamSections } from '@/components/exam/types';
-import { DocumentDetailResponse, ExamEvaluationItem, askHint, createHistory, getDocumentDetail, reviewMistake } from '@/lib/api';
-import { getToken } from '@/lib/auth';
-import { getCachedExamDetail, getCachedExamResult } from '@/lib/exam-session';
+import { QuestionFeedbackPanels } from '@/features/exams/components/feedback-panels';
+import { formatScore } from '@/features/exams/lib/helpers';
+import { MathText } from '@/features/exams/components/math-text';
+import { ExamQuestionHeader } from '@/features/exams/components/question-header';
+import { ResultAnswerPanel } from '@/features/exams/components/result-answer-panel';
+import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
+import { DocumentDetailResponse, ExamEvaluationItem, askHint, createHistory, getDocumentDetail, reviewMistake } from '@/shared/api/client';
+import { getToken } from '@/shared/auth/storage';
+import {
+	clearExamRuntimeCache,
+	getCachedExamDetail,
+	getCachedExamQuestionTimings,
+	getCachedExamResult,
+} from '@/features/exams/lib/exam-runtime-store';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -100,17 +105,32 @@ export default function ExamResultPage() {
 	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.id) : null;
 	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
 	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
+	const scoreSummaryValue = result?.score !== null && result?.score !== undefined
+		? formatScore(result.score)
+		: `${result?.correct_count ?? 0}/${result?.total_questions ?? 0}`;
+	const scoreSummaryLabel = result?.score !== null && result?.score !== undefined
+		? 'Điểm tổng'
+		: 'Số câu đúng';
+	const scoreSummaryMeta = result?.score !== null && result?.score !== undefined
+		? ''
+		: 'Câu đúng trên tổng số câu';
 
 	const handleExitResults = useCallback(async () => {
 		const token = getToken();
 		if (!token || !examId) {
+			if (examId) {
+				clearExamRuntimeCache(examId);
+			}
+
 			router.push('/documents');
 			return;
 		}
 
+		const questionTimings = getCachedExamQuestionTimings(examId);
 		const studentAnswers = result?.per_question.map((item) => ({
 			question_id: item.question_id,
 			student_answer: item.student_answer,
+			time_spent_seconds: questionTimings[item.question_id] ?? 0,
 		})) ?? [];
 
 		try {
@@ -124,6 +144,7 @@ export default function ExamResultPage() {
 		} catch {
 			// Keep exit smooth even if history write fails.
 		} finally {
+			clearExamRuntimeCache(examId);
 			router.push('/documents');
 		}
 	}, [examId, result, router]);
@@ -209,14 +230,21 @@ export default function ExamResultPage() {
 					<h1 className="documents-title">{exam.subject} - {exam.exam_type}</h1>
 					<p className="text-soft">
 						{exam.grade ? `Lớp ${exam.grade} | ` : ''}
-						{result.score !== null
-							? `Điểm: ${formatScore(result.score)}`
-							: `Số câu đúng: ${result.correct_count} / ${result.total_questions}`}
+						{exam.total_questions} câu | {exam.duration_minutes} phút
 					</p>
 				</div>
-				<button type="button" className="btn-ghost" onClick={handleExitResults}>
-					Về Kho đề
-				</button>
+				<div className="exam-header-side">
+					<button type="button" className="btn-ghost" onClick={handleExitResults}>
+						Về Kho đề
+					</button>
+					<div className="exam-result-hero">
+						<p className="exam-result-hero-label">{scoreSummaryLabel}</p>
+						<p className="exam-result-hero-value">{scoreSummaryValue}</p>
+						{scoreSummaryMeta ? (
+							<p className="exam-result-hero-meta">{scoreSummaryMeta}</p>
+						) : null}
+					</div>
+				</div>
 			</header>
 
 			<section className="exam-layout">

@@ -1,6 +1,6 @@
-@import './styles/base.css';
-@import './styles/auth.css';
-@import './styles/dashboard.css';
-@import './styles/documents.css';
-@import './styles/exam.css';
-@import './styles/responsive.css';
+@import '../shared/styles/base.css';
+@import '../shared/styles/auth.css';
+@import '../shared/styles/dashboard.css';
+@import '../shared/styles/documents.css';
+@import '../shared/styles/exam.css';
+@import '../shared/styles/responsive.css';
