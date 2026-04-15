@@ -1,0 +1,1038 @@
+{
+  "subject": "Mathematics",
+  "nodes": [
+    {
+      "id": "math.10.cd.ch1.b1",
+      "grade": 10,
+      "chapter": 1,
+      "topic": "Mệnh đề",
+      "display_name": "Mệnh đề toán học",
+      "prerequisites": []
+    },
+    {
+      "id": "math.10.cd.ch1.b2",
+      "grade": 10,
+      "chapter": 1,
+      "topic": "Tập hợp. Các phép toán trên tập hợp",
+      "display_name": "Tập hợp. Các phép toán trên tập hợp",
+      "prerequisites": [
+        "math.10.cd.ch1.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch2.b1",
+      "grade": 10,
+      "chapter": 2,
+      "topic": "Bất phương trình bậc nhất hai ẩn",
+      "display_name": "Bất phương trình bậc nhất hai ẩn",
+      "prerequisites": [
+        "math.10.cd.ch1.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch2.b2",
+      "grade": 10,
+      "chapter": 2,
+      "topic": "Hệ bất phương trình bậc nhất hai ẩn",
+      "display_name": "Hệ bất phương trình bậc nhất hai ẩn",
+      "prerequisites": [
+        "math.10.cd.ch2.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch3.b1",
+      "grade": 10,
+      "chapter": 3,
+      "topic": "Hàm số và đồ thị",
+      "display_name": "Hàm số và đồ thị",
+      "prerequisites": [
+        "math.10.cd.ch1.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch3.b2",
+      "grade": 10,
+      "chapter": 3,
+      "topic": "Hàm số bậc hai",
+      "display_name": "Hàm số bậc hai. Đồ thị hàm số bậc hai và ứng dụng",
+      "prerequisites": [
+        "math.10.cd.ch3.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch3.b3",
+      "grade": 10,
+      "chapter": 3,
+      "topic": "Dấu của tam thức bậc hai",
+      "display_name": "Dấu của tam thức bậc hai",
+      "prerequisites": [
+        "math.10.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch3.b4",
+      "grade": 10,
+      "chapter": 3,
+      "topic": "Bất phương trình bậc hai một ẩn",
+      "display_name": "Bất phương trình bậc hai một ẩn",
+      "prerequisites": [
+        "math.10.cd.ch3.b3",
+        "math.10.cd.ch2.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch3.b5",
+      "grade": 10,
+      "chapter": 3,
+      "topic": "Phương trình quy về phương trình bậc hai",
+      "display_name": "Hai dạng phương trình quy về phương trình bậc hai",
+      "prerequisites": [
+        "math.10.cd.ch3.b4"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch4.b1",
+      "grade": 10,
+      "chapter": 4,
+      "topic": "Giá trị lượng giác. Định lý cosin, sin",
+      "display_name": "Giá trị lượng giác của một góc từ 0 đến 180 độ. Định lý côsin và sin",
+      "prerequisites": [
+        "math.10.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch4.b2",
+      "grade": 10,
+      "chapter": 4,
+      "topic": "Giải tam giác",
+      "display_name": "Giải tam giác. Tính diện tích tam giác",
+      "prerequisites": [
+        "math.10.cd.ch4.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch4.b3",
+      "grade": 10,
+      "chapter": 4,
+      "topic": "Khái niệm vectơ",
+      "display_name": "Khái niệm vectơ",
+      "prerequisites": []
+    },
+    {
+      "id": "math.10.cd.ch4.b4",
+      "grade": 10,
+      "chapter": 4,
+      "topic": "Tổng và hiệu hai vectơ",
+      "display_name": "Tổng và hiệu của hai vectơ",
+      "prerequisites": [
+        "math.10.cd.ch4.b3"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch4.b5",
+      "grade": 10,
+      "chapter": 4,
+      "topic": "Tích của một số với một vectơ",
+      "display_name": "Tích của một số với một vectơ",
+      "prerequisites": [
+        "math.10.cd.ch4.b4"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch4.b6",
+      "grade": 10,
+      "chapter": 4,
+      "topic": "Tích vô hướng của hai vectơ",
+      "display_name": "Tích vô hướng của hai vectơ",
+      "prerequisites": [
+        "math.10.cd.ch4.b5",
+        "math.10.cd.ch4.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch5.b1",
+      "grade": 10,
+      "chapter": 5,
+      "topic": "Quy tắc cộng và nhân",
+      "display_name": "Quy tắc cộng. Quy tắc nhân. Sơ đồ hình cây",
+      "prerequisites": [
+        "math.10.cd.ch1.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch5.b2",
+      "grade": 10,
+      "chapter": 5,
+      "topic": "Hoán vị. Chỉnh hợp",
+      "display_name": "Hoán vị. Chỉnh hợp",
+      "prerequisites": [
+        "math.10.cd.ch5.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch5.b3",
+      "grade": 10,
+      "chapter": 5,
+      "topic": "Tổ hợp",
+      "display_name": "Tổ hợp",
+      "prerequisites": [
+        "math.10.cd.ch5.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch5.b4",
+      "grade": 10,
+      "chapter": 5,
+      "topic": "Nhị thức Newton",
+      "display_name": "Nhị thức Newton",
+      "prerequisites": [
+        "math.10.cd.ch5.b3"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch6.b1",
+      "grade": 10,
+      "chapter": 6,
+      "topic": "Số gần đúng. Sai số",
+      "display_name": "Số gần đúng. Sai số",
+      "prerequisites": []
+    },
+    {
+      "id": "math.10.cd.ch6.b2",
+      "grade": 10,
+      "chapter": 6,
+      "topic": "Các số đặc trưng đo xu thế trung tâm",
+      "display_name": "Các số đặc trưng đo xu thế trung tâm",
+      "prerequisites": [
+        "math.10.cd.ch6.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch6.b3",
+      "grade": 10,
+      "chapter": 6,
+      "topic": "Các số đặc trưng đo mức độ phân tán",
+      "display_name": "Các số đặc trưng đo mức độ phân tán",
+      "prerequisites": [
+        "math.10.cd.ch6.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch6.b4",
+      "grade": 10,
+      "chapter": 6,
+      "topic": "Xác suất của biến cố trong trò chơi đơn giản",
+      "display_name": "Xác suất của biến cố trong một số trò chơi đơn giản",
+      "prerequisites": [
+        "math.10.cd.ch5.b3",
+        "math.10.cd.ch6.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch6.b5",
+      "grade": 10,
+      "chapter": 6,
+      "topic": "Xác suất của biến cố",
+      "display_name": "Xác suất của biến cố",
+      "prerequisites": [
+        "math.10.cd.ch6.b4"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch7.b1",
+      "grade": 10,
+      "chapter": 7,
+      "topic": "Tọa độ của vectơ",
+      "display_name": "Tọa độ của vectơ",
+      "prerequisites": [
+        "math.10.cd.ch4.b6"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch7.b2",
+      "grade": 10,
+      "chapter": 7,
+      "topic": "Biểu thức tọa độ của phép toán vectơ",
+      "display_name": "Biểu thức tọa độ của các phép toán vectơ",
+      "prerequisites": [
+        "math.10.cd.ch7.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch7.b3",
+      "grade": 10,
+      "chapter": 7,
+      "topic": "Phương trình đường thẳng",
+      "display_name": "Phương trình đường thẳng",
+      "prerequisites": [
+        "math.10.cd.ch7.b2",
+        "math.10.cd.ch3.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch7.b4",
+      "grade": 10,
+      "chapter": 7,
+      "topic": "Vị trí tương đối và góc",
+      "display_name": "Vị trí tương đối và góc giữa hai đường thẳng",
+      "prerequisites": [
+        "math.10.cd.ch7.b3"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch7.b5",
+      "grade": 10,
+      "chapter": 7,
+      "topic": "Phương trình đường tròn",
+      "display_name": "Phương trình đường tròn",
+      "prerequisites": [
+        "math.10.cd.ch7.b4"
+      ]
+    },
+    {
+      "id": "math.10.cd.ch7.b6",
+      "grade": 10,
+      "chapter": 7,
+      "topic": "Ba đường conic",
+      "display_name": "Ba đường conic",
+      "prerequisites": [
+        "math.10.cd.ch7.b5",
+        "math.10.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm1.b1",
+      "grade": 10,
+      "chapter": "Chuyên đề 1",
+      "topic": "Hệ phương trình bậc nhất ba ẩn",
+      "display_name": "Hệ phương trình bậc nhất ba ẩn",
+      "prerequisites": [
+        "math.10.cd.ch2.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm1.b2",
+      "grade": 10,
+      "chapter": "Chuyên đề 1",
+      "topic": "Ứng dụng hệ phương trình 3 ẩn",
+      "display_name": "Ứng dụng của hệ phương trình bậc nhất ba ẩn",
+      "prerequisites": [
+        "math.10.cd.chm1.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm2.b1",
+      "grade": 10,
+      "chapter": "Chuyên đề 2",
+      "topic": "Phương pháp quy nạp toán học",
+      "display_name": "Phương pháp quy nạp toán học",
+      "prerequisites": [
+        "math.10.cd.ch1.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm2.b2",
+      "grade": 10,
+      "chapter": "Chuyên đề 2",
+      "topic": "Mở rộng Nhị thức Newton",
+      "display_name": "Nhị thức Newton",
+      "prerequisites": [
+        "math.10.cd.ch5.b4",
+        "math.10.cd.chm2.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm3.b1",
+      "grade": 10,
+      "chapter": "Chuyên đề 3",
+      "topic": "Đường Elip",
+      "display_name": "Elip",
+      "prerequisites": [
+        "math.10.cd.ch7.b6"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm3.b2",
+      "grade": 10,
+      "chapter": "Chuyên đề 3",
+      "topic": "Đường Hypebol",
+      "display_name": "Hypebol",
+      "prerequisites": [
+        "math.10.cd.chm3.b1"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm3.b3",
+      "grade": 10,
+      "chapter": "Chuyên đề 3",
+      "topic": "Đường Parabol",
+      "display_name": "Parabol",
+      "prerequisites": [
+        "math.10.cd.chm3.b2"
+      ]
+    },
+    {
+      "id": "math.10.cd.chm3.b4",
+      "grade": 10,
+      "chapter": "Chuyên đề 3",
+      "topic": "Sự thống nhất của 3 đường conic",
+      "display_name": "Ba đường conic",
+      "prerequisites": [
+        "math.10.cd.chm3.b3"
+      ]
+    },
+
+    {
+      "id": "math.11.cd.ch1.b1",
+      "grade": 11,
+      "chapter": 1,
+      "topic": "Góc lượng giác",
+      "display_name": "Góc lượng giác. Giá trị lượng giác của góc lượng giác",
+      "prerequisites": [
+        "math.10.cd.ch4.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch1.b2",
+      "grade": 11,
+      "chapter": 1,
+      "topic": "Phép biến đổi lượng giác",
+      "display_name": "Các phép biến đổi lượng giác",
+      "prerequisites": [
+        "math.11.cd.ch1.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch1.b3",
+      "grade": 11,
+      "chapter": 1,
+      "topic": "Hàm số lượng giác",
+      "display_name": "Hàm số lượng giác và đồ thị",
+      "prerequisites": [
+        "math.11.cd.ch1.b2",
+        "math.10.cd.ch3.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch1.b4",
+      "grade": 11,
+      "chapter": 1,
+      "topic": "Phương trình lượng giác cơ bản",
+      "display_name": "Phương trình lượng giác cơ bản",
+      "prerequisites": [
+        "math.11.cd.ch1.b3"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch2.b1",
+      "grade": 11,
+      "chapter": 2,
+      "topic": "Dãy số",
+      "display_name": "Dãy số",
+      "prerequisites": [
+        "math.10.cd.ch3.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch2.b2",
+      "grade": 11,
+      "chapter": 2,
+      "topic": "Cấp số cộng",
+      "display_name": "Cấp số cộng",
+      "prerequisites": [
+        "math.11.cd.ch2.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch2.b3",
+      "grade": 11,
+      "chapter": 2,
+      "topic": "Cấp số nhân",
+      "display_name": "Cấp số nhân",
+      "prerequisites": [
+        "math.11.cd.ch2.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch3.b1",
+      "grade": 11,
+      "chapter": 3,
+      "topic": "Giới hạn của dãy số",
+      "display_name": "Giới hạn của dãy số",
+      "prerequisites": [
+        "math.11.cd.ch2.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch3.b2",
+      "grade": 11,
+      "chapter": 3,
+      "topic": "Giới hạn của hàm số",
+      "display_name": "Giới hạn của hàm số",
+      "prerequisites": [
+        "math.11.cd.ch3.b1",
+        "math.10.cd.ch3.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch3.b3",
+      "grade": 11,
+      "chapter": 3,
+      "topic": "Hàm số liên tục",
+      "display_name": "Hàm số liên tục",
+      "prerequisites": [
+        "math.11.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch4.b1",
+      "grade": 11,
+      "chapter": 4,
+      "topic": "Đường thẳng và mặt phẳng không gian",
+      "display_name": "Đường thẳng và mặt phẳng trong không gian",
+      "prerequisites": [
+        "math.10.cd.ch1.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch4.b2",
+      "grade": 11,
+      "chapter": 4,
+      "topic": "Hai đường thẳng song song",
+      "display_name": "Hai đường thẳng song song trong không gian",
+      "prerequisites": [
+        "math.11.cd.ch4.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch4.b3",
+      "grade": 11,
+      "chapter": 4,
+      "topic": "Đường thẳng và mặt phẳng song song",
+      "display_name": "Đường thẳng và mặt phẳng song song",
+      "prerequisites": [
+        "math.11.cd.ch4.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch4.b4",
+      "grade": 11,
+      "chapter": 4,
+      "topic": "Hai mặt phẳng song song",
+      "display_name": "Hai mặt phẳng song song",
+      "prerequisites": [
+        "math.11.cd.ch4.b3"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch4.b5",
+      "grade": 11,
+      "chapter": 4,
+      "topic": "Hình lăng trụ và hình hộp",
+      "display_name": "Hình lăng trụ và hình hộp",
+      "prerequisites": [
+        "math.11.cd.ch4.b4"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch4.b6",
+      "grade": 11,
+      "chapter": 4,
+      "topic": "Phép chiếu song song",
+      "display_name": "Phép chiếu song song. Hình biểu diễn của một hình không gian",
+      "prerequisites": [
+        "math.11.cd.ch4.b5"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch5.b1",
+      "grade": 11,
+      "chapter": 5,
+      "topic": "Đo xu thế trung tâm số liệu ghép nhóm",
+      "display_name": "Các số đặc trưng đo xu thế trung tâm cho mẫu số liệu ghép nhóm",
+      "prerequisites": [
+        "math.10.cd.ch6.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch5.b2",
+      "grade": 11,
+      "chapter": 5,
+      "topic": "Các quy tắc tính xác suất",
+      "display_name": "Biến cố hợp và biến cố giao. Biến cố độc lập. Các quy tắc tính xác suất",
+      "prerequisites": [
+        "math.10.cd.ch6.b5"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch6.b1",
+      "grade": 11,
+      "chapter": 6,
+      "topic": "Phép tính lũy thừa",
+      "display_name": "Phép tính lũy thừa",
+      "prerequisites": [
+        "math.10.cd.ch3.b5"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch6.b2",
+      "grade": 11,
+      "chapter": 6,
+      "topic": "Phép tính lôgarit",
+      "display_name": "Phép tính lôgarit",
+      "prerequisites": [
+        "math.11.cd.ch6.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch6.b3",
+      "grade": 11,
+      "chapter": 6,
+      "topic": "Hàm số mũ và lôgarit",
+      "display_name": "Hàm số mũ. Hàm số lôgarit",
+      "prerequisites": [
+        "math.11.cd.ch6.b2",
+        "math.10.cd.ch3.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch6.b4",
+      "grade": 11,
+      "chapter": 6,
+      "topic": "Phương trình, bất phương trình mũ",
+      "display_name": "Phương trình, bất phương trình mũ và lôgarit",
+      "prerequisites": [
+        "math.11.cd.ch6.b3",
+        "math.10.cd.ch3.b4"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch7.b1",
+      "grade": 11,
+      "chapter": 7,
+      "topic": "Định nghĩa đạo hàm",
+      "display_name": "Định nghĩa đạo hàm. Ý nghĩa hình học của đạo hàm",
+      "prerequisites": [
+        "math.11.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch7.b2",
+      "grade": 11,
+      "chapter": 7,
+      "topic": "Quy tắc tính đạo hàm",
+      "display_name": "Các quy tắc tính đạo hàm",
+      "prerequisites": [
+        "math.11.cd.ch7.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch7.b3",
+      "grade": 11,
+      "chapter": 7,
+      "topic": "Đạo hàm cấp hai",
+      "display_name": "Đạo hàm cấp hai",
+      "prerequisites": [
+        "math.11.cd.ch7.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch8.b1",
+      "grade": 11,
+      "chapter": 8,
+      "topic": "Hai đường thẳng vuông góc",
+      "display_name": "Hai đường thẳng vuông góc",
+      "prerequisites": [
+        "math.11.cd.ch4.b2",
+        "math.10.cd.ch4.b6"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch8.b2",
+      "grade": 11,
+      "chapter": 8,
+      "topic": "Đường thẳng vuông góc mặt phẳng",
+      "display_name": "Đường thẳng vuông góc với mặt phẳng",
+      "prerequisites": [
+        "math.11.cd.ch8.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch8.b3",
+      "grade": 11,
+      "chapter": 8,
+      "topic": "Góc giữa đường thẳng và mặt phẳng",
+      "display_name": "Góc giữa đường thẳng và mặt phẳng. Góc nhị diện",
+      "prerequisites": [
+        "math.11.cd.ch8.b2"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch8.b4",
+      "grade": 11,
+      "chapter": 8,
+      "topic": "Hai mặt phẳng vuông góc",
+      "display_name": "Hai mặt phẳng vuông góc",
+      "prerequisites": [
+        "math.11.cd.ch8.b3"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch8.b5",
+      "grade": 11,
+      "chapter": 8,
+      "topic": "Khoảng cách",
+      "display_name": "Khoảng cách",
+      "prerequisites": [
+        "math.11.cd.ch8.b4"
+      ]
+    },
+    {
+      "id": "math.11.cd.ch8.b6",
+      "grade": 11,
+      "chapter": 8,
+      "topic": "Thể tích không gian",
+      "display_name": "Hình lăng trụ đứng. Hình chóp đều. Thể tích",
+      "prerequisites": [
+        "math.11.cd.ch8.b5",
+        "math.11.cd.ch4.b5"
+      ]
+    },
+    {
+      "id": "math.11.cd.chm1.b1",
+      "grade": 11,
+      "chapter": "Chuyên đề 1",
+      "topic": "Phép dời hình",
+      "display_name": "Phép dời hình",
+      "prerequisites": [
+        "math.10.cd.ch7.b4",
+        "math.10.cd.ch4.b5"
+      ]
+    },
+    {
+      "id": "math.11.cd.chm1.b2",
+      "grade": 11,
+      "chapter": "Chuyên đề 1",
+      "topic": "Phép đồng dạng",
+      "display_name": "Phép đồng dạng",
+      "prerequisites": [
+        "math.11.cd.chm1.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.chm2.b1",
+      "grade": 11,
+      "chapter": "Chuyên đề 2",
+      "topic": "Yếu tố đồ thị, Đường đi Euler",
+      "display_name": "Một vài yếu tố của Lí thuyết đồ thị. Đường đi Euler và đường đi Hamilton",
+      "prerequisites": [
+        "math.10.cd.ch1.b1",
+        "math.10.cd.ch5.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.chm2.b2",
+      "grade": 11,
+      "chapter": "Chuyên đề 2",
+      "topic": "Ứng dụng lí thuyết đồ thị",
+      "display_name": "Một vài ứng dụng của lí thuyết đồ thị",
+      "prerequisites": [
+        "math.11.cd.chm2.b1"
+      ]
+    },
+    {
+      "id": "math.11.cd.chm3.b1",
+      "grade": 11,
+      "chapter": "Chuyên đề 3",
+      "topic": "Cơ bản về vẽ kĩ thuật",
+      "display_name": "Một số nội dung cơ bản về vẽ kĩ thuật",
+      "prerequisites": [
+        "math.11.cd.ch4.b6"
+      ]
+    },
+    {
+      "id": "math.11.cd.chm3.b2",
+      "grade": 11,
+      "chapter": "Chuyên đề 3",
+      "topic": "Đọc bản vẽ kĩ thuật",
+      "display_name": "Đọc và vẽ bản vẽ kĩ thuật đơn giản",
+      "prerequisites": [
+        "math.11.cd.chm3.b1"
+      ]
+    },
+
+    {
+      "id": "math.12.cd.ch1.b1",
+      "grade": 12,
+      "chapter": 1,
+      "topic": "Tính đơn điệu của hàm số",
+      "display_name": "Tính đơn điệu của hàm số",
+      "prerequisites": [
+        "math.11.cd.ch7.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch1.b2",
+      "grade": 12,
+      "chapter": 1,
+      "topic": "Cực trị của hàm số",
+      "display_name": "Cực trị của hàm số",
+      "prerequisites": [
+        "math.12.cd.ch1.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch1.b3",
+      "grade": 12,
+      "chapter": 1,
+      "topic": "Giá trị lớn nhất và nhỏ nhất",
+      "display_name": "Giá trị lớn nhất, giá trị nhỏ nhất của hàm số",
+      "prerequisites": [
+        "math.12.cd.ch1.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch1.b4",
+      "grade": 12,
+      "chapter": 1,
+      "topic": "Đường tiệm cận",
+      "display_name": "Đường tiệm cận của đồ thị hàm số",
+      "prerequisites": [
+        "math.11.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch1.b5",
+      "grade": 12,
+      "chapter": 1,
+      "topic": "Khảo sát hàm số",
+      "display_name": "Khảo sát sự biến thiên và vẽ đồ thị của hàm số",
+      "prerequisites": [
+        "math.12.cd.ch1.b3",
+        "math.12.cd.ch1.b4"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch2.b1",
+      "grade": 12,
+      "chapter": 2,
+      "topic": "Vectơ và các phép toán",
+      "display_name": "Vectơ và các phép toán vectơ trong không gian",
+      "prerequisites": [
+        "math.10.cd.ch4.b5",
+        "math.11.cd.ch4.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch2.b2",
+      "grade": 12,
+      "chapter": 2,
+      "topic": "Toạ độ của vectơ",
+      "display_name": "Toạ độ của vectơ trong không gian",
+      "prerequisites": [
+        "math.12.cd.ch2.b1",
+        "math.10.cd.ch7.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch2.b3",
+      "grade": 12,
+      "chapter": 2,
+      "topic": "Biểu thức toạ độ các phép toán",
+      "display_name": "Biểu thức toạ độ của các phép toán vectơ",
+      "prerequisites": [
+        "math.12.cd.ch2.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch3.b1",
+      "grade": 12,
+      "chapter": 3,
+      "topic": "Khoảng biến thiên, khoảng tứ phân vị",
+      "display_name": "Khoảng biến thiên, khoảng tứ phân vị của mẫu số liệu ghép nhóm",
+      "prerequisites": [
+        "math.11.cd.ch5.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch3.b2",
+      "grade": 12,
+      "chapter": 3,
+      "topic": "Phương sai, độ lệch chuẩn",
+      "display_name": "Phương sai, độ lệch chuẩn của mẫu số liệu ghép nhóm",
+      "prerequisites": [
+        "math.12.cd.ch3.b1",
+        "math.10.cd.ch6.b3"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch4.b1",
+      "grade": 12,
+      "chapter": 4,
+      "topic": "Nguyên hàm",
+      "display_name": "Nguyên hàm",
+      "prerequisites": [
+        "math.11.cd.ch7.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch4.b2",
+      "grade": 12,
+      "chapter": 4,
+      "topic": "Nguyên hàm hàm số sơ cấp",
+      "display_name": "Nguyên hàm của một số hàm số sơ cấp",
+      "prerequisites": [
+        "math.12.cd.ch4.b1",
+        "math.11.cd.ch6.b3"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch4.b3",
+      "grade": 12,
+      "chapter": 4,
+      "topic": "Tích phân",
+      "display_name": "Tích phân",
+      "prerequisites": [
+        "math.12.cd.ch4.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch4.b4",
+      "grade": 12,
+      "chapter": 4,
+      "topic": "Ứng dụng hình học của tích phân",
+      "display_name": "Ứng dụng hình học của tích phân",
+      "prerequisites": [
+        "math.12.cd.ch4.b3",
+        "math.12.cd.ch1.b5"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch5.b1",
+      "grade": 12,
+      "chapter": 5,
+      "topic": "Phương trình mặt phẳng",
+      "display_name": "Phương trình mặt phẳng",
+      "prerequisites": [
+        "math.12.cd.ch2.b3",
+        "math.11.cd.ch8.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch5.b2",
+      "grade": 12,
+      "chapter": 5,
+      "topic": "Phương trình đường thẳng 3D",
+      "display_name": "Phương trình đường thẳng trong không gian",
+      "prerequisites": [
+        "math.12.cd.ch5.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch5.b3",
+      "grade": 12,
+      "chapter": 5,
+      "topic": "Phương trình mặt cầu",
+      "display_name": "Phương trình mặt cầu",
+      "prerequisites": [
+        "math.12.cd.ch5.b2",
+        "math.10.cd.ch7.b5"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch6.b1",
+      "grade": 12,
+      "chapter": 6,
+      "topic": "Xác suất có điều kiện",
+      "display_name": "Xác suất có điều kiện",
+      "prerequisites": [
+        "math.11.cd.ch5.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.ch6.b2",
+      "grade": 12,
+      "chapter": 6,
+      "topic": "Công thức Bayes",
+      "display_name": "Công thức xác suất toàn phần. Công thức Bayes",
+      "prerequisites": [
+        "math.12.cd.ch6.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm1.b1",
+      "grade": 12,
+      "chapter": "Chuyên đề 1",
+      "topic": "Biến ngẫu nhiên rời rạc",
+      "display_name": "Biến ngẫu nhiên rời rạc. Các số đặc trưng của biến ngẫu nhiên rời rạc",
+      "prerequisites": [
+        "math.12.cd.ch6.b2",
+        "math.12.cd.ch3.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm1.b2",
+      "grade": 12,
+      "chapter": "Chuyên đề 1",
+      "topic": "Phân bố Bernoulli",
+      "display_name": "Phân bố Bernoulli",
+      "prerequisites": [
+        "math.12.cd.chm1.b1",
+        "math.10.cd.ch5.b3"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm2.b1",
+      "grade": 12,
+      "chapter": "Chuyên đề 2",
+      "topic": "Vận dụng hệ bất phương trình",
+      "display_name": "Vận dụng hệ bất phương trình bậc nhất hai ẩn để giải quyết quy hoạch tuyến tính",
+      "prerequisites": [
+        "math.10.cd.ch2.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm2.b2",
+      "grade": 12,
+      "chapter": "Chuyên đề 2",
+      "topic": "Vận dụng đạo hàm",
+      "display_name": "Vận dụng đạo hàm để giải quyết một số bài toán tối ưu",
+      "prerequisites": [
+        "math.12.cd.ch1.b3",
+        "math.12.cd.chm2.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm3.b1",
+      "grade": 12,
+      "chapter": "Chuyên đề 3",
+      "topic": "Tiền tệ và Lãi suất",
+      "display_name": "Một số vấn đề về tiền tệ, lãi suất",
+      "prerequisites": [
+        "math.11.cd.ch6.b4",
+        "math.11.cd.ch2.b3",
+        "math.11.cd.ch2.b2"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm3.b2",
+      "grade": 12,
+      "chapter": "Chuyên đề 3",
+      "topic": "Tín dụng và Vay nợ",
+      "display_name": "Tín dụng. Vay nợ",
+      "prerequisites": [
+        "math.12.cd.chm3.b1"
+      ]
+    },
+    {
+      "id": "math.12.cd.chm3.b3",
+      "grade": 12,
+      "chapter": "Chuyên đề 3",
+      "topic": "Đầu tư tài chính",
+      "display_name": "Đầu tư tài chính. Lập kế hoạch tài chính cá nhân",
+      "prerequisites": [
+        "math.12.cd.chm3.b2"
+      ]
+    }
+  ]
+}
