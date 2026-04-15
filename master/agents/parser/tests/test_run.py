@@ -1,10 +1,10 @@
 import os
 import sys
 
-# Thêm đường dẫn thư mục local_agent_backend vào sys.path để test script chạy
+# Thêm đường dẫn thư mục parse_backend vào sys.path để test script chạy
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parser_dir = os.path.dirname(current_dir)
-backend_dir = os.path.join(parser_dir, "local_agent_backend")
+backend_dir = os.path.join(parser_dir, "parse_backend")
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
@@ -27,7 +27,7 @@ def find_test_file() -> str | None:
         if os.path.exists(path):
             return path
     
-    # Cũng tìm trong thư mục local_agent_backend
+    # Cũng tìm trong thư mục tests
     for name in candidates:
         path = os.path.join(current_dir, name)
         if os.path.exists(path):
@@ -53,7 +53,7 @@ if __name__ == "__main__":
         file_path = find_test_file()
 
     if not file_path or not os.path.exists(file_path):
-        print("❌ Không tìm thấy file đề thi!")
+        print("Không tìm thấy file đề thi!")
         sys.exit(1)
 
     # 1. Khởi tạo mảng lưu trữ (Thư mục default: parsed_results)
@@ -64,13 +64,13 @@ if __name__ == "__main__":
         result_path = parser.process(file_path)
 
         if result_path:
-            print(f"\n🎉 THÀNH CÔNG: Dữ liệu JSON đã được trích xuất hoàn chỉnh tại: {result_path}")
+            print(f"THÀNH CÔNG: Dữ liệu JSON đã được trích xuất hoàn chỉnh tại: {result_path}")
         else:
-            print("\n❌ Pipeline thất bại — không có kết quả đầu ra.")
+            print("\Pipeline thất bại — không có kết quả đầu ra.")
             sys.exit(1)
 
     except Exception as e:
-        print(f"\n❌ Có lỗi xảy ra trong quá trình xử lý:")
+        print(f"\nCó lỗi xảy ra trong quá trình xử lý:")
         import traceback
         traceback.print_exc()
         sys.exit(1)

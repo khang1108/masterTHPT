@@ -10,7 +10,7 @@ from kaggle_secrets import UserSecretsClient
 from PIL import Image
 
 # Khởi tạo các Modules
-from preprocessing import preprocess_image
+from preprocessing_textbook import preprocess_image
 from layout_parser import LayoutParser
 
 user_secrets = UserSecretsClient()
