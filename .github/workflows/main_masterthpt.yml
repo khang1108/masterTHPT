@@ -9,7 +9,7 @@ on:
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
   IMAGE_TAG: ${{ github.sha }}
-  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
   AZURE_LOCATION: southeastasia
   CONTAINERAPPS_ENV_NAME: masterthpt-env
   API_APP_NAME: masterthpt-api
@@ -42,12 +42,21 @@ jobs:
             exit 1
           fi
 
-      - name: Login to Azure Container Registry
-        uses: docker/login-action@v3
+      - name: Login to Azure
+        uses: azure/login@v2
         with:
-          registry: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to Azure Container Registry via OIDC token
+        run: |
+          set -euo pipefail
+          ACR_NAME="$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | cut -d'.' -f1)"
+          TOKEN="$(az acr login --name "${ACR_NAME}" --expose-token --output tsv --query accessToken)"
+          echo "${TOKEN}" | docker login "${{ secrets.ACR_LOGIN_SERVER }}" \
+            --username 00000000-0000-0000-0000-000000000000 \
+            --password-stdin
 
       - name: Build and push API image
         uses: docker/build-push-action@v5
