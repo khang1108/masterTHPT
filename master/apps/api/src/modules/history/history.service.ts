@@ -12,6 +12,13 @@ import {
 	normalizeHistoryStudentAnswers,
 } from 'src/shared/exams/evaluation';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import {
+	findExamDocumentByAnyId,
+	findExamDocumentsByAnyIds,
+	findHistoryDocumentByUserAndId,
+	findHistoryDocumentsByUserId,
+	findQuestionDocumentsByAnyIds,
+} from 'src/shared/mongo/read-models';
 import { CreateHistoryDto } from './dto/create-history.dto';
 
 @Injectable()
@@ -102,44 +109,16 @@ export class HistoryService {
 	async list(userId: string) {
 		// List view is intentionally light-weight: fetch histories first, then join only the
 		// exam metadata needed to render cards in reverse chronological order.
-		const histories = await this.prisma.history.findMany({
-			where: {
-				user_id: userId,
-			},
-			orderBy: {
-				created_at: 'desc',
-			},
-			select: {
-				mongo_id: true,
-				intent: true,
-				exam_id: true,
-				correct_count: true,
-				score: true,
-				created_at: true,
-			},
-		});
+		const histories = await findHistoryDocumentsByUserId(this.prisma, userId);
 
 		const examIds = [...new Set(histories.map((item) => item.exam_id))];
-		const exams = examIds.length === 0
-			? []
-			: await this.prisma.exam.findMany({
-				where: {
-					id: {
-						in: examIds,
-					},
-				},
-				select: {
-					id: true,
-					subject: true,
-					grade: true,
-					exam_type: true,
-					source: true,
-					total_questions: true,
-					duration: true,
-					year: true,
-				},
-			});
-		const examMap = new Map(exams.map((exam) => [exam.id, exam]));
+		const exams = await findExamDocumentsByAnyIds(this.prisma, examIds);
+		const examMap = new Map<string, (typeof exams)[number]>();
+
+		exams.forEach((exam) => {
+			examMap.set(exam.id, exam);
+			examMap.set(exam.mongo_id, exam);
+		});
 
 		return histories.map((history) => {
 			const exam = examMap.get(history.exam_id);
@@ -148,9 +127,9 @@ export class HistoryService {
 				history_id: history.mongo_id,
 				intent: history.intent,
 				exam_id: history.exam_id,
-				correct_count: history.correct_count,
+				correct_count: history.correct_count ?? 0,
 				score: history.score,
-				created_at: history.created_at,
+				created_at: history.created_at ?? '',
 				subject: exam?.subject ?? 'Đề chưa xác định',
 				grade: exam?.grade ?? null,
 				exam_type: exam?.exam_type ?? '',
@@ -165,67 +144,20 @@ export class HistoryService {
 	async getDetail(userId: string, historyId: string) {
 		// Detail view rebuilds the original exam structure plus evaluation,
 		// so the UI can behave like a read-only version of the exam room.
-		const history = await this.prisma.history.findFirst({
-			where: {
-				mongo_id: historyId,
-				user_id: userId,
-			},
-			select: {
-				mongo_id: true,
-				intent: true,
-				exam_id: true,
-				student_ans: true,
-				correct_count: true,
-				score: true,
-				created_at: true,
-			},
-		});
+		const history = await findHistoryDocumentByUserAndId(this.prisma, userId, historyId);
 
 		if (!history) {
 			throw new NotFoundException('Không tìm thấy lịch sử làm bài');
 		}
 
-		const exam = await this.prisma.exam.findUnique({
-			where: { id: history.exam_id },
-			select: {
-				id: true,
-				subject: true,
-				grade: true,
-				exam_type: true,
-				source: true,
-				generated: true,
-				questions: true,
-				total_questions: true,
-				duration: true,
-			},
-		});
+		const exam = await findExamDocumentByAnyId(this.prisma, history.exam_id);
 
 		if (!exam) {
 			throw new NotFoundException('Không tìm thấy đề thi');
 		}
 
 		const questionIds = exam.questions ?? [];
-		const questions = questionIds.length === 0
-			? []
-			: await this.prisma.question.findMany({
-				where: {
-					id: {
-						in: questionIds,
-					},
-				},
-				select: {
-					id: true,
-					question_index: true,
-					type: true,
-					content: true,
-					content_latex: true,
-					options: true,
-					statements: true,
-					correct_answer: true,
-					has_image: true,
-					image_url: true,
-				},
-			});
+		const questions = await findQuestionDocumentsByAnyIds(this.prisma, questionIds);
 		const sortedQuestions = sortItemsByReferenceOrder(questionIds, questions);
 
 		const answerMap = new Map(
@@ -234,21 +166,21 @@ export class HistoryService {
 		const sections = buildExamSections(sortedQuestions, ASCII_SECTION_NAME_BY_TYPE);
 		const evaluation = buildEvaluationFromAnswerMap(sortedQuestions, answerMap);
 		const correctCount = history.correct_count ?? evaluation.correct_count;
-		const totalQuestions = sortedQuestions.length > 0 ? sortedQuestions.length : exam.total_questions;
+		const totalQuestions = sortedQuestions.length > 0 ? sortedQuestions.length : (exam.total_questions ?? 0);
 
 		return {
 			history_id: history.mongo_id,
 			intent: history.intent,
-			created_at: history.created_at,
+			created_at: history.created_at ?? '',
 			exam_id: exam.id,
 			correct_count: correctCount,
 			score: history.score ?? null,
-			subject: exam.subject,
-			grade: exam.grade,
-			exam_type: exam.exam_type,
-			source: exam.source,
+			subject: exam.subject || 'Đề chưa xác định',
+			grade: exam.grade ?? 0,
+			exam_type: exam.exam_type || 'Đề chưa xác định',
+			source: exam.source ?? 'Nguồn chưa cập nhật',
 			total_questions: totalQuestions,
-			duration_minutes: exam.duration,
+			duration_minutes: exam.duration ?? 0,
 			sections,
 			evaluation: {
 				correct_count: correctCount,

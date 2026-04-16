@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ASCII_SECTION_NAME_BY_TYPE, buildExamSections, ExamMetadataShape, sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import {
+	findExamDocumentByAnyId,
+	findPublishedExamDocuments,
+	findQuestionDocumentsByAnyIds,
+} from 'src/shared/mongo/read-models';
 
 @Injectable()
 export class DocumentsService {
@@ -17,58 +22,33 @@ export class DocumentsService {
 	}
 
 	async listDocuments() {
-		const exams = await this.prisma.exam.findMany({
-			where: {
-				generated: false,
-			},
-			select: {
-				id: true,
-				subject: true,
-				grade: true,
-				exam_type: true,
-				year: true,
-				source: true,
-				total_questions: true,
-				duration: true,
-				metadata: true,
-				created_at: true,
-			},
-		});
+		const exams = await findPublishedExamDocuments(this.prisma);
 
 		return exams.sort(
 			(a, b) => this.toEpoch(b.created_at) - this.toEpoch(a.created_at),
-		);
+		).map((exam) => ({
+			id: exam.id,
+			subject: exam.subject || 'Đề chưa xác định',
+			grade: exam.grade ?? 0,
+			exam_type: exam.exam_type || 'Đề chưa xác định',
+			year: exam.year ?? 0,
+			source: exam.source ?? 'Nguồn chưa cập nhật',
+			total_questions: exam.total_questions ?? 0,
+			duration: exam.duration ?? 0,
+			metadata: exam.metadata,
+			created_at: exam.created_at ?? undefined,
+		}));
 	}
 
 	async getDocumentDetail(id: string) {
-		const exam = await this.prisma.exam.findUnique({
-			where: { id },
-			select: {
-				id: true,
-				subject: true,
-				grade: true,
-				exam_type: true,
-				questions: true,
-				total_questions: true,
-				duration: true,
-				metadata: true,
-			},
-		});
+		const exam = await findExamDocumentByAnyId(this.prisma, id);
 
 		if (!exam) {
 			throw new NotFoundException('Khong tim thay de thi');
 		}
 
 		const questionIds = exam.questions ?? [];
-		const questions = questionIds.length === 0
-			? []
-			: await this.prisma.question.findMany({
-				where: {
-					id: {
-						in: questionIds,
-					},
-				},
-			});
+		const questions = await findQuestionDocumentsByAnyIds(this.prisma, questionIds);
 		const sortedQuestions = sortItemsByReferenceOrder(questionIds, questions);
 
 		const metadata = (exam.metadata ?? {}) as ExamMetadataShape;
@@ -77,11 +57,11 @@ export class DocumentsService {
 		return {
 			exam_id: exam.id,
 			source_type: metadata.source_type ?? 'documents_library',
-			subject: exam.subject,
-			grade: exam.grade,
-			exam_type: exam.exam_type,
-			total_questions: sortedQuestions.length > 0 ? sortedQuestions.length : exam.total_questions,
-			duration_minutes: metadata.duration_minutes ?? exam.duration,
+			subject: exam.subject || 'Đề chưa xác định',
+			grade: exam.grade ?? undefined,
+			exam_type: exam.exam_type || 'Đề chưa xác định',
+			total_questions: sortedQuestions.length > 0 ? sortedQuestions.length : (exam.total_questions ?? 0),
+			duration_minutes: metadata.duration_minutes ?? exam.duration ?? 0,
 			sections,
 		};
 	}
