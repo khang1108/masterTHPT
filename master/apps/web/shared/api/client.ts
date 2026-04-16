@@ -229,8 +229,10 @@ export type ReviewMistakeResponse = {
 	feedback: string;
 };
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim() || '/api';
+
 const api = axios.create({
-	baseURL: process.env.NEXT_PUBLIC_API_URL ?? '/api',
+	baseURL: apiBaseUrl,
 	timeout: 12000,
 });
 

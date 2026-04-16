@@ -150,10 +150,6 @@ export default function ProfilePage() {
 					<div className="dash-panel-head">
 						<p className="documents-kicker">Hồ sơ học sinh</p>
 						<h2>Chỉnh sửa thông tin cá nhân</h2>
-						<p>
-							Các trường này được dùng cho bước khởi tạo đề đầu vào và sẽ phục vụ
-							các tính năng cá nhân hóa sau này.
-						</p>
 					</div>
 
 					<form className="profile-form" onSubmit={onSubmit}>
@@ -180,7 +176,6 @@ export default function ProfilePage() {
 					<section className="dash-panel profile-side-panel">
 						<div className="dash-panel-head">
 							<h2>Trạng thái</h2>
-							<p>Tóm tắt nhanh về hồ sơ hiện tại và bước khởi tạo đầu vào.</p>
 						</div>
 
 						<div className="profile-meta-list">
@@ -201,10 +196,6 @@ export default function ProfilePage() {
 						{student.is_first_login ? (
 							<div className="profile-note-card">
 								<p className="dash-card-label">Bước tiếp theo</p>
-								<p>
-									Sau khi lưu hồ sơ, quay lại dashboard để mở popup chọn môn học
-									và làm bài đầu vào ngay trong phiên hiện tại.
-								</p>
 								<Link href="/dashboard" className="btn-ghost">
 									Về dashboard
 								</Link>

@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { hasCompletedProfile } from '../../src/students/student-profile-state';
+import { hasCompletedProfile } from '../../src/modules/students/student-profile-state';
 
 const prisma = new PrismaClient();
 
