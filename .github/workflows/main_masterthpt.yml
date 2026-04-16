@@ -109,20 +109,17 @@ jobs:
           inlineScript: |
             az extension add --name containerapp --upgrade
 
-      - name: Ensure Container Apps environment exists
+      - name: Check Container Apps environment
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
-            if ! az containerapp env show \
+            az containerapp env show \
               --name "${{ env.CONTAINERAPPS_ENV_NAME }}" \
-              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
-              az containerapp env create \
-                --name "${{ env.CONTAINERAPPS_ENV_NAME }}" \
-                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --location "${{ env.AZURE_LOCATION }}"
-            fi
+              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+              --output none
+
 
       - name: Create or update API container app
         uses: azure/cli@v2
