@@ -9,7 +9,7 @@ on:
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
   IMAGE_TAG: ${{ github.sha }}
-  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
   AZURE_LOCATION: southeastasia
   CONTAINERAPPS_ENV_NAME: masterthpt-env
   API_APP_NAME: masterthpt-api
@@ -101,13 +101,6 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Ensure Azure Container Apps extension
-        uses: azure/cli@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az extension add --name containerapp --upgrade
 
       - name: Check Container Apps environment
         uses: azure/cli@v2
