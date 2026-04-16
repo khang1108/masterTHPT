@@ -91,14 +91,16 @@ export function buildExamSections(
 
 		const normalizedType = question.type as SectionType;
 		const current = sectionBuckets.get(normalizedType) ?? [];
+		const options = Array.isArray(question.options) ? question.options : [];
+		const statements = Array.isArray(question.statements) ? question.statements : [];
 
 		current.push({
 			id: question.id,
-			question_index: question.question_index,
+			question_index: question.question_index ?? 0,
 			type: normalizedType,
 			content: question.content_latex ?? question.content,
-			options: question.options.length > 0 ? question.options : undefined,
-			statements: question.statements.length > 0 ? question.statements : undefined,
+			options: options.length > 0 ? options : undefined,
+			statements: statements.length > 0 ? statements : undefined,
 			has_image: question.has_image,
 			image_url: question.image_url ?? undefined,
 		});
