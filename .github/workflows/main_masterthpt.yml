@@ -1,4 +1,4 @@
-name: Build and deploy to Azure App Service (Docker)
+name: Build and deploy to Azure Container Apps
 
 on:
   push:
@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
 
 env:
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}   # e.g. masterthptacr.azurecr.io
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
   IMAGE_TAG: ${{ github.sha }}
-  DATABASE_URL: ${{ secrets.DATABASE_URL}}
-  NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL}}
-  API_PROXY_TARGET: ${{ secrets.API_PROXY_TARGET}}
-  NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID}}
-  NEXT_PUBLIC_GOOGLE_SECRET: ${{ secrets.NEXT_PUBLIC_GOOGLE_SECRET}}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_LOCATION: southeastasia
+  CONTAINERAPPS_ENV_NAME: masterthpt-env
+  API_APP_NAME: masterthpt-api
+  WEB_APP_NAME: masterthpt-web
 
 jobs:
   build-and-push:
@@ -58,78 +58,172 @@ jobs:
             ${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:latest
           build-args: |
             NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
-            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
-            API_PROXY_TARGET=${{ secrets.API_PROXY_TARGET }}
+            NEXT_PUBLIC_API_URL=/api
+            API_PROXY_TARGET=http://${{ env.API_APP_NAME }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
-
-      - name: Prepare compose file with substituted variables
-        run: |
-          export ACR_LOGIN_SERVER=${{ secrets.ACR_LOGIN_SERVER }}
-          export IMAGE_TAG=${{ github.sha }}
-          envsubst '${ACR_LOGIN_SERVER} ${IMAGE_TAG}' < infra/docker-compose-azure.yml > infra/docker-compose-deploy.yml
-          cat infra/docker-compose-deploy.yml
-
-      - name: Upload compose file as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: compose-deploy
-          path: infra/docker-compose-deploy.yml
 
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download compose file
-        uses: actions/download-artifact@v4
-        with:
-          name: compose-deploy
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Configure App Service to use ACR
+      - name: Ensure Azure Container Apps extension
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
-            az webapp config container set \
-              --name masterTHPT \
-              --resource-group DefaultResourceGroup-CCAN \
-              --multicontainer-config-type compose \
-              --multicontainer-config-file docker-compose-deploy.yml \
-              --container-registry-url https://${{ secrets.ACR_LOGIN_SERVER }} \
-              --container-registry-user ${{ secrets.ACR_USERNAME }} \
-              --container-registry-password ${{ secrets.ACR_PASSWORD }}
+            az extension add --name containerapp --upgrade
 
-      - name: Set App Service environment variables
+      - name: Ensure Container Apps environment exists
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
-            az webapp config appsettings set \
-              --name masterTHPT \
-              --resource-group DefaultResourceGroup-CCAN \
-              --settings \
-                DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-                JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            set -euo pipefail
+            if ! az containerapp env show \
+              --name "${{ env.CONTAINERAPPS_ENV_NAME }}" \
+              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+              az containerapp env create \
+                --name "${{ env.CONTAINERAPPS_ENV_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --location "${{ env.AZURE_LOCATION }}"
+            fi
 
-      - name: Enable Always On to prevent cold starts
+      - name: Create or update API container app
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
-            az webapp config set \
-              --name masterTHPT \
-              --resource-group DefaultResourceGroup-CCAN \
-              --always-on true
+            set -euo pipefail
 
-      - name: Restart App Service
+            GOOGLE_CLIENT_ID_VALUE="${{ secrets.GOOGLE_CLIENT_ID }}"
+            if [ -z "${GOOGLE_CLIENT_ID_VALUE}" ]; then
+              GOOGLE_CLIENT_ID_VALUE="${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}"
+            fi
+
+            if az containerapp show \
+              --name "${{ env.API_APP_NAME }}" \
+              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+              az containerapp secret set \
+                --name "${{ env.API_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --secrets \
+                  database-url="${{ secrets.DATABASE_URL }}" \
+                  jwt-secret="${{ secrets.JWT_SECRET }}"
+
+              az containerapp registry set \
+                --name "${{ env.API_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --username "${{ secrets.ACR_USERNAME }}" \
+                --password "${{ secrets.ACR_PASSWORD }}"
+
+              az containerapp update \
+                --name "${{ env.API_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}" \
+                --set-env-vars \
+                  PORT=3001 \
+                  DATABASE_URL=secretref:database-url \
+                  JWT_SECRET=secretref:jwt-secret \
+                  JWT_EXPIRES_IN=30d \
+                  GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID_VALUE}" \
+                  AI_API_BASE_URL=https://mkp-api.fptcloud.com \
+                  USE_MOCK_SERVICES=true
+            else
+              az containerapp create \
+                --name "${{ env.API_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
+                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}" \
+                --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --registry-username "${{ secrets.ACR_USERNAME }}" \
+                --registry-password "${{ secrets.ACR_PASSWORD }}" \
+                --ingress internal \
+                --target-port 3001 \
+                --min-replicas 1 \
+                --max-replicas 3 \
+                --cpu 2 \
+                --memory 4.0Gi \
+                --secrets \
+                  database-url="${{ secrets.DATABASE_URL }}" \
+                  jwt-secret="${{ secrets.JWT_SECRET }}" \
+                --env-vars \
+                  PORT=3001 \
+                  DATABASE_URL=secretref:database-url \
+                  JWT_SECRET=secretref:jwt-secret \
+                  JWT_EXPIRES_IN=30d \
+                  GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID_VALUE}" \
+                  AI_API_BASE_URL=https://mkp-api.fptcloud.com \
+                  USE_MOCK_SERVICES=true
+            fi
+
+      - name: Create or update Web container app
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
-            az webapp restart --name masterTHPT --resource-group DefaultResourceGroup-CCAN
+            set -euo pipefail
+
+            if az containerapp show \
+              --name "${{ env.WEB_APP_NAME }}" \
+              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+              az containerapp registry set \
+                --name "${{ env.WEB_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --username "${{ secrets.ACR_USERNAME }}" \
+                --password "${{ secrets.ACR_PASSWORD }}"
+
+              az containerapp update \
+                --name "${{ env.WEB_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:${{ github.sha }}" \
+                --set-env-vars \
+                  PORT=3000 \
+                  NEXT_PUBLIC_API_URL=/api \
+                  API_PROXY_TARGET="http://${{ env.API_APP_NAME }}" \
+                  NEXT_PUBLIC_GOOGLE_CLIENT_ID="${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}"
+            else
+              az containerapp create \
+                --name "${{ env.WEB_APP_NAME }}" \
+                --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+                --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
+                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:${{ github.sha }}" \
+                --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --registry-username "${{ secrets.ACR_USERNAME }}" \
+                --registry-password "${{ secrets.ACR_PASSWORD }}" \
+                --ingress external \
+                --target-port 3000 \
+                --min-replicas 1 \
+                --max-replicas 3 \
+                --cpu 0.5 \
+                --memory 1.0Gi \
+                --env-vars \
+                  PORT=3000 \
+                  NEXT_PUBLIC_API_URL=/api \
+                  API_PROXY_TARGET="http://${{ env.API_APP_NAME }}" \
+                  NEXT_PUBLIC_GOOGLE_CLIENT_ID="${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}"
+            fi
+
+      - name: Print web URL
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            WEB_FQDN=$(az containerapp show \
+              --name "${{ env.WEB_APP_NAME }}" \
+              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+              --query "properties.configuration.ingress.fqdn" -o tsv)
+            echo "Web URL: https://${WEB_FQDN}"
