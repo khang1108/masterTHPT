@@ -2,7 +2,7 @@ from __future__ import annotations # For type hints in Python 3.10+
 
 from enum import Enum
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 import uuid
 
@@ -126,9 +126,18 @@ class StudentAnswer(BaseModel):
     question_id: str
     exam_id: Optional[str] = None
     answer: Optional[str] = None           # Student's answer (primary field)
-    student_answer: Optional[str] = None   # Alias kept for backward compatibility
+    student_answer: Optional[str] = None   # Deprecated alias — use `answer` instead
     correct_answer: Optional[str] = None
     file_urls: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _sync_answer_fields(self) -> "StudentAnswer":
+        """Keep `answer` and `student_answer` in sync for backward compatibility."""
+        if self.answer is None and self.student_answer is not None:
+            self.answer = self.student_answer
+        elif self.student_answer is None and self.answer is not None:
+            self.student_answer = self.answer
+        return self
 
 
 # Resolve forward reference in MessageRequest

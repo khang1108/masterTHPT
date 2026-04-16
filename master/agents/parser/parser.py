@@ -63,6 +63,9 @@ class ParserAgent(BaseAgent):
         Gọi LLM bên trong asyncio.to_thread → chạy trong Python's default
         ThreadPoolExecutor, không block event loop, cho phép nhiều file
         xử lý đồng thời.
+
+        Ghi chú: Kích thước thread pool mặc định có thể tuỳ chỉnh trong
+        production bằng loop.set_default_executor(ThreadPoolExecutor(max_workers=N)).
         """
         prompt = (
             f"Từ file bài làm của học sinh tại URL sau, hãy trích xuất thông tin trả lời.\n"
@@ -97,8 +100,8 @@ class ParserAgent(BaseAgent):
         """
         # Collect file URLs
         file_urls: list[str] = list(request.file_urls or [])
-        if request.metadata:
-            file_urls = file_urls or list(request.metadata.get("file_urls", []))
+        if not file_urls and request.metadata:
+            file_urls = list(request.metadata.get("file_urls", []))
 
         if not file_urls:
             logger.warning("[parser] No file_urls found in request — returning as-is")
@@ -134,7 +137,7 @@ class ParserAgent(BaseAgent):
             intent=Intent.VIEW_ANALYSIS,
             student_id=request.student_id,
             exam_id=exam_id,
-            user_message=request.user_message or request.student_message,
+            user_message=request.user_message if request.user_message is not None else request.student_message,
             metadata=metadata,
         )
 
