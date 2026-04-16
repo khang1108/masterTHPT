@@ -87,10 +87,6 @@ export default function LoginPage() {
 
 				<div className="auth-form-wrap">
 					<h2>Đăng nhập</h2>
-					<p className="auth-note">
-						Đăng nhập bằng email hoặc dùng Google. Nếu đây là lần đầu vào hệ
-						thống, bạn sẽ hoàn thiện hồ sơ học tập trước khi làm bài đầu vào.
-					</p>
 
 					<form className="auth-form" onSubmit={onSubmit}>
 						<label className="input-label" htmlFor="email">

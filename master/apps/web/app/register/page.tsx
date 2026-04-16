@@ -91,10 +91,6 @@ export default function RegisterPage() {
 
 				<div className="auth-form-wrap">
 					<h2>Đăng ký</h2>
-					<p className="auth-note">
-						Tạo tài khoản bằng email hoặc dùng Google để vào thẳng hệ thống.
-						Thông tin cá nhân sẽ được hỏi ở lần đăng nhập đầu tiên.
-					</p>
 
 					<form className="auth-form" onSubmit={onSubmit}>
 						<label className="input-label" htmlFor="email">
