@@ -9,7 +9,7 @@ on:
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
   IMAGE_TAG: ${{ github.sha }}
-  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
   AZURE_LOCATION: southeastasia
   CONTAINERAPPS_ENV_NAME: masterthpt-env
   API_APP_NAME: masterthpt-api
@@ -120,6 +120,9 @@ jobs:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
+            ACR_NAME="$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | cut -d'.' -f1)"
+            ACR_USERNAME="$(az acr credential show -n "${ACR_NAME}" --query username -o tsv)"
+            ACR_PASSWORD="$(az acr credential show -n "${ACR_NAME}" --query 'passwords[0].value' -o tsv)"
 
             GOOGLE_CLIENT_ID_VALUE="${{ secrets.GOOGLE_CLIENT_ID }}"
             if [ -z "${GOOGLE_CLIENT_ID_VALUE}" ]; then
@@ -140,8 +143,8 @@ jobs:
                 --name "${{ env.API_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
                 --server "${{ secrets.ACR_LOGIN_SERVER }}" \
-                --username "${{ secrets.ACR_USERNAME }}" \
-                --password "${{ secrets.ACR_PASSWORD }}"
+                --username "${ACR_USERNAME}" \
+                --password "${ACR_PASSWORD}"
 
               az containerapp update \
                 --name "${{ env.API_APP_NAME }}" \
@@ -162,8 +165,8 @@ jobs:
                 --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
                 --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}" \
                 --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
-                --registry-username "${{ secrets.ACR_USERNAME }}" \
-                --registry-password "${{ secrets.ACR_PASSWORD }}" \
+                --registry-username "${ACR_USERNAME}" \
+                --registry-password "${ACR_PASSWORD}" \
                 --ingress internal \
                 --target-port 3001 \
                 --min-replicas 1 \
@@ -189,6 +192,9 @@ jobs:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
+            ACR_NAME="$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | cut -d'.' -f1)"
+            ACR_USERNAME="$(az acr credential show -n "${ACR_NAME}" --query username -o tsv)"
+            ACR_PASSWORD="$(az acr credential show -n "${ACR_NAME}" --query 'passwords[0].value' -o tsv)"
 
             if az containerapp show \
               --name "${{ env.WEB_APP_NAME }}" \
@@ -197,8 +203,8 @@ jobs:
                 --name "${{ env.WEB_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
                 --server "${{ secrets.ACR_LOGIN_SERVER }}" \
-                --username "${{ secrets.ACR_USERNAME }}" \
-                --password "${{ secrets.ACR_PASSWORD }}"
+                --username "${ACR_USERNAME}" \
+                --password "${ACR_PASSWORD}"
 
               az containerapp update \
                 --name "${{ env.WEB_APP_NAME }}" \
@@ -216,8 +222,8 @@ jobs:
                 --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
                 --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:${{ github.sha }}" \
                 --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
-                --registry-username "${{ secrets.ACR_USERNAME }}" \
-                --registry-password "${{ secrets.ACR_PASSWORD }}" \
+                --registry-username "${ACR_USERNAME}" \
+                --registry-password "${ACR_PASSWORD}" \
                 --ingress external \
                 --target-port 3000 \
                 --min-replicas 1 \
