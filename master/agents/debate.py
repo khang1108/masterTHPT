@@ -1,5 +1,6 @@
 # master/pipeline/grading_pipeline.py
-from master.agents.common.message import MessageRequest
+from master.agents.common.message import MessageRequest, Intent
+from master.agents.parser import ParserAgent
 from master.agents.teacher import TeacherAgent
 from master.agents.verifier import VerifierAgent, VerifiedResult
 
@@ -8,12 +9,14 @@ import asyncio
 
 class GradingPipeline:
     def __init__(self):
+        self.parser   = ParserAgent()
         self.teacher  = TeacherAgent()
         self.verifier = VerifierAgent()
 
     async def setup(self):
         # Khởi tạo song song để tiết kiệm thời gian
         await asyncio.gather(
+            self.parser.setup(),
             self.teacher.setup(),
             self.verifier.setup(),
         )
@@ -24,7 +27,11 @@ class GradingPipeline:
         thread_id: str = "default",
         max_round: int = 3,
     ) -> VerifiedResult:
-        
+
+        # ── Parser: Trích xuất câu trả lời từ file (nếu GRADE_SUBMISSION) ──────
+        if request.intent == Intent.GRADE_SUBMISSION:
+            request = await self.parser.parse(request)
+
         # ── Vòng 1: Teacher chấm nháp ─────────────────────────────────────────
         debate_state = await self.teacher.run_draft(
             request,
@@ -101,8 +108,10 @@ async def main():
     pipeline = GradingPipeline()
     await pipeline.setup()
 
+    # ── Example 1: VIEW_ANALYSIS (answers already provided) ───────────────────
     request = MessageRequest(
-        intent="VIEW_ANALYSIS",
+        intent=Intent.VIEW_ANALYSIS,
+        student_id="student-001",
         user_message="Chấm bài thi",
         metadata={
             "exam_id":         "bed1f84d-...",
@@ -113,6 +122,14 @@ async def main():
             "student_answers": [...],
         },
     )
+
+    # ── Example 2: GRADE_SUBMISSION (parser extracts answers from files) ───────
+    # request = MessageRequest(
+    #     intent=Intent.GRADE_SUBMISSION,
+    #     student_id="student-001",
+    #     user_message="Chấm bài thi từ ảnh bài làm",
+    #     file_urls=["https://storage.example.com/submissions/student-001/page1.jpg"],
+    # )
 
     result: VerifiedResult = await pipeline.run(
         request,

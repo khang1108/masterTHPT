@@ -153,3 +153,35 @@ class ToolsRegistry:
         cls._shared_tool_map   = None
         cls._shared_browser    = None
         cls._shared_playwright = None
+
+
+# Alias for backward compatibility and clean imports
+ToolRegistry = ToolsRegistry
+
+
+# ── Module-level convenience functions ────────────────────────────────────────
+# These delegate to the shared MongoDB client so code can call:
+#   from master.agents.common import tools
+#   await tools.get_data(...)
+
+async def get_data(
+    database_name: str,
+    collection_name: str,
+    query: dict,
+    length: int = 10,
+) -> list:
+    """Query MongoDB and return up to `length` documents."""
+    collection = ToolsRegistry._mongo_client[database_name][collection_name]
+    return await collection.find(query).to_list(length=length)
+
+
+async def insert_data(
+    database_name: str,
+    collection_name: str,
+    documents: list[dict],
+) -> None:
+    """Insert multiple documents into MongoDB."""
+    if not documents:
+        return
+    collection = ToolsRegistry._mongo_client[database_name][collection_name]
+    await collection.insert_many(documents)

@@ -12,6 +12,7 @@ class Intent(str, Enum):
     VIEW_ANALYSIS = "VIEW_ANALYSIS"
     EXAM_PRACTICE = "EXAM_PRACTICE"
     PREPROCESS = "PREPROCESS"
+    GRADE_SUBMISSION = "GRADE_SUBMISSION"
     UNKNOWN = "UNKNOWN"
 
 class ErrorType(str, Enum):
@@ -59,10 +60,13 @@ class MessageRequest(BaseModel):
     student_id: str
     exam_id: Optional[str] = None
     question_id: Optional[str] = None
-    student_answers: Optional[list[StudentAnswer]] = None
+    student_answers: Optional[list["StudentAnswer"]] = None
     student_message: Optional[str] = None
+    user_message: Optional[str] = None
     parser_output: Optional[str] = None
-    content: Optional[str] = None # Nội dung thêm, nếu cần thiết.
+    content: Optional[str] = None
+    metadata: Optional[dict] = None
+    file_urls: Optional[list[str]] = None
 
 class MessageResponse(BaseModel):
     student_id: str
@@ -103,6 +107,12 @@ class ExamQuestion(BaseModel):
     topic_tags: list[str] = Field(default_factory=list) # ["math.12.ch2.integrals", "math.12.ch4.solid_geometry", ...]
     max_score: float = 0.2
 
+class ExamSection(BaseModel):
+    """A section of an exam grouping questions of the same type."""
+    type: str  # "multiple_choice" | "essay"
+    questions: list[ExamQuestion] = Field(default_factory=list)
+
+
 # --- Evaluation JSON Schema ---
 
 class ErrorAnalysis(BaseModel):
@@ -114,7 +124,16 @@ class ErrorAnalysis(BaseModel):
 
 class StudentAnswer(BaseModel):
     question_id: str
-    student_answer: Optional[str] = None
+    exam_id: Optional[str] = None
+    answer: Optional[str] = None           # Student's answer (primary field)
+    student_answer: Optional[str] = None   # Alias kept for backward compatibility
+    correct_answer: Optional[str] = None
+    file_urls: list[str] = Field(default_factory=list)
+
+
+# Resolve forward reference in MessageRequest
+MessageRequest.model_rebuild()
+
 
 class OverallAnalysis(BaseModel):
     strengths: list[str] = Field(default_factory=list)
