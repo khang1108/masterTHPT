@@ -13,3 +13,5 @@ infra/.env.api
 infra/.env.web
 infra/.env.db
 test.py
+test.pdf
+logs/

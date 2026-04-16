@@ -8,6 +8,11 @@ from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.message import MessageResponse, Intent
 from master.agents.common.state import AgentState
+from master.agents.common.prompt import (
+    verifier_batch_prompt,
+    verifier_mode_instruction,
+    verifier_summary_prompt,
+)
 from master.agents.teacher import Output
 import os
 import json
@@ -53,7 +58,12 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             api_key=os.getenv("FPT_API_KEY"),
             model="Qwen3-32B",
         )
-        await self.setup_tools(llm)
+        # Trong pipeline chuẩn, Teacher đã setup shared tools trước.
+        # Verifier chỉ attach lại để tránh setup_tools lặp.
+        if ToolsRegistry._shared_tools is None:
+            await self.setup_tools(llm)
+        else:
+            self._attach_shared_tools_to_agent(llm)
         self._llm_verdict = self._llm.with_structured_output(
             VerifierBatchVerdict
         )
@@ -182,11 +192,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         }
                     )
 
-                mode_instruction = (
-                    "Chế độ PREPROCESS: không có đáp án học sinh, hãy phản biện lời giải của teacher."
-                    if solve_mode
-                    else "Chế độ REVIEW: phản biện bài làm học sinh và chấm nháp của teacher."
-                )
+                mode_instruction = verifier_mode_instruction(solve_mode)
 
                 self.logger.agent_node(
                     f"Verifier batching items={len(items)} llm_batch_size={llm_batch_size} max_q_chars={max_question_chars}"
@@ -195,24 +201,10 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 verdict_by_qid: dict[str, VerifierVerdict] = {}
 
                 async def _run_chunk(chunk_items: list[dict]) -> None:
-                    prompt = f"""Bạn là Verifier.
-Nhiệm vụ: kiểm tra batch theo hướng dẫn sau: {mode_instruction}
-
-Yêu cầu output:
-- Trả về đúng schema VerifierBatchVerdict.
-- verdicts phải chứa đúng tất cả question_id bên dưới (mỗi id đúng 1 verdict).
-- reasoning ngắn gọn (<= 60 từ mỗi câu).
-- feedback tối đa 2 ý ngắn mỗi câu.
-- confidence trong [0,1].
-
-Ràng buộc ngôn ngữ (bắt buộc):
-- Toàn bộ nội dung text trong output (reasoning, feedback) PHẢI bằng tiếng Việt.
-- Không dùng tiếng Anh, trừ ký hiệu toán học hoặc tên riêng bắt buộc.
-- Dù đề bài có tiếng Anh, vẫn diễn giải và phản hồi bằng tiếng Việt.
-
-BATCH_INPUT:
-{json.dumps(chunk_items, ensure_ascii=False, default=str)}
-"""
+                    prompt = verifier_batch_prompt(
+                        mode_instruction=mode_instruction,
+                        batch_input_json=json.dumps(chunk_items, ensure_ascii=False, default=str),
+                    )
                     try:
                         verdict_batch: VerifierBatchVerdict = await asyncio.to_thread(
                             self._llm_verdict.invoke,
@@ -228,8 +220,8 @@ BATCH_INPUT:
                                     question_id=qid,
                                     agreed=True,
                                     confidence=0.3,
-                                    feedback=["Verifier thiếu kết quả trong lô xử lý, dùng kết quả dự phòng."],
-                                    reasoning="Thiếu kết quả verdict trong đầu ra của lô xử lý.",
+                                    feedback=["Verifier fallback: missing result in batch output."],
+                                    reasoning="Missing verdict for this question in the batch output.",
                                 )
                             verdict.question_id = qid
                             verdict.confidence = max(0.0, min(1.0, float(verdict.confidence)))
@@ -255,8 +247,8 @@ BATCH_INPUT:
                                 question_id=qid,
                                 agreed=True,
                                 confidence=0.2,
-                                feedback=["Verifier dùng kết quả dự phòng do lỗi lô xử lý."],
-                                reasoning="Lô verifier lỗi; đã tạo kết quả dự phòng.",
+                                feedback=["Verifier fallback used because the batch failed."],
+                                reasoning="Verifier batch failed; generated fallback verdict.",
                             )
 
                 for i in range(0, len(items), llm_batch_size):
@@ -273,8 +265,8 @@ BATCH_INPUT:
                             question_id=qid,
                             agreed=True,
                             confidence=0.2,
-                            feedback=["Verifier dùng kết quả dự phòng do lỗi lô xử lý."],
-                            reasoning="Lô verifier lỗi; đã tạo kết quả dự phòng.",
+                            feedback=["Verifier fallback used because the batch failed."],
+                            reasoning="Verifier batch failed; generated fallback verdict.",
                         )
                     )
 
@@ -370,11 +362,7 @@ BATCH_INPUT:
                 else "PREPROCESS hoan tat nhung khong co cau hoi de tong hop."
             )
         else:
-            summary_prompt = (
-                "Dựa trên kết quả chấm và phân tích dưới đây, hãy viết một đoạn nhận xét ngắn gọn cho học sinh.\n"
-                "Bắt buộc: phản hồi hoàn toàn bằng tiếng Việt, không dùng tiếng Anh.\n\n"
-                + "\n".join(lines)
-            )
+            summary_prompt = verifier_summary_prompt(lines)
 
             summary: FinalSummary = await asyncio.to_thread(
                 self._llm_summary.invoke, summary_prompt

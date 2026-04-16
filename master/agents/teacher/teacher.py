@@ -14,6 +14,13 @@ from master.agents.common.message import (
 )
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
+from master.agents.common.prompt import (
+    teacher_batch_debate_prompt,
+    teacher_batch_draft_prompt,
+    teacher_draft_mode_instruction,
+    teacher_hint_prompt,
+    teacher_preprocess_prompt,
+)
 
 import asyncio
 import json
@@ -351,41 +358,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 items.append(item)
 
             if phase == "draft":
-                mode_instruction = (
-                    "Chế độ PREPROCESS: không có đáp án học sinh, hãy tự giải từng câu rồi kết luận."
-                    if solve_mode
-                    else "Chế độ REVIEW: chấm đáp án học sinh cho từng câu."
-                )
-                prompt_template = (
-                    "Bạn là giáo viên chấm nháp theo batch.\n"
-                    "Nhiệm vụ: xử lý toàn bộ câu trong BATCH_INPUT.\n"
-                    f"{mode_instruction}\n\n"
-                    "Yêu cầu output:\n"
-                    "- Trả về đúng schema DraftBatchResult.\n"
-                    "- results phải đủ tất cả question_id và mỗi id đúng 1 kết quả.\n"
-                    "- confidence trong [0,1].\n"
-                    "- reasoning ngắn gọn (<= 80 từ/câu).\n\n"
-                    "Ràng buộc ngôn ngữ (bắt buộc):\n"
-                    "- Toàn bộ nội dung text trong output (reasoning, feedback) PHẢI bằng tiếng Việt.\n"
-                    "- Không dùng tiếng Anh, trừ ký hiệu toán học hoặc tên riêng bắt buộc.\n"
-                    "- Dù đề bài có tiếng Anh, vẫn diễn giải và phản hồi bằng tiếng Việt.\n\n"
-                    "BATCH_INPUT:\n{{BATCH_INPUT}}"
-                )
                 llm = self._llm_draft_batch
             else:
-                prompt_template = (
-                    "Bạn là giáo viên tranh luận theo batch với Verifier.\n"
-                    "Nhiệm vụ: cập nhật kết luận cho toàn bộ câu trong BATCH_INPUT.\n\n"
-                    "Yêu cầu output:\n"
-                    "- Trả về đúng schema DebateBatchResult.\n"
-                    "- results phải đủ tất cả question_id và mỗi id đúng 1 kết quả.\n"
-                    "- teacher_rebuttal và final_feedback ngắn gọn.\n\n"
-                    "Ràng buộc ngôn ngữ (bắt buộc):\n"
-                    "- Toàn bộ nội dung text trong output (teacher_rebuttal, final_feedback) PHẢI bằng tiếng Việt.\n"
-                    "- Không dùng tiếng Anh, trừ ký hiệu toán học hoặc tên riêng bắt buộc.\n"
-                    "- Dù đề bài có tiếng Anh, vẫn diễn giải và phản hồi bằng tiếng Việt.\n\n"
-                    "BATCH_INPUT:\n{{BATCH_INPUT}}"
-                )
                 llm = self._llm_debate_batch
 
             self.logger.agent_node(
@@ -393,10 +367,12 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             )
 
             async def _run_chunk(chunk_items: list[dict[str, Any]]) -> None:
-                prompt = prompt_template.replace(
-                    "{{BATCH_INPUT}}",
-                    json.dumps(chunk_items, ensure_ascii=False, default=str),
-                )
+                batch_input_json = json.dumps(chunk_items, ensure_ascii=False, default=str)
+                if phase == "draft":
+                    mode_instruction = teacher_draft_mode_instruction(solve_mode)
+                    prompt = teacher_batch_draft_prompt(mode_instruction, batch_input_json)
+                else:
+                    prompt = teacher_batch_debate_prompt(batch_input_json)
                 try:
                     batch_result = await asyncio.to_thread(llm.invoke, prompt)
                     by_qid = {r.question_id: r for r in (batch_result.results or [])}
@@ -413,8 +389,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                                     is_correct=False,
                                     score=None,
                                     confidence=0.3,
-                                    reasoning="Thiếu kết quả cho câu hỏi trong đầu ra của lô xử lý.",
-                                    feedback="Teacher dự phòng: thiếu kết quả trong lô xử lý.",
+                                    reasoning="Missing result for this question in the batch output.",
+                                    feedback="Teacher fallback: missing result in the batch output.",
                                 )
                             r.question_id = qid
                             r.confidence = max(0.0, min(1.0, float(getattr(r, "confidence", 0.5))))
@@ -423,8 +399,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             if r is None:
                                 r = DebateResult(
                                     question_id=qid,
-                                    teacher_rebuttal="Thiếu kết quả cho câu hỏi trong đầu ra của lô xử lý.",
-                                    final_feedback="Teacher dự phòng do thiếu kết quả trong lô xử lý.",
+                                    teacher_rebuttal="Missing result for this question in the batch output.",
+                                    final_feedback="Teacher fallback used due to missing result in the batch output.",
                                     final_score=(o.draft_result.score if o.draft_result else None),
                                     accepted_verifier=False,
                                 )
@@ -455,15 +431,15 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                                 is_correct=False,
                                 score=None,
                                 confidence=0.2,
-                                reasoning="Lô chấm nháp lỗi; đã tạo kết quả dự phòng.",
-                                feedback="Teacher dự phòng do lỗi lô chấm nháp.",
+                                reasoning="Draft batch failed; generated fallback result.",
+                                feedback="Teacher fallback used because the draft batch failed.",
                             )
                             completed[qid] = o.model_copy(update={"draft_result": fallback})
                         else:
                             fallback = DebateResult(
                                 question_id=qid,
-                                teacher_rebuttal="Lô tranh luận lỗi; đã tạo kết quả dự phòng.",
-                                final_feedback="Teacher dự phòng do lỗi lô tranh luận.",
+                                teacher_rebuttal="Debate batch failed; generated fallback result.",
+                                final_feedback="Teacher fallback used because the debate batch failed.",
                                 final_score=(o.draft_result.score if o.draft_result else None),
                                 accepted_verifier=False,
                             )
@@ -481,15 +457,15 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         is_correct=False,
                         score=None,
                         confidence=0.2,
-                        reasoning="Lô chấm nháp lỗi; đã tạo kết quả dự phòng.",
-                        feedback="Teacher dự phòng do lỗi lô chấm nháp.",
+                        reasoning="Draft batch failed; generated fallback result.",
+                        feedback="Teacher fallback used because the draft batch failed.",
                     )
                     completed[qid] = o.model_copy(update={"draft_result": fallback})
                 else:
                     fallback = DebateResult(
                         question_id=qid,
-                        teacher_rebuttal="Lô tranh luận lỗi; đã tạo kết quả dự phòng.",
-                        final_feedback="Teacher dự phòng do lỗi lô tranh luận.",
+                        teacher_rebuttal="Debate batch failed; generated fallback result.",
+                        final_feedback="Teacher fallback used because the debate batch failed.",
                         final_score=(o.draft_result.score if o.draft_result else None),
                         accepted_verifier=False,
                     )
@@ -566,17 +542,11 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         else:
             question = "Không có question_id trong request"
 
-        prompt = f"""Bạn là giáo viên hỗ trợ học sinh.
-            Nhiệm vụ: đưa ra gợi ý ngắn gọn để học sinh tự giải, KHÔNG tiết lộ đáp án trực tiếp.
-            Nếu thông tin chưa đủ, hãy hỏi lại tối đa 1 câu để làm rõ.
-            Bắt buộc: phản hồi hoàn toàn bằng tiếng Việt tự nhiên, không dùng tiếng Anh.
-
-            Câu hỏi: {question}
-            Câu trả lời hiện tại của học sinh: {student_answer}
-            Tin nhắn học sinh: {request.student_message}
-
-            Trả về JSON với trường feedback là nội dung gợi ý thân thiện, rõ ràng, tối đa 5 câu.
-        """
+        prompt = teacher_hint_prompt(
+            question=question,
+            student_answer=student_answer,
+            student_message=request.student_message,
+        )
 
         result: HintResult = await asyncio.to_thread(self._llm_hint.invoke, prompt)
         feedback = (result.feedback or "").strip()
@@ -594,6 +564,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self,
         request: MessageRequest,
         exam_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
     ) -> MessageResponse:
         """PREPROCESS: parse OCR text thành payload chuẩn exams/questions để ghi DB."""
         parser_output = (request.parser_output or "").strip()
@@ -618,29 +589,19 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 preprocess_payload=empty_payload,
             )
 
-        prompt = f"""Bạn là bộ chuẩn hóa dữ liệu đề thi.
-
-Nhiệm vụ:
-- Đọc OCR text bên dưới và trích xuất dữ liệu theo đúng schema exam/questions.
-- Trả về đúng cấu trúc JSON của model Pydantic (exam + questions).
-- Mỗi question phải có id duy nhất dạng UUID string.
-- Nếu OCR không rõ đáp án đúng thì để correct_answer = null.
-- Nếu câu hỏi có hình thì has_image=true và image_url dùng link này: {image_bucket_url}.
-- Nếu không có hình thì has_image=false và image_url=null.
-- topic_tags dùng danh sách rỗng nếu chưa suy ra được.
-- difficulty_a mặc định 1.0, difficulty_b mặc định 0.0.
-- exam.id ưu tiên dùng exam_id đã có (nếu có), nếu không thì tự tạo UUID.
-- exam.questions phải là danh sách id của toàn bộ questions theo thứ tự question_index.
-- Các trường văn bản (subject, content, content_latex nếu có mô tả chữ, metadata mô tả) ưu tiên tiếng Việt; không tự dịch sai nghĩa.
-
-OCR_TEXT:
-{parser_output}
-"""
+        prompt = teacher_preprocess_prompt(
+            image_bucket_url=image_bucket_url,
+            parser_output=parser_output,
+        )
 
         try:
+            invoke_kwargs = {}
+            if thread_id:
+                invoke_kwargs["config"] = {"configurable": {"thread_id": thread_id}}
             extraction: PreprocessExtractionResult = await asyncio.to_thread(
                 self._llm_preprocess.invoke,
                 prompt,
+                **invoke_kwargs,
             )
             normalized_payload = self._normalize_preprocess_payload(
                 extraction,
@@ -661,8 +622,8 @@ OCR_TEXT:
                 image_bucket_url=image_bucket_url,
             )
             feedback = (
-                "PREPROCESS dự phòng: LLM parse lỗi, đã trả payload mặc định để tiếp tục lưu DB. "
-                f"Chi tiết lỗi: {e}"
+                "PREPROCESS fallback: LLM parsing failed, returned default payload to continue DB persistence. "
+                f"Error details: {e}"
             )
 
         return MessageResponse(

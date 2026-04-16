@@ -18,21 +18,6 @@ load_dotenv(override=True)
 MONGO_URI = os.getenv("MONGO_URI")
 
 class ToolsRegistry:
-    """
-    Mixin duy nhất cho tất cả agent:
-      - Khởi tạo và cache tools (Playwright, File, PythonREPL)
-      - MongoDB get/insert
-      - LangGraph ToolNode (LangSmith tracking)
-
-    Class sử dụng phải gọi setup_tools(llm) trong setup() của mình.
-    Tools được cache ở class-level → Teacher và Verifier dùng chung,
-    không khởi tạo browser nhiều lần.
-    
-    Cách sử dụng trong graph:
-      builder.add_node("tools", self.get_tool_node())
-      builder.add_edge("tools", "agent")
-    """
-
     # ── Class-level cache (dùng chung toàn bộ agent instances) ────────────────
     _shared_tools: list[BaseTool] | None = None
     _shared_tool_map: dict[str, BaseTool] | None = None
@@ -40,6 +25,7 @@ class ToolsRegistry:
     _shared_browser = None
     _shared_playwright = None
     _mongo_client = AsyncIOMotorClient(MONGO_URI)
+    _tools_init_lock = asyncio.Lock()
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -55,20 +41,35 @@ class ToolsRegistry:
         llm: base LLM chưa bind tools (LLMClient.chat_model()).
         """
         self._log_tools("setup_tools started")
-        if ToolsRegistry._shared_tools is None:
-            self._log_tools("tool cache miss; initializing shared tools")
-            await self._init_tools()
-        else:
-            self._log_tools("tool cache hit; reusing shared tools")
-
-        self._tools          = ToolsRegistry._shared_tools
-        self._tool_map       = ToolsRegistry._shared_tool_map
-        self._tool_node      = ToolsRegistry._shared_tool_node
-        self.browser         = ToolsRegistry._shared_browser
-        self.playwright      = ToolsRegistry._shared_playwright
-        self._llm            = llm
-        self._llm_with_tools = llm.bind_tools(self._tools)
+        await self.ensure_shared_tools_initialized()
+        self._attach_shared_tools_to_agent(llm)
         self._log_tools(f"setup_tools completed; total tools={len(self._tools)}")
+
+    async def ensure_shared_tools_initialized(self):
+        """Khởi tạo shared tools đúng một lần cho toàn bộ process."""
+        if ToolsRegistry._shared_tools is not None:
+            self._log_tools("tool cache hit; reusing shared tools")
+            return
+
+        async with ToolsRegistry._tools_init_lock:
+            if ToolsRegistry._shared_tools is None:
+                self._log_tools("tool cache miss; initializing shared tools")
+                await self._init_tools()
+            else:
+                self._log_tools("tool cache hit after lock; reusing shared tools")
+
+    def _attach_shared_tools_to_agent(self, llm):
+        """Gắn shared tools đã cache vào agent hiện tại và bind vào LLM."""
+        if ToolsRegistry._shared_tools is None:
+            raise RuntimeError("Shared tools chưa được khởi tạo")
+
+        self._tools = ToolsRegistry._shared_tools
+        self._tool_map = ToolsRegistry._shared_tool_map
+        self._tool_node = ToolsRegistry._shared_tool_node
+        self.browser = ToolsRegistry._shared_browser
+        self.playwright = ToolsRegistry._shared_playwright
+        self._llm = llm
+        self._llm_with_tools = llm.bind_tools(self._tools)
 
     async def _init_tools(self):
         """Khởi tạo tất cả tools một lần duy nhất."""
