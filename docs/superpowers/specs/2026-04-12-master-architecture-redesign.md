@@ -293,6 +293,29 @@ def generate_narrative(profile: LearnerProfile, kg_context: dict) -> str:
     """
 ```
 
+### 4.4 SGK / CTGDPT 2018 knowledge graph (Toán 10–12)
+
+**Anchor (đã chọn):** Neo toàn bộ skill theo **Chương trình GDPT 2018** (mục tiêu / nội dung / chuẩn kiến thức–kỹ năng), **không** lấy id trực tiếp từ một bộ SGK nhà xuất bản. Các bộ sách (Kết nối tri thức, Cánh Diều, Chân trời sáng tạo, …) chỉ dùng làm **tài liệu tham chiếu** khi gán nhãn tiếng Việt và khi cần bảng **alias chương → skill_id** (optional).
+
+**Mô hình đồ thị:**
+
+- **Node (skill):** một đơn vị nhỏ hơn “cả chương” nhưng gắn với **chương / mục** trong khung CT (ví dụ: “Giải phương trình bậc hai một ẩn” thuộc chương Đại số lớp 10). Mỗi node có metadata: `grade` (10|11|12), `domain` (Đại số / Hình học / Giải tích / Xác suất–Thống kê / … theo cách chia trong CT), `chapter_label` (nhãn hiển thị), `ct_anchor` (mã hoặc đoạn trích tham chiếu tới văn bản CT nếu có), `aliases[]` (tên gọi trong các SGK khác nhau).
+- **Node tùy chọn (chapter container):** nếu UI cần nhóm theo chương, có thể thêm node loại `chapter` và cạnh `PART_OF` từ skill → chapter; MVP có thể chỉ dùng field `chapter_id` trên skill để giảm số node.
+- **Cạnh (quan hệ giữa skill):** tập hữu hạn, có kiểu:
+  - `PREREQUISITE` — A là điều kiện nền trước B (dùng cho `trace_weaknesses`, lộ trình ôn).
+  - `RELATED` — liên quan ngang hàng (ôn tổng hợp, mở rộng).
+  - `EXTENDS_ACROSS_GRADE` — nội dung lớp sau mở rộng lớp trước (ví dụ hàm số → đạo hàm).
+  - `SAME_TOPIC_FAMILY` — cùng họ ý tưởng (tùy chọn, để tránh trùng lặp khi chọn câu).
+
+**Nguồn dữ liệu để xây graph (không tự động “đọc SGK” là đủ):**
+
+1. **Khung CT chính thức** (Bộ GD&ĐT): liệt kê mục tiêu / nội dung theo lớp → tạo danh sách skill gốc và id ổn định.
+2. **Sách giáo khoa Toán 10, 11, 12** (một hoặc nhiều bộ): đối chiếu mục lục chương–bài với skill CT để viết mô tả ngắn, synonym, và (nếu cần) bảng map `sgk_chapter_ref → skill_id`.
+3. **Quy trình xây dựng (đề xuất):** (a) bảng CSV/YAML `skills` theo CT; (b) bảng `edges` do chuyên môn hoặc LLM gợi ý + **review người**; (c) validate: không chu trình prerequisite vô lý, mỗi skill lớp 11–12 có ít nhất một đường prerequisite về lớp thấp hơn khi phù hợp.
+4. **Tích hợp hệ thống:** export `graph.json` (nodes + edges) hoặc nạp vào NetworkX (Python in-process) **hoặc Neo4j**; câu hỏi trong `QuestionExam` gắn `skill_ids[]` để BKT/RAG/Adaptive dùng chung một namespace với KG. **Runtime Node.js:** có thể triển khai KG trên **Neo4j** và truy cập bằng driver chính thức (`neo4j-driver`) từ **NestJS** (REST/GraphQL nội bộ); Python agents gọi HTTP tới API đó hoặc dùng driver Python cùng một DB — không bắt buộc dùng NetworkX trong Python.
+
+**Phạm vi hackathon:** có thể ship **một phần** Toán (ví dụ chỉ Đại số + Giải tích lớp 12) rồi mở rộng dần; quan trọng là **chuẩn hóa schema và id** theo CT trước khi nhân rộng nội dung.
+
 ## 5. Technology Mapping
 
 | Component | Technology | Notes |
@@ -301,7 +324,7 @@ def generate_narrative(profile: LearnerProfile, kg_context: dict) -> str:
 | TeacherAgent | LangGraph + Qwen3-14B / Gemma 3 | Existing, needs prompt update for solution generation focus |
 | VerifierAgent | LangGraph + Qwen3-4B / Gemma 3 | Existing, needs prompt update for solution review focus |
 | LearnerProfileService | Python + NumPy | New, pure computation |
-| Knowledge Graph | NetworkX (MVP) / Neo4j (scale) | New |
+| Knowledge Graph | NetworkX (Python MVP) **hoặc** Neo4j + **Node.js** (NestJS + `neo4j-driver`) | CTGDPT 2018–anchored skills (Toán 10–12); edges PREREQUISITE / RELATED / EXTENDS; optional SGK alias tables; Python agents consume KG qua API hoặc shared Neo4j |
 | RAG Module | LangChain + vector store | Embedding search over QuestionExam |
 | GenAL QuestionSelector | LLM (same as Teacher model) | New, 1 LLM call per personalized exam gen |
 | Crawler | Playwright (existing in tools.py) / Scrapy | New pipeline |
@@ -359,7 +382,7 @@ For the 7-day hackathon window (April 12-19):
 **Should have:**
 - Personalized Gen with GenAL QuestionSelector
 - Selective Verifier review
-- Basic Knowledge Graph (NetworkX, manual KC mapping for Math)
+- Knowledge Graph (NetworkX): skill nodes anchored to **CTGDPT 2018** for Math 10–12, edges for prerequisites; subset of chapters for MVP; question bank tags use same `skill_id` namespace
 
 **Could have (post-hackathon):**
 - Crawler pipeline automation

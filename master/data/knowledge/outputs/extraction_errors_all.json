@@ -1,0 +1,184 @@
+[
+  {
+    "chunk_id": "toan-10-tap-1:0015",
+    "book_id": "toan-10-tap-1",
+    "title": "3. ỨNG DỤNG CỦA HỆ BẤT PHƯƠNG TRÌNH BẬC NHẤT HAI ẨN",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "3 validation errors for ExtractionDocument\nedges.3.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='DEFINED_AS', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='APPLIES_TO', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.5.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='LEADS_TO', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0025",
+    "book_id": "toan-10-tap-1",
+    "title": "TÍCH CỦA MỘT VECTƠ VỚI MỘT SỐ",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "Expecting ':' delimiter: line 42 column 36 (char 1178)"
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0030",
+    "book_id": "toan-10-tap-1",
+    "title": "TÍCH VÔ HƯỚNG CỦA HAI VECTƠ",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0032",
+    "book_id": "toan-10-tap-1",
+    "title": "SỐ GẦN ĐÚNG VÀ SAI SỐ",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nedges.3.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='HAS', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0041",
+    "book_id": "toan-10-tap-1",
+    "title": "2. THUẾ THU NHẬP CÁ NHÂN",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nedges.6.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-2:0028",
+    "book_id": "toan-10-tap-2",
+    "title": "1. PHƯƠNG TRÌNH ĐƯỜNG TRÒN",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "3 validation errors for ExtractionDocument\nnodes.5.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.6.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.7.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-2:0030",
+    "book_id": "toan-10-tap-2",
+    "title": "2. PHƯƠNG TRÌNH TIẾP TUYỂN CỦA ĐƯỜNG TRÒN",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "2 validation errors for ExtractionDocument\nedges.3.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='PRACTICE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-2:0042",
+    "book_id": "toan-10-tap-2",
+    "title": "Tổng quát ta có",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nnodes.5.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-2:0043",
+    "book_id": "toan-10-tap-2",
+    "title": "2. CHỈNH HỢP",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "2 validation errors for ExtractionDocument\nedges.2.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='DIFFERS_FROM', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-10-tap-2:0059",
+    "book_id": "toan-10-tap-2",
+    "title": "4. THỰC HÀNH TRẢI NGHIỆM TRONG PHÒNG MÁY",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-10-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nnodes.6.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='OBSERVATION', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0012",
+    "book_id": "toan-11-tap-1",
+    "title": "1. ĐỊNH NGHĨA HÀM SỐ LƯỢNG GIÁC",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nnodes.6.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0014",
+    "book_id": "toan-11-tap-1",
+    "title": "1. KHÁI NIÊM PHƯƠNG TRÌNH TƯƠNG ĐƯƠNG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "list indices must be integers or slices, not str"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0029",
+    "book_id": "toan-11-tap-1",
+    "title": "2. GHÉP NHÓM MẪU SỐ LIỆU",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "4 validation errors for ExtractionDocument\nnodes.6.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='REQUIRES', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.6.description\n  Field required [type=missing, input_value={'id': 'C_CHIA_MIEN_GIA_T... thuộc mỗi nhóm.'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing\nnodes.7.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='PART_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.7.description\n  Field required [type=missing, input_value={'id': 'C_BANG_THONG_KE_G... thuộc mỗi nhóm.'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0033",
+    "book_id": "toan-11-tap-1",
+    "title": "3. TỨ PHÂN VỊ CỦA MẪU SỐ LIỆU GHÉP NHÓM",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nnodes.6.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='FACT', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0034",
+    "book_id": "toan-11-tap-1",
+    "title": "4. MỐT CỦA MẪU SỐ LIỆU GHÉP NHÓM",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nedges.7.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0041",
+    "book_id": "toan-11-tap-1",
+    "title": "1. VỊ TRÍ TƯƠNG ĐỐI CỦA HAI ĐƯỜNG THẮNG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "6 validation errors for ExtractionDocument\nnodes.5.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='IMAGE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.6.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='IMAGE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.7.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='IMAGE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.8.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='IMAGE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.9.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='IMAGE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.10.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='IMAGE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0047",
+    "book_id": "toan-11-tap-1",
+    "title": "1. HAI MẶT PHẨNG SONG SONG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "2 validation errors for ExtractionDocument\nedges.1.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.2.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0055",
+    "book_id": "toan-11-tap-1",
+    "title": "1. GIỚI HẠN HỮU HẠN CỦA DẪY SỐ",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "2 validation errors for ExtractionDocument\nnodes.4.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.5.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-1:0065",
+    "book_id": "toan-11-tap-1",
+    "title": "2. HÀM SỐ LIÊN TỤC TRÊN MỘT KHOẢNG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nnodes.11.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='EXERCISE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-2:0015",
+    "book_id": "toan-11-tap-2",
+    "title": "4. GÓC NHỊ DIỆN",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='DEFINED_AS', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-11-tap-2:0018",
+    "book_id": "toan-11-tap-2",
+    "title": "1. BIẾN CỐ HỢP",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-11-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "Expecting ',' delimiter: line 9 column 47 (char 392)"
+  },
+  {
+    "chunk_id": "toan-12-tap-1:0001",
+    "book_id": "toan-12-tap-1",
+    "title": "1. ĐỊNH NGHĨA",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-12-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "5 validation errors for ExtractionDocument\nedges.2.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.3.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.5.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.6.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-12-tap-1:0007",
+    "book_id": "toan-12-tap-1",
+    "title": "1. TỐC ĐỘ THAY ĐỔI CỦA MỘT ĐẠI LƯỢNG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-12-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "4 validation errors for ExtractionDocument\nedges.6.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.7.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.8.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.9.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE_OF', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-12-tap-1:0012",
+    "book_id": "toan-12-tap-1",
+    "title": "BIỂU THỨC TOẠ ĐỘ CỦA CÁC PHÉP TOÁN VECTƠ",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-12-tap-1-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "4 validation errors for ExtractionDocument\nnodes.8.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='VECTOR', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.9.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='VECTOR', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.10.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='VECTOR', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nnodes.11.type\n  Input should be 'CONCEPT', 'THEOREM', 'FORMULA', 'EXAMPLE' or 'METHOD' [type=literal_error, input_value='VECTOR', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-12-tap-2:0009",
+    "book_id": "toan-12-tap-2",
+    "title": "2. PHƯƠNG TRÌNH TỔNG QUÁT CỦA MẶT PHẮNG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-12-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "4 validation errors for ExtractionDocument\nedges.2.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.3.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.4.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error\nedges.5.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='EXAMPLE', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  },
+  {
+    "chunk_id": "toan-12-tap-2:0015",
+    "book_id": "toan-12-tap-2",
+    "title": "1. CÔNG THỰC TÍNH GÓC GIỮA HAI ĐƯỜNG THẮNG",
+    "source_path": "/home/phuckhang/MyWorkspace/GDGoC_HackathonVietnam/master/data/sach-giao-khoa-toan-12-tap-2-ket-noi-tri-thuc-voi-cuoc-song.md",
+    "error": "1 validation error for ExtractionDocument\nedges.2.relation\n  Input should be 'REQUIRES', 'PART_OF' or 'RELATED_TO' [type=literal_error, input_value='ILLUSTRATES', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+  }
+]

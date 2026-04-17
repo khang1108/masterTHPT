@@ -5,12 +5,11 @@ thuần LangGraph để gọi các nodes trong StateGraph.
 from __future__ import annotations
 
 from typing import Literal, Optional
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
+from master.agents.adaptive import AdaptiveAgent
 from master.agents.common.state import AgentState
 from master.agents.manager.classify_intent import classify_intent, route_by_intent
 from master.agents.common.message import Intent
-from master.agents.teacher import TeacherAgent
-from master.agents.verifier import VerifierAgent
 
 # ===========================================
 # NODEs
@@ -34,23 +33,38 @@ def preprocess_node(state: AgentState) -> AgentState:
         "debate_outputs": state.get("debate_outputs", []),
         "questions": state.get("questions", []),
         "student_answers": state.get("student_answers", []),
+        "selected_questions": state.get("selected_questions", []),
+        "profile_updates": state.get("profile_updates", {}),
     }
 
 def selection_questions_node(state: AgentState) -> AgentState:
     """
     Node chọn câu hỏi. Chọn câu hỏi từ câu hỏi đã làm.
     """
-    #TODO: Hiện tại chỉ trả về đơn giản, sau này sẽ triển khai chung với Adaptive Agent
-    #       lựa chọn các câu hỏi bằng BKT/IRT/KC + LLMs
+    adaptive_agent = AdaptiveAgent()
+    adaptive_state = adaptive_agent.run(
+        {
+            "request": state.get("request"),
+            "learner_profile": state.get("learner_profile"),
+            "questions": state.get("questions", []),
+            "student_answers": state.get("student_answers", []),
+            "selected_questions": state.get("selected_questions", []),
+            "profile_updates": state.get("profile_updates", {}),
+        }
+    )
     return {
         **state,
-        "selected_questions": state.get("selected_questions", []),
+        "learner_profile": adaptive_state.get("learner_profile"),
+        "selected_questions": adaptive_state.get("selected_questions", []),
+        "profile_updates": adaptive_state.get("profile_updates", {}),
     }
 
 def teacher_node(state: AgentState) -> AgentState:
     """
     Node giảng viên. Giảng viên sẽ giảng các câu hỏi đã chọn.
     """
+    from master.agents.teacher import TeacherAgent
+
     teacher: TeacherAgent = TeacherAgent()
 
     debate_state = {
@@ -94,7 +108,15 @@ def _build_adaptive_graph() -> StateGraph:
     hợp giúp người học nâng cao trình độ.
     """
 
-    pass
+    builder = StateGraph(AgentState)
+    builder.add_node("preprocess", preprocess_node)
+    builder.add_node("select_questions", selection_questions_node)
+
+    builder.add_edge(START, "preprocess")
+    builder.add_edge("preprocess", "select_questions")
+    builder.add_edge("select_questions", END)
+
+    return builder.compile()
 
 def _build_solution_gen_graph() -> StateGraph:
     """

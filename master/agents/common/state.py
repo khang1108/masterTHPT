@@ -1,8 +1,7 @@
-from typing import Literal, Optional, TypedDict
-from message import MessageRequest, MessageResponse
-from learner_profile import LearnerProfile
+from typing import Any, Literal, Optional, TypedDict
+from .message import MessageRequest, MessageResponse
+from .learner_profile import LearnerProfile
 from master.agents.common.message import ExamQuestion, StudentAnswer
-from master.agents.teacher import Output
 from master.common.message import GradeResult, Solution
 
 class AgentState(TypedDict):
@@ -25,7 +24,7 @@ class AgentState(TypedDict):
     round: int
     max_round: int
     phase: Literal["draft", "debate", "verify", "finalize"]
-    debate_outputs: list[Output]
+    debate_outputs: list[Any]
 
     # Grading result - Điểm được chấm từ phía /app gửi về (điểm, câu đúng, câu sai)
     grade_result: Optional[GradeResult]

@@ -1,0 +1,810 @@
+[
+  {
+    "chunk_id": "toan-10-tap-1:0001",
+    "summary": "Bài này giới thiệu khái niệm mệnh đề lôgic (mệnh đề) trong Toán học. Một mệnh đề là câu đúng hoặc sai. Một số câu không xác định được tính đúng sai không phải là mệnh đề. Ví dụ với câu \"n chia hết cho 2\" với n là số tự nhiên, chưa đủ thông tin để xác định đúng sai, nhưng khi thay n bằng số cụ thể thì thành mệnh đề. Câu hỏi và cảm thán không phải là mệnh đề.",
+    "nodes": [
+      {
+        "id": "C_MENH_DE_TOAN",
+        "label": "Mệnh đề toán học",
+        "type": "CONCEPT",
+        "description": "Những mệnh đề liên quan đến toán học.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE",
+        "label": "Mệnh đề",
+        "type": "CONCEPT",
+        "description": "Một câu đúng hoặc sai.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_KHONG_PHAI_MENH_DE",
+        "label": "Không phải mệnh đề",
+        "type": "CONCEPT",
+        "description": "Những câu không xác định được tính đúng sai.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_CHUA_BIEN",
+        "label": "Mệnh đề chứa biến",
+        "type": "CONCEPT",
+        "description": "Một mệnh đề có chứa biến mà chưa xác định được đúng sai.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_DUNG",
+        "label": "Mệnh đề đúng",
+        "type": "CONCEPT",
+        "description": "Một mệnh đề đúng.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_SAI",
+        "label": "Mệnh đề sai",
+        "type": "CONCEPT",
+        "description": "Một mệnh đề sai.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": []
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0002",
+    "summary": "Bài học này giới thiệu khái niệm mệnh đề phủ định trong logic. Nó giải thích cách phủ định một mệnh đề và đưa ra ví dụ minh họa. Cuối cùng, nó đưa ra một bài tập luyện tập và một bài tập vận dụng.",
+    "nodes": [
+      {
+        "id": "C_MENH_DE_PHU_DINH",
+        "label": "Mệnh đề phủ định",
+        "type": "CONCEPT",
+        "description": "Mệnh đề phủ định là một phát biểu ngược lại với một mệnh đề gốc. Để tạo ra mệnh đề phủ định, người ta thường thêm từ \"không\" hoặc \"không phải\" vào trước vị ngữ của mệnh đề gốc.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_KI_HOP_PHU_DINH",
+        "label": "Kí hiệu phủ định",
+        "type": "CONCEPT",
+        "description": "Để biểu diễn mệnh đề phủ định, người ta sử dụng kí hiệu $\\overline{P}$, đọc là \"phủ định của P\".",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_TRANG_DONG",
+        "label": "Trái ngược",
+        "type": "CONCEPT",
+        "description": "Mệnh đề gốc P và mệnh đề phủ định $\\overline{P}$ là hai phát biểu trái ngược nhau. Nếu P đúng thì $\\overline{P}$ sai, còn nếu P sai thì $\\overline{P}$ đúng.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_SO_CHINH_PHUONG",
+        "label": "Số chính phương",
+        "type": "CONCEPT",
+        "description": "Số chính phương là số có thể biểu diễn dưới dạng tích của chính mình với một số nguyên khác không. Ví dụ: 4 là số chính phương vì 4 = 2 * 2.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_HINH_BOX",
+        "label": "Hình hộp",
+        "type": "CONCEPT",
+        "description": "Hình hộp là một vật thể có 6 mặt, 8 cạnh và 12 đỉnh. Hình hộp là một dạng đặc biệt của hình đa diện.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_HINH_LANG_TRU",
+        "label": "Hình lăng trụ",
+        "type": "CONCEPT",
+        "description": "Hình lăng trụ là một hình đa diện có hai mặt phẳng đối xứng song song và các cạnh nối các đỉnh của hai mặt phẳng này.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_BAT_PHUONG_TIN",
+        "label": "Bất phương trình",
+        "type": "CONCEPT",
+        "description": "Bất phương trình là một biểu thức chứa biến x và các dãy số có yêu cầu x phải thỏa mãn điều kiện đó.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      },
+      {
+        "id": "C_CHAU_LAC",
+        "label": "Châu lục",
+        "type": "CONCEPT",
+        "description": "Châu lục là một trong sáu châu lớn trên Trái Đất, bao gồm các vùng đất liền liên tục và được phân biệt bởi đặc điểm địa lý, văn hóa và lịch sử.",
+        "grade": 10,
+        "source_title": "Toán 10 tập 1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_MENH_DE_PHU_DINH",
+        "target": "C_KI_HOP_PHU_DINH",
+        "relation": "PART_OF",
+        "rationale": "Khái niệm kí hiệu phủ định là một phần của khái niệm mệnh đề phủ định."
+      },
+      {
+        "source": "C_MENH_DE_PHU_DINH",
+        "target": "C_TRANG_DONG",
+        "relation": "RELATED_TO",
+        "rationale": "Mệnh đề phủ định có liên quan đến tính trái ngược với mệnh đề gốc."
+      },
+      {
+        "source": "C_SO_CHINH_PHUONG",
+        "target": "C_MENH_DE_PHU_DINH",
+        "relation": "RELATED_TO",
+        "rationale": "Ví dụ về số chính phương được sử dụng để minh họa việc phát biểu mệnh đề phủ định."
+      },
+      {
+        "source": "C_HINH_BOX",
+        "target": "C_MENH_DE_PHU_DINH",
+        "relation": "RELATED_TO",
+        "rationale": "Ví dụ về hình hộp được sử dụng để minh họa việc phát biểu mệnh đề phủ định."
+      },
+      {
+        "source": "C_HINH_LANG_TRU",
+        "target": "C_MENH_DE_PHU_DINH",
+        "relation": "RELATED_TO",
+        "rationale": "Ví dụ về hình lăng trụ được sử dụng để minh họa việc phát biểu mệnh đề phủ định."
+      },
+      {
+        "source": "C_BAT_PHUONG_TIN",
+        "target": "C_MENH_DE_PHU_DINH",
+        "relation": "RELATED_TO",
+        "rationale": "Ví dụ về bất phương trình được sử dụng để minh họa việc phát biểu mệnh đề phủ định."
+      },
+      {
+        "source": "C_CHAU_LAC",
+        "target": "C_MENH_DE_PHU_DINH",
+        "relation": "RELATED_TO",
+        "rationale": "Ví dụ về châu lục được sử dụng để minh họa việc phát biểu mệnh đề phủ định."
+      }
+    ]
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0003",
+    "summary": "Mênh đề kéo theo và mênh đề đảo là hai dạng mênh đề cơ bản trong logic. Mênh đề kéo theo có dạng 'Nếu P thì Q' và mênh đề đảo có dạng 'Nếu Q thì P'. Ví dụ, nếu tam giác ABC là tam giác đều thì tam giác ABC là tam giác cân. Mênh đề đảo của mênh đề này là nếu tam giác ABC là tam giác cân thì tam giác ABC là tam giác đều. Mênh đề đảo không nhất thiết phải đúng.",
+    "nodes": [
+      {
+        "id": "C_MENH_DE_KEN_THEO",
+        "label": "Mệnh đề kéo theo",
+        "type": "THEOREM",
+        "description": "Mệnh đề 'Nếu P thì Q' được gọi là một mệnh đề kéo theo và kí hiệu là  $P \\Rightarrow Q$ .",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_DO",
+        "label": "Mệnh đề đảo",
+        "type": "THEOREM",
+        "description": "Mệnh đề đảo của một mệnh đề 'Nếu P thì Q' được phát biểu dưới dạng 'Nếu Q thì P'.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_PHUONG_TRINH_BAC_HA",
+        "label": "Phương trình bậc hai",
+        "type": "FORMULA",
+        "description": "Phương trình bậc hai là  $ax^2 + bx + c = 0$ , có biệt thức  $\\Delta = b^2 - 4ac$ .",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAM_GIAC_DEU",
+        "label": "Tam giác đều",
+        "type": "CONCEPT",
+        "description": "Tam giác đều là tam giác có ba cạnh đều nhau.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAM_GIAC_CAN",
+        "label": "Tam giác cân",
+        "type": "CONCEPT",
+        "description": "Tam giác cân là tam giác có hai cạnh đối nhau bằng nhau.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_MENH_DE_KEN_THEO",
+        "target": "C_MENH_DE_DO",
+        "relation": "RELATED_TO",
+        "rationale": "Cả mệnh đề kéo theo và mệnh đề đảo là các dạng mệnh đề cơ bản trong logic."
+      },
+      {
+        "source": "C_MENH_DE_KEN_THEO",
+        "target": "C_PHUONG_TRINH_BAC_HA",
+        "relation": "RELATED_TO",
+        "rationale": "Mệnh đề kéo theo được áp dụng cho phương trình bậc hai."
+      },
+      {
+        "source": "C_MENH_DE_DO",
+        "target": "C_TAM_GIAC_DEU",
+        "relation": "RELATED_TO",
+        "rationale": "Mệnh đề đảo được áp dụng cho tam giác đều."
+      },
+      {
+        "source": "C_MENH_DE_DO",
+        "target": "C_TAM_GIAC_CAN",
+        "relation": "RELATED_TO",
+        "rationale": "Mệnh đề đảo được áp dụng cho tam giác cân."
+      }
+    ]
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0004",
+    "summary": "Mệnh đề tương đương và ví dụ về việc xác định tính đúng sai của mệnh đề tương đương trong các tình huống khác nhau.",
+    "nodes": [
+      {
+        "id": "C_MENH_DE_TUONG_DUNG",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Khái niệm về mệnh đề tương đương trong Toán học.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_TUONG_DUNG_HD6",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Mệnh đề trong HĐ6 liên quan đến số chia hết cho 5.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_TUONG_DUNG_KI_EN",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Khái niệm về mệnh đề tương đương kiên trong Toán học.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_PHUONG_PHAP_TUONG_DUNG",
+        "label": "Formula",
+        "type": "FORMULA",
+        "description": "$P \\Leftrightarrow Q$ - Mệnh đề tương đương.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_TUONG_DUNG_VI_DU",
+        "label": "Example",
+        "type": "EXAMPLE",
+        "description": "Ví dụ về việc xác định tính đúng sai của mệnh đề tương đương.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_TUONG_DUNG_GIAI",
+        "label": "Method",
+        "type": "METHOD",
+        "description": "Phương pháp giải bài tập về mệnh đề tương đương.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_MENH_DE_TUONG_DUNG",
+        "target": "C_MENH_DE_TUONG_DUNG_HD6",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_TUONG_DUNG",
+        "target": "C_PHUONG_PHAP_TUONG_DUNG",
+        "relation": "PART_OF",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_TUONG_DUNG",
+        "target": "C_MENH_DE_TUONG_DUNG_VI_DU",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_TUONG_DUNG",
+        "target": "C_MENH_DE_TUONG_DUNG_GIAI",
+        "relation": "REQUIRES",
+        "rationale": null
+      }
+    ]
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0005",
+    "summary": "Bài học này giới thiệu khái niệm mệnh đề chứa kí hiệu ∀ (với mọi) và ∃ (tồn tại) trong Toán học. Hai mệnh đề được đưa ra để học viên xác định tính đúng sai. Sau đó, bài học hướng dẫn cách viết mệnh đề phủ định của một mệnh đề đã cho và yêu cầu học viên so sánh phát biểu của hai người khác trong lớp.",
+    "nodes": [
+      {
+        "id": "C_MENH_DE_CO_CHU_A",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Một câu được gọi là mệnh đề nếu nó có thể là đúng hoặc sai.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_KI_HIỆU_∀",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Kí hiệu ∀ đọc là \"với mọi\".",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_KI_HIỆU_∃",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Kí hiệu ∃ đọc là \"tồn tại\".",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_P",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Câu \"Mọi số thực đều có bình phương không âm\" là một mệnh đề.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_Q",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Câu \"Có một số hữu tỉ mà bình phương của nó bằng 2\" là một mệnh đề.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MENH_DE_PHỦ ĐỊNH",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Mệnh đề phủ định của một mệnh đề P là mệnh đề $\\overline{P}$.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_LUYỆN_TAP_5",
+        "label": "EXERCISE",
+        "type": "EXAMPLE",
+        "description": "Học viên cần phát biểu bằng lời mệnh đề có chứa kí hiệu ∀, ∃ và xác định tính đúng sai của nó.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_LUYỆN_TAP_6",
+        "label": "EXERCISE",
+        "type": "EXAMPLE",
+        "description": "Học viên cần viết mệnh đề phủ định của một mệnh đề đã cho và xác định tính đúng sai của nó.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_MENH_DE_CO_CHU_A",
+        "target": "C_MENH_DE_P",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_CO_CHU_A",
+        "target": "C_MENH_DE_Q",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_P",
+        "target": "C_LUYỆN_TAP_5",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_Q",
+        "target": "C_LUYỆN_TAP_5",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_P",
+        "target": "C_MENH_DE_PHỦ ĐỊNH",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_MENH_DE_Q",
+        "target": "C_MENH_DE_PHỦ ĐỊNH",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_LUYỆN_TAP_5",
+        "target": "C_LUYỆN_TAP_6",
+        "relation": "RELATED_TO",
+        "rationale": null
+      }
+    ]
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0006",
+    "summary": "Bài học này giúp học viên giải quyết câu hỏi về số lượng thành viên trong câu lạc bộ Lịch sử thông qua kiến thức cơ bản về tập hợp và các phép toán trên tập hợp.",
+    "nodes": [
+      {
+        "id": "C_TAP_HOP",
+        "label": "Tập hợp",
+        "type": "CONCEPT",
+        "description": "Tập hợp là một tập hợp các phần tử được xác định bởi một quy tắc nào đó.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_PHAN_TU",
+        "label": "Phần tử",
+        "type": "CONCEPT",
+        "description": "Phần tử là một đối tượng thuộc về tập hợp.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAP_CON",
+        "label": "Tập con",
+        "type": "CONCEPT",
+        "description": "Tập con là một tập hợp có tất cả các phần tử thuộc về tập hợp lớn hơn.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAP_HOP_RONG",
+        "label": "Tập rỗng",
+        "type": "CONCEPT",
+        "description": "Tập rỗng là tập hợp không có phần tử.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HAP_HOP",
+        "label": "Hợp (Union)",
+        "type": "CONCEPT",
+        "description": "Hợp là phép toán hợp hai tập hợp thành một tập hợp mới bao gồm tất cả các phần tử của hai tập hợp ban đầu.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_GIAO_HOP",
+        "label": "Giao (Intersection)",
+        "type": "CONCEPT",
+        "description": "Giao là phép toán tìm tập hợp mới bao gồm các phần tử xuất hiện trong cả hai tập hợp ban đầu.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HIỆU_HOP",
+        "label": "Hiệu (Difference)",
+        "type": "CONCEPT",
+        "description": "Hiệu là phép toán tìm tập hợp mới bao gồm các phần tử thuộc tập hợp thứ nhất nhưng không thuộc tập hợp thứ hai.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_PHAN_BU_TAP_CON",
+        "label": "Phần bù của một tập con",
+        "type": "CONCEPT",
+        "description": "Phần bù của một tập con là tập hợp bao gồm các phần tử không thuộc tập con đó.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_BIỂU ĐỒ_VEN",
+        "label": "Biểu đồ Ven",
+        "type": "CONCEPT",
+        "description": "Biểu đồ Ven là phương pháp sử dụng các vòng tròn để biểu diễn các tập hợp và các phép toán trên tập hợp.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_CAU_LAC_BU_LICH_SU",
+        "label": "Câu lạc bộ Lịch sử",
+        "type": "CONCEPT",
+        "description": "Câu lạc bộ Lịch sử là một nhóm người có chung sở thích, hứng thú về lịch sử.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_THÀNH_VIEN_CLB",
+        "label": "Thành viên câu lạc bộ",
+        "type": "CONCEPT",
+        "description": "Thành viên câu lạc bộ là những người tham gia vào câu lạc bộ.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": []
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0007",
+    "summary": "Khái niệm cơ bản về tập hợp, tập hợp con, và hai tập hợp bằng nhau.",
+    "nodes": [
+      {
+        "id": "C_TAP_HOP",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Khái niệm về tập hợp",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAP_HOP_CON",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Khái niệm về tập hợp con",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HAI_TAP_HOP_BANG_NHAU",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Khái niệm về hai tập hợp bằng nhau",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HAM_SO_BAC_HAI",
+        "label": "THEOREM",
+        "type": "THEOREM",
+        "description": "Định lý về tập nghiệm của phương trình x^2 + 1 = 0",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAP_RONG",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Khái niệm về tập rỗng",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_TAP_HOP",
+        "target": "C_TAP_HOP_CON",
+        "relation": "PART_OF",
+        "rationale": null
+      },
+      {
+        "source": "C_TAP_HOP",
+        "target": "C_HAI_TAP_HOP_BANG_NHAU",
+        "relation": "PART_OF",
+        "rationale": null
+      },
+      {
+        "source": "C_TAP_HOP",
+        "target": "C_HAM_SO_BAC_HAI",
+        "relation": "RELATED_TO",
+        "rationale": null
+      },
+      {
+        "source": "C_TAP_HOP",
+        "target": "C_TAP_RONG",
+        "relation": "RELATED_TO",
+        "rationale": null
+      }
+    ]
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0008",
+    "summary": "This chunk discusses the relationships between different sets of numbers and basic set operations such as intersection, union, and difference.",
+    "nodes": [
+      {
+        "id": "C_TAP_HOP_SO_NGUYEN",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Tập hợp các số nguyên gồm các số tự nhiên và các số nguyên âm.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAP_HOP_SO_HUU_TIL",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Tập hợp các số hữu tỉ gồm các số viết được dưới dạng phân số $\frac{a}{b}$, với $a, b \\in \\mathbb{Z}$, $b \neq 0$. Số hữu tỉ còn được biểu diễn dưới dạng số thập phân hữu hạn hoặc vô hạn tuần hoàn.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_TAP_HOP_SO_THUC",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Tập hợp các số thực gồm các số hữu tỉ và các số vô tỉ.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_GIAO_CAI_TAP_HOP",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Tập hợp gồm các phần tử thuộc cả hai tập hợp S và T gọi là giao của hai tập hợp S và T, ký hiệu là $S \\cap T$.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HOP_CAI_TAP_HOP",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Tập hợp gồm các phần tử thuộc tập hợp S hoặc thuộc tập hợp T gọi là hợp của hai tập hợp S và T, ký hiệu là $S \\cup T$.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HIỆU_CAI_TAP_HOP",
+        "label": "CONCEPT",
+        "type": "CONCEPT",
+        "description": "Hiệu của hai tập hợp S và T là tập hợp gồm các phần tử thuộc S nhưng không thuộc T, ký hiệu là $S \\setminus T$.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_TAP_HOP_SO_NGUYEN",
+        "target": "C_TAP_HOP_SO_HUU_TIL",
+        "relation": "RELATED_TO",
+        "rationale": "Cả hai concept liên quan đến tập hợp số."
+      },
+      {
+        "source": "C_TAP_HOP_SO_HUU_TIL",
+        "target": "C_TAP_HOP_SO_THUC",
+        "relation": "RELATED_TO",
+        "rationale": "Cả hai concept liên quan đến tập hợp số thực."
+      },
+      {
+        "source": "C_GIAO_CAI_TAP_HOP",
+        "target": "C_HOP_CAI_TAP_HOP",
+        "relation": "RELATED_TO",
+        "rationale": "Cả hai concept liên quan đến các phép toán trên tập hợp."
+      },
+      {
+        "source": "C_HOP_CAI_TAP_HOP",
+        "target": "C_HIỆU_CAI_TAP_HOP",
+        "relation": "RELATED_TO",
+        "rationale": "Cả hai concept liên quan đến các phép toán trên tập hợp."
+      }
+    ]
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0009",
+    "summary": "Chương II cung cấp cách biểu diễn miền nghiệm của các bất phương trình và hệ bất phương trình bậc nhất hai ẩn trên mặt phẳng toạ độ, với ứng dụng trong các bài toán kinh tế như sản xuất và phân phối hàng hóa.",
+    "nodes": [
+      {
+        "id": "C_BAT_PHUONG_TRINH_BAC_NHAT_HAI_AN",
+        "label": "Bất phương trình bậc nhất hai ẩn",
+        "type": "CONCEPT",
+        "description": "Các bất phương trình bậc nhất hai ẩn xuất hiện trong nhiều bài toán kinh tế.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_HE_BAT_PHUONG_TRINH_BAC_NHAT_HAI_AN",
+        "label": "Hệ bất phương trình bậc nhất hai ẩn",
+        "type": "CONCEPT",
+        "description": "Hệ bất phương trình bậc nhất hai ẩn cũng xuất hiện trong các bài toán kinh tế.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MIEN_NGHIEM_CUA_BAT_PHUONG_TRINH",
+        "label": "Miền nghiệm của bất phương trình",
+        "type": "CONCEPT",
+        "description": "Chương này cung cấp cách biểu diễn miền nghiệm của các bất phương trình.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MIEN_NGHIEM_CUA_HE_BAT_PHUONG_TRINH",
+        "label": "Miền nghiệm của hệ bất phương trình",
+        "type": "CONCEPT",
+        "description": "Chương này cũng cung cấp cách biểu diễn miền nghiệm của hệ bất phương trình.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_BAN_DOANH_KINH_TE",
+        "label": "Bài toán kinh tế",
+        "type": "CONCEPT",
+        "description": "Các bất phương trình bậc nhất hai ẩn và hệ bất phương trình bậc nhất hai ẩn xuất hiện trong nhiều bài toán kinh tế.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_BAI_TOAN_SAN_XUAT",
+        "label": "Bài toán sản xuất",
+        "type": "CONCEPT",
+        "description": "Bài toán sản xuất là một ứng dụng của các bất phương trình bậc nhất hai ẩn trong kinh tế.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_BAI_TOAN_PHAN_PHUOC_HANG_HOIA",
+        "label": "Bài toán phân phối hàng hóa",
+        "type": "CONCEPT",
+        "description": "Bài toán phân phối hàng hóa cũng là một ứng dụng của các bất phương trình bậc nhất hai ẩn trong kinh tế.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": []
+  },
+  {
+    "chunk_id": "toan-10-tap-1:0010",
+    "summary": "Vấn đề được đưa ra là một rạp chiếu phim phục vụ hai nhóm khán giả với hai loại vé khác nhau. Để không phải bù lỗ, số tiền vé thu được phải đạt tối thiểu 20 triệu đồng. Bài toán cần tìm số lượng vé bán được trong những trường hợp nào thì rạp chiếu phim phải bù lỗ.",
+    "nodes": [
+      {
+        "id": "C_BAT_PHUONG_TRINH_BAC_NHAT_HAI_AN",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Bất phương trình bậc nhất hai ẩn là một loại bất phương trình có dạng Ax + By < C, với A, B, C là các hằng số và x, y là các biến.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_MIEU_NGHIA_BAT_PHUONG_TRINH_BAC_NHAT_HAI_AN",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Miền nghiệm của bất phương trình bậc nhất hai ẩn là tập hợp các điểm (x, y) trên mặt phẳng tọa độ mà bất phương trình có giá trị đúng.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_LOAI_1_VE",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Loại vé 1 dành cho trẻ từ 6-13 tuổi, giá 50 000 đồng/vé.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_LOAI_2_VE",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Loại vé 2 dành cho người trên 13 tuổi, giá 100 000 đồng/vé.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_SO_TIEN_VE",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Số tiền thu được từ việc bán vé.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_BU_LOE",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Bù lỗ là tình trạng khi số tiền thu được từ việc bán vé không đủ để bù đắp chi phí, dẫn đến lỗ kinh tế.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      },
+      {
+        "id": "C_SO_LUONG_VE_SAN_DUOC",
+        "label": "Concept",
+        "type": "CONCEPT",
+        "description": "Số lượng vé bán được.",
+        "grade": 10,
+        "source_title": "toan-10-tap-1"
+      }
+    ],
+    "edges": []
+  }
+]
