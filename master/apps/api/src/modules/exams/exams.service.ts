@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { buildEvaluationFromAnswerMap } from 'src/shared/exams/evaluation';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { findQuestionDocumentsByAnyIds } from 'src/shared/mongo/read-models';
+import { findExamDocumentByAnyId, findQuestionDocumentsByAnyIds } from 'src/shared/mongo/read-models';
 import { SubmitExamDto } from './dto/submit-exam.dto';
 
 @Injectable()
@@ -11,14 +11,7 @@ export class ExamsService {
 	) { }
 
 	async submit(dto: SubmitExamDto) {
-		const exam = await this.prisma.exam.findUnique({
-			where: {
-				id: dto.exam_id,
-			},
-			select: {
-				generated: true,
-			},
-		});
+		const exam = await findExamDocumentByAnyId(this.prisma, dto.exam_id);
 		const submittedQuestionIds = dto.full_exam.sections.flatMap((section) =>
 			section.questions.map((question) => question.id),
 		);

@@ -1,6 +1,6 @@
 import { ExamQuestion, ExamSection } from '@/shared/api/client';
 
-export type QuestionSectionType = 'multiple_choice' | 'true_false' | 'short_answer';
+export type QuestionSectionType = 'multiple_choice' | 'true_false' | 'short_ans';
 
 export type FlatQuestion = {
 	id: string;

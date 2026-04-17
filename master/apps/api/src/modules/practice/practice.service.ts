@@ -4,6 +4,11 @@ import { postToAiService } from 'src/shared/ai/ai-client';
 import { isAnswerCorrect } from 'src/shared/exams/evaluation';
 import { sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import {
+	findExamDocumentByAnyId,
+	findExamDocumentsByAnyIds,
+	findQuestionDocumentByAnyId,
+} from 'src/shared/mongo/read-models';
 import { CheckPracticeQuestionDto } from './dto/check-practice-question.dto';
 import { UpdatePracticeDto } from './dto/update-practice.dto';
 
@@ -22,24 +27,17 @@ export class PracticeService {
 			return [];
 		}
 
-		const exams = await this.prisma.exam.findMany({
-			where: {
-				id: {
-					in: examIds,
-				},
-			},
-			select: {
-				id: true,
-				subject: true,
-				source: true,
-				total_questions: true,
-				exam_type: true,
-				grade: true,
-				year: true,
-			},
-		});
+		const exams = await findExamDocumentsByAnyIds(this.prisma, examIds);
 
-		return sortItemsByReferenceOrder(examIds, exams);
+		return sortItemsByReferenceOrder(examIds, exams).map((exam) => ({
+			id: exam.id,
+			subject: exam.subject,
+			source: exam.source ?? 'Nguồn chưa cập nhật',
+			total_questions: exam.total_questions ?? 0,
+			exam_type: exam.exam_type,
+			grade: exam.grade ?? 0,
+			year: exam.year ?? 0,
+		}));
 	}
 
 	async checkQuestion(userId: string, dto: CheckPracticeQuestionDto) {
@@ -50,12 +48,7 @@ export class PracticeService {
 			throw new ForbiddenException('Bạn không có quyền luyện đề này');
 		}
 
-		const exam = await this.prisma.exam.findUnique({
-			where: { id: dto.exam_id },
-			select: {
-				questions: true,
-			},
-		});
+		const exam = await findExamDocumentByAnyId(this.prisma, dto.exam_id);
 
 		if (!exam) {
 			throw new NotFoundException('Không tìm thấy đề luyện tập');
@@ -65,12 +58,7 @@ export class PracticeService {
 			throw new NotFoundException('Câu hỏi không thuộc đề này');
 		}
 
-		const question = await this.prisma.question.findUnique({
-			where: { id: dto.question_id },
-			select: {
-				correct_answer: true,
-			},
-		});
+		const question = await findQuestionDocumentByAnyId(this.prisma, dto.question_id);
 
 		if (!question) {
 			throw new NotFoundException('Không tìm thấy câu hỏi');
