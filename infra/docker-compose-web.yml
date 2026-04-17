@@ -19,3 +19,14 @@ services:
       - ./.env.web
     ports:
       - "3000:3000"
+
+  ai:
+    build:
+      context: ../master/agents
+      dockerfile: Dockerfile
+    container_name: masterthpt-ai
+    restart: unless-stopped
+    env_file:
+      - ./.env.ai
+    expose:
+      - "8001"
