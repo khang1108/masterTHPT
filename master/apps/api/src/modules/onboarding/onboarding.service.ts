@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ACCENTED_SECTION_NAME_BY_TYPE, buildExamSections, ExamMetadataShape, sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { findQuestionDocumentsByAnyIds } from 'src/shared/mongo/read-models';
 import { hasCompletedProfile } from 'src/modules/students/student-profile-state';
 import { GenerateOnboardingExamDto } from './dto/generate-onboarding-exam.dto';
 
@@ -67,13 +68,7 @@ export class OnboardingService {
 		const questionIds = exam.questions ?? [];
 		const questions = questionIds.length === 0
 			? []
-			: await this.prisma.question.findMany({
-				where: {
-					id: {
-						in: questionIds,
-					},
-				},
-			});
+			: await findQuestionDocumentsByAnyIds(this.prisma, questionIds);
 		const sortedQuestions = sortItemsByReferenceOrder(questionIds, questions);
 
 		const metadata = (exam.metadata ?? {}) as ExamMetadataShape;
