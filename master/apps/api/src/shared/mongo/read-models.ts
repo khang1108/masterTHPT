@@ -421,6 +421,25 @@ export async function findQuestionDocumentsByAnyIds(prisma: PrismaService, ids: 
 		.filter((document): document is QuestionReadModel => document !== null);
 }
 
+export async function findQuestionDocumentByAnyId(prisma: PrismaService, id: string) {
+	const filter = buildAnyIdFilter([id]);
+	if (!filter) {
+		return null;
+	}
+
+	const documents = await runFindCommand(
+		prisma,
+		'questions',
+		filter,
+		QUESTION_PROJECTION,
+		{ limit: 1 },
+	);
+
+	return documents
+		.map(normalizeQuestionDocument)
+		.find((document): document is QuestionReadModel => document !== null) ?? null;
+}
+
 export async function findHistoryDocumentsByUserId(prisma: PrismaService, userId: string) {
 	const documents = await runFindCommand(
 		prisma,

@@ -3,20 +3,20 @@ export type ExamMetadataShape = {
 	duration_minutes?: number;
 };
 
-export type SectionType = 'multiple_choice' | 'true_false' | 'short_answer';
+export type SectionType = 'multiple_choice' | 'true_false' | 'short_ans';
 
 export type SectionNameMap = Record<SectionType, string>;
 
 export const ACCENTED_SECTION_NAME_BY_TYPE: SectionNameMap = {
 	multiple_choice: 'Phần I: Trắc nghiệm nhiều lựa chọn',
 	true_false: 'Phần II: Đúng sai',
-	short_answer: 'Phần III: Trả lời ngắn',
+	short_ans: 'Phần III: Trả lời ngắn',
 };
 
 export const ASCII_SECTION_NAME_BY_TYPE: SectionNameMap = {
 	multiple_choice: 'Phan I: Trac nghiem nhieu lua chon',
 	true_false: 'Phan II: Dung sai',
-	short_answer: 'Phan III: Tra loi ngan',
+	short_ans: 'Phan III: Tra loi ngan',
 };
 
 type QuestionWithOrder = {
@@ -83,7 +83,7 @@ export function buildExamSections(
 		if (
 			question.type !== 'multiple_choice' &&
 			question.type !== 'true_false' &&
-			question.type !== 'short_answer'
+			question.type !== 'short_ans'
 		) {
 			// Ignore unknown question types until the frontend has a renderer for them.
 			continue;

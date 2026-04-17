@@ -61,7 +61,7 @@ function getQuestionScore(question: QuestionAnswer, studentAnswer?: string | nul
 	switch (question.type) {
 		case 'multiple_choice':
 			return isAnswerCorrect(studentAnswer, question.correct_answer) ? 0.25 : 0;
-		case 'short_answer':
+		case 'short_ans':
 			return isAnswerCorrect(studentAnswer, question.correct_answer) ? 0.5 : 0;
 		case 'true_false':
 			return getTrueFalseQuestionScore(studentAnswer, question.correct_answer);
