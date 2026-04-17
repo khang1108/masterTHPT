@@ -42,7 +42,11 @@ export class HintsService {
 			};
 		} catch (error) {
 			this.logger.warn(`Failed to ask hint for exam ${dto.exam_id}, question ${dto.question_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-			throw new ServiceUnavailableException('Không thể lấy gợi ý lúc này - 2');
+			throw new ServiceUnavailableException(
+				error instanceof Error && error.message
+					? error.message
+					: 'Không thể lấy gợi ý lúc này',
+			);
 		}
 	}
 
@@ -76,7 +80,11 @@ export class HintsService {
 			};
 		} catch (error) {
 			this.logger.warn(`Failed to review mistake for question ${dto.question_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-			throw new ServiceUnavailableException('Không thể lấy giải thích lúc này');
+			throw new ServiceUnavailableException(
+				error instanceof Error && error.message
+					? error.message
+					: 'Không thể lấy giải thích lúc này',
+			);
 		}
 	}
 }

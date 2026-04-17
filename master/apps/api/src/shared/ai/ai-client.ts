@@ -23,6 +23,40 @@ function truncateForLog(value: string, maxLength = 2000) {
 	return `${value.slice(0, maxLength)}... [truncated ${value.length - maxLength} chars]`;
 }
 
+function extractErrorDetail(responseBody: string) {
+	const trimmedBody = responseBody.trim();
+	if (!trimmedBody) {
+		return '';
+	}
+
+	try {
+		const parsed = JSON.parse(trimmedBody) as {
+			detail?: unknown;
+			message?: unknown;
+		};
+
+		if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+			return parsed.detail.trim();
+		}
+
+		if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
+			return String(parsed.detail[0] ?? '').trim();
+		}
+
+		if (typeof parsed.message === 'string' && parsed.message.trim()) {
+			return parsed.message.trim();
+		}
+
+		if (Array.isArray(parsed.message) && parsed.message.length > 0) {
+			return String(parsed.message[0] ?? '').trim();
+		}
+	} catch {
+		return trimmedBody;
+	}
+
+	return trimmedBody;
+}
+
 export async function postToAiService<TResponse>(
 	configService: ConfigService,
 	payload: unknown,
@@ -50,11 +84,18 @@ export async function postToAiService<TResponse>(
 		body: requestBody,
 	});
 
-	logger.log(`AI response received: status=${response.status} url=${aiApiUrl}`);
-
 	if (!response.ok) {
-		throw new Error(`AI service returned ${response.status}`);
+		const responseBody = await response.text();
+		const errorDetail = extractErrorDetail(responseBody);
+
+		logger.warn(
+			`AI response error: status=${response.status} url=${aiApiUrl} body=${truncateForLog(responseBody)}`,
+		);
+
+		throw new Error(errorDetail || `AI service returned ${response.status}`);
 	}
+
+	logger.log(`AI response received: status=${response.status} url=${aiApiUrl}`);
 
 	// Most current intents return JSON bodies, so the helper returns parsed data directly.
 	// If one future intent needs a different content type, extend this helper rather than

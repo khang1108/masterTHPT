@@ -7,6 +7,7 @@ import { ExamQuestionHeader } from '@/features/exams/components/question-header'
 import { ResultAnswerPanel } from '@/features/exams/components/result-answer-panel';
 import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
 import { ExamEvaluationItem, HistoryDetailResponse, askHint, getHistoryDetail, reviewMistake } from '@/shared/api/client';
+import { getApiErrorMessage } from '@/shared/api/error-message';
 import { getToken } from '@/shared/auth/storage';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -115,8 +116,8 @@ export default function HistoryDetailPage() {
 				...prev,
 				[activeQuestion.id]: data.feedback,
 			}));
-		} catch {
-			setHintError('Không thể lấy gợi ý lúc này. Vui lòng thử lại.');
+		} catch (error) {
+			setHintError(getApiErrorMessage(error, 'Không thể lấy gợi ý lúc này. Vui lòng thử lại.'));
 		} finally {
 			setLoadingHintQuestionId(null);
 		}
@@ -144,8 +145,8 @@ export default function HistoryDetailPage() {
 				...prev,
 				[activeQuestion.id]: data.feedback,
 			}));
-		} catch {
-			setReviewError('Không thể lấy giải thích lúc này. Vui lòng thử lại.');
+		} catch (error) {
+			setReviewError(getApiErrorMessage(error, 'Không thể lấy giải thích lúc này. Vui lòng thử lại.'));
 		} finally {
 			setLoadingReviewQuestionId(null);
 		}
