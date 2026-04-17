@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 from master.agents.common.state import AgentState
 from master.agents.common.message import MessageRequest, StudentAnswer, Intent
+from master.agents.parser.parser import ParserAgent
 from master.agents.teacher.teacher import TeacherAgent
 from master.agents.verifier.verifier import VerifierAgent
 from master.agents.common.tools import ToolsRegistry
@@ -16,6 +17,7 @@ load_dotenv(override=True)
 
 class Pipeline:
     def __init__(self):
+        self.parser = ParserAgent()
         self.teacher = TeacherAgent()
         self.verifier = VerifierAgent()
         self.memory = MemorySaver()
@@ -23,6 +25,7 @@ class Pipeline:
         self.graph = None
 
     async def setup(self):
+        await self.parser.setup()
         await self.teacher.setup()
         await self.verifier.setup()
         await self.build_pipeline()
@@ -30,11 +33,18 @@ class Pipeline:
     async def build_pipeline(self):
         graph_builder = StateGraph(AgentState)
         graph_builder.add_node("Tools", self.teacher.get_tool_node)
+        graph_builder.add_node("Parser", self.parser.parser)
         graph_builder.add_node("Teacher", self.teacher.teacher)
         graph_builder.add_node("Verifier", self.verifier.verifier)
 
         # Teacher subgraph
-        graph_builder.add_edge(START, "Teacher")
+        graph_builder.add_conditional_edges(
+            START, 
+            self.parser.parser_router, 
+            {"parser": "Parser", "teacher": "Teacher"}
+        )
+        graph_builder.add_edge("Parser", "Teacher")
+
         graph_builder.add_conditional_edges(
             "Teacher", 
             self.teacher.teacher_router, 
@@ -48,6 +58,7 @@ class Pipeline:
             self.verifier.verifier_router, 
             {"tools": "Tools", "teacher": "Teacher", "END": END}    
         )
+        graph_builder.add_edge("Tools", "Verifier")
 
         self.graph = graph_builder.compile(checkpointer=self.memory)
 
@@ -128,10 +139,11 @@ async def main():
     #     }]
     # )
     request = MessageRequest(
-		intent=Intent.ASK_HINT.value,
+		intent=Intent.PREPROCESS.value,
         student_id="69df0e1d0e91c4f3d1d6353f",
-		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd"
-    )
+		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
+        file_path="c:\\Users\\abcsd\\Downloads\\test.pdf"
+)
 
     result = await pipeline.run_superstep(request)
     try:

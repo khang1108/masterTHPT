@@ -13,16 +13,17 @@ def parser_ocr_instruction() -> str:
 	        Schema bắt buộc:
 	        {
 	          "metadata": {
-	            "truong": "",
-	            "ky_thi": "",
-	            "lop": "",
-	            "nien_khoa": "",
-	            "mon": ""
+				"subject": "mã môn học (vd: math, physics, chemistry...)",
+				"exam_type": "loại kỳ thi (vd: Cuối kì 1, Giữa kì 2...)",
+				"year": "Sử dụng định dạng NumberInt('YYYY')",
+				"grade": "Sử dụng định dạng NumberInt('số lớp')",
+				"source": "Tên trường hoặc nguồn đề",
+				"duration": "Sử dụng định dạng NumberInt('thời gian làm bài')",
 	          },
 	          "questions": [
 	            {
 	              "type": "",
-	              "content": "",
+	              "content": "nội dung câu hỏi, có thể bao gồm cả công thức LaTeX",
 	              "options": []
 	            }
 	          ]
@@ -42,6 +43,10 @@ def parser_ocr_instruction() -> str:
 	        - Không sao chép ví dụ schema vào output như dữ liệu thực.
 			- Trong options, BẮT BUỘC các ký tự A., B., C., D phải ở đầu không được khác, sau đó sẽ kèm text của đáp án câu đó.
 	        - Output chứa bất kỳ văn bản ngoài JSON đều bị xem là sai.
+			
+			Dữ liệu mẫu cho Metadata:
+            - subject: 'math'
+            - exam_type: 'Cuối kì 1'
         """
 	)
 

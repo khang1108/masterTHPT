@@ -39,6 +39,8 @@ class AgentState(TypedDict):
     # Adaptive
     selected_questions: Optional[list[ExamQuestion]]
     profile_updates: Optional[dict]
+    discrimination_a: Optional[list[float]]
+    difficulty_b: Optional[list[float]]
 
     # Response
     response: Optional[List[MessageResponse]] = None
