@@ -1,33 +1,35 @@
-from typing import Literal, Optional, TypedDict
+from typing import Literal, Optional, TypedDict, Annotated, Any, List
+from langgraph.graph.message import add_messages
+
 from master.agents.common.message import MessageRequest, MessageResponse
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import ExamQuestion, StudentAnswer
-from master.agents.teacher import Output
 from master.common.message import GradeResult, Solution
 
 class AgentState(TypedDict):
     # Request
     request: MessageRequest
-    # intent: Intent
+    phase: Literal["tools", "draft", "verify", "END"]
 
     # Learner context
-    # student_id: Optional[str]
-    # session_id: Optional[str]
     learner_profile: LearnerProfile # BKT mastery per KC, IRT theta, history
 
     # Exam context
     exam_id: Optional[str]
     questions: list[ExamQuestion]
     student_answers: list[StudentAnswer]
-    raw_request: MessageRequest             # Toàn bộ request gốc
 
     # Debate context
     round: int
     max_round: int
+    is_agreed: List[bool]
     phase: Literal["draft", "debate", "verify", "finalize"]
-    debate_outputs: list[Output]
+    reasoning: str
+    confidence: List[float] # confidence per question                    
+    teacher_feedback: Annotated[List[Any], add_messages]
+    verifier_feedback: Annotated[List[Any], add_messages]
 
-    # Grading result - Điểm được chấm từ phía /app gửi về (điểm, câu đúng, câu sai)
+    # Grading result
     grade_result: Optional[GradeResult]
 
     # Lời giải
@@ -39,4 +41,4 @@ class AgentState(TypedDict):
     profile_updates: Optional[dict]
 
     # Response
-    response: Optional[MessageResponse]
+    response: Optional[List[MessageResponse]] = None

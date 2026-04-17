@@ -45,9 +45,9 @@ INTENT = "EXAM_PRACTICE"
         + exam_id: str
         + student_answers: list[StudentAnswer]
 
-INTENT = PREPROCES
+INTENT = PREPROCESS
     - Metadata:
-        + parser_output
+        + parser_output: list[dict]
 """
 
 
@@ -58,7 +58,7 @@ class MessageRequest(BaseModel):
     question_id: Optional[str] = None
     student_answers: Optional[list[StudentAnswer]] = None
     student_message: Optional[str] = None
-    parser_output: Optional[str] = None
+    parser_output: Optional[list[dict]] = None
     image_bucket_url: Optional[str] = None
 
 class MessageResponse(BaseModel):
