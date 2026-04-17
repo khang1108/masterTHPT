@@ -178,3 +178,5 @@ class Logger:
 
     def tools_node(self, message: str):
         self._emit(logging.INFO, message, LogLevel.TOOLS_NODE.value)
+
+logger = Logger("master", log_dir=PROJECT_ROOT / "logs" / "master.log")

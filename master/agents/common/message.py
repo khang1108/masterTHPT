@@ -12,7 +12,7 @@ payload shapes, so the models intentionally accept compatible aliases:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
@@ -61,12 +61,30 @@ class StudentAnswer(BaseModel):
         if self.answer is None and self.student_answer is not None:
             self.answer = self.student_answer
         return self
+"""
+INTENT = PREPROCESS
+    - Metadata:
+        + parser_output: list[dict]
+"""
 
-    def normalized_answer(self) -> str:
-        """Return the populated answer text with surrounding whitespace removed."""
+class MessageRequest(BaseModel):
+    intent: Intent
+    student_id: str
+    exam_id: Optional[str] = None
+    question_id: Optional[str] = None
+    student_answers: Optional[list[StudentAnswer]] = None
+    student_message: Optional[str] = None
+    parser_output: Optional[list[dict]] = None
+    image_bucket_url: Optional[str] = None
 
-        return (self.student_answer or self.answer or "").strip()
+class MessageResponse(BaseModel):
+    student_id: str
+    exam_id: Optional[str] = None
+    question_id: Optional[str] = None
+    feedback: Optional[str] = None
+    preprocess_payload: Optional[PreprocessPayload] = None
 
+# --- Exam JSON Schema ---
 
 class ExamQuestion(BaseModel):
     """Normalized exam-question schema tolerant to legacy aliases."""

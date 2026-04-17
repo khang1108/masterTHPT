@@ -11,8 +11,9 @@ __pycache__/
 .env
 infra/.env.api
 infra/.env.web
-infra/.env.db
+infra/.env.ai
 test.py
 test.pdf
 logs/
 tmp/
+ping.js
