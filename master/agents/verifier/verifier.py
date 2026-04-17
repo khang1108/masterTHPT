@@ -60,7 +60,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         if state["phase"] == "END":
             return "END"
         if state["phase"] == "teacher":
-            if state["round"] >= state["max_round"] or (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value):
+            if state["round"] >= state["max_round"] or (state["confidence"] and state["is_agreed"] and (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value)):
                 return "END"
         return "teacher"
 
@@ -151,6 +151,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     self.logger.agent_node(f"Skip verify preprocess payload: {data}")
             
             need_verify = [item for item in batch if item["id"] not in skip_verify]
+            if not need_verify:
+                continue
+
             batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
             prompt = verifier_prompt(batch_input_json)
             # prompt += self.format_conversation(state)

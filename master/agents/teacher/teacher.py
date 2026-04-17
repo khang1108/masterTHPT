@@ -77,8 +77,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         if state["phase"] == "END":
             return "END"
         if state["phase"] == "verify":
-            # In PREPROCESS mode, keep one final Verifier pass when reaching max_round.
-            if intent == Intent.PREPROCESS.value and state["round"] >= state["max_round"]:
+            # PREPROCESS should always go through Verifier; Verifier decides when to stop.
+            if intent == Intent.PREPROCESS.value:
                 return "verify"
             if state["round"] >= state["max_round"] or (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value):
                 return "END"
