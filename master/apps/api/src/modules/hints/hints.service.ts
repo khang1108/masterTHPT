@@ -28,6 +28,7 @@ export class HintsService {
 				this.configService,
 				{
 					intent: 'ASK_HINT',
+					user_id: userId,
 					exam_id: dto.exam_id,
 					question_id: dto.question_id,
 				},
