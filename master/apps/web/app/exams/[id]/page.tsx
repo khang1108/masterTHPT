@@ -15,6 +15,7 @@ import {
 	reviewMistake,
 	submitExam,
 } from '@/shared/api/client';
+import { getApiErrorMessage } from '@/shared/api/error-message';
 import { getStudent, getToken, updateStudent } from '@/shared/auth/storage';
 import {
 	cacheExamDetail,
@@ -430,8 +431,8 @@ export default function ExamRoomPage() {
 				...prev,
 				[activeQuestion.id]: data.feedback,
 			}));
-		} catch {
-			setHintError('Không thể lấy gợi ý lúc này. Vui lòng thử lại.');
+		} catch (error) {
+			setHintError(getApiErrorMessage(error, 'Không thể lấy gợi ý lúc này. Vui lòng thử lại.'));
 		} finally {
 			setLoadingHintQuestionId(null);
 		}
@@ -464,8 +465,8 @@ export default function ExamRoomPage() {
 				...prev,
 				[activeQuestion.id]: data.feedback,
 			}));
-		} catch {
-			setReviewError('Không thể lấy giải thích lúc này. Vui lòng thử lại.');
+		} catch (error) {
+			setReviewError(getApiErrorMessage(error, 'Không thể lấy giải thích lúc này. Vui lòng thử lại.'));
 		} finally {
 			setLoadingReviewQuestionId(null);
 		}
