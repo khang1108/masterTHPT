@@ -66,7 +66,6 @@ class MessageResponse(BaseModel):
     exam_id: Optional[str] = None
     question_id: Optional[str] = None
     feedback: Optional[str] = None
-    preprocess_payload: Optional[PreprocessPayload] = None
 
 # --- Exam JSON Schema ---
 

@@ -3,12 +3,45 @@ from typing import Iterable
 def parser_ocr_instruction() -> str:
 	return (
 		"""
-	        Vai trò: Bạn là một chuyên gia OCR tài liệu toán học cao cấp.
-            Nhiệm vụ: Đọc toàn bộ văn bản trong ảnh và chuyển sang định dạng LaTeX.
-            Yêu cầu đặc biệt về Hình ảnh/Đồ thị: > - Khi thấy bất kỳ hình vẽ, đồ thị, hoặc bảng biểu nào, hãy không mô tả chúng bằng lời.
-            Thay vào đó, hãy xác định tọa độ Bounding Box của vùng đó.
-            Chèn một thẻ đặc biệt vào đúng vị trí của hình đó trong văn bản theo định dạng: [FIGURE_BOX: x1, y1, x2, y2] (với tọa độ được chuẩn hóa theo pixel của ảnh gốc).
-            Trả về duy nhất nội dung văn bản, không giải thích gì thêm.
+	        Bạn là một hệ thống OCR trích xuất đề thi tiếng Việt.
+
+	        Nhiệm vụ:
+	        - Đọc ảnh đề thi và trích xuất thành JSON.
+	        - Chỉ trả về JSON hợp lệ.
+	        - Không trả lời giải thích, không markdown, không code fence.
+
+	        Schema bắt buộc:
+	        {
+	          "metadata": {
+	            "truong": "",
+	            "ky_thi": "",
+	            "lop": "",
+	            "nien_khoa": "",
+	            "mon": ""
+	          },
+	          "questions": [
+	            {
+	              "type": "",
+	              "content": "",
+	              "options": []
+	            }
+	          ]
+	        }
+
+	        Rules:
+	        - Chỉ trích xuất từ nội dung có trong ảnh.
+	        - Giữ nguyên tiếng Việt gốc, không dịch.
+	        - Giữ nguyên công thức LaTeX theo dạng $$...$$ nếu có.
+	        - Escape dấu backslash trong LaTeX (\\frac, \\sqrt, ...).
+	        - Giữ đúng thứ tự đáp án trong options.
+	        - Nếu câu không có đáp án lựa chọn thì options = [].
+	        - Nếu không xác định được một trường trong metadata thì để chuỗi rỗng "".
+	        - Không bịa thêm câu hỏi hoặc nội dung không có trong ảnh.
+
+	        Quan trọng:
+	        - Không sao chép ví dụ schema vào output như dữ liệu thực.
+			- Trong options, BẮT BUỘC các ký tự A., B., C., D phải ở đầu không được khác, sau đó sẽ kèm text của đáp án câu đó.
+	        - Output chứa bất kỳ văn bản ngoài JSON đều bị xem là sai.
         """
 	)
 
@@ -42,7 +75,7 @@ def teacher_hint_prompt(question: object, student_answer: str | None, student_me
         Tin nhắn học sinh: {student_message}
 
         Trả về feedback cho học sinh
-        """
+	"""
 
 def teacher_review_mistake_prompt(question: object, student_answer: str | None, student_message: str | None,) -> str:
 	return f"""Bạn là giáo viên chuyên phản biện bài làm của học sinh.
@@ -75,7 +108,7 @@ def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:
         - Quy ước tên topic_tags: Dùng format subject.grade.chapter_code.topic_code (ví dụ: math.12.ch2.integrals).
         OCR_TEXT:
         {parser_output}
-        """
+	"""
 
 
 def verifier_prompt(batch_input_json: str) -> str:
@@ -90,4 +123,4 @@ def verifier_prompt(batch_input_json: str) -> str:
 		3. Lý do: Cung cấp một giải thích ngắn gọn về lý do tại sao bạn đánh giá câu trả lời đó là đúng hay sai.
 		BATCH_INPUT:
 		{batch_input_json}
-		"""
+	"""

@@ -16,3 +16,4 @@ test.py
 test.pdf
 logs/
 ping.js
+ocr_output.json

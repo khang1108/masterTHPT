@@ -76,7 +76,7 @@ class Pipeline:
         )
         result = await self.graph.ainvoke(state, config=config)
 
-        return result.get("response", [])
+        return result
 
     async def cleanup(self):
         await ToolsRegistry.cleanup()
@@ -86,39 +86,51 @@ async def main():
     pipeline = Pipeline()
     await pipeline.setup()
 
+    # request = MessageRequest(
+    #     intent=Intent.PREPROCESS.value,
+    #     student_id="student_123",
+    #     student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
+    #     question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
+    #     parser_output=[{
+    #         "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
+    #         "type": 'multiple_choice',
+    #         "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
+    #         "options": [
+    #             'A.$\\frac{h}{3}$',
+    #             'B.$\\frac{h\\sqrt{2}}{2}.$',
+    #             'C.$\\frac{h}{2}.$',
+    #             'D.$\\frac{h\\sqrt{3}}{2}.$'
+    #         ],
+    #     }]
+    # )
+
+    # result = await pipeline.run_superstep(request)
+    # try:
+    #     print(json.dumps(result, ensure_ascii=True, default=str))
+    # except (BrokenPipeError, ValueError):
+    #     pass
+        
+    # request = MessageRequest(
+    #     intent=Intent.ASK_HINT.value,
+    #     student_id="student_123",
+    #     student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
+    #     question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
+    #     parser_output=[{
+    #         "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
+    #         "type": 'multiple_choice',
+    #         "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
+    #         "options": [
+    #             'A.$\\frac{h}{3}$',
+    #             'B.$\\frac{h\\sqrt{2}}{2}.$',
+    #             'C.$\\frac{h}{2}.$',
+    #             'D.$\\frac{h\\sqrt{3}}{2}.$'
+    #         ],
+    #     }]
+    # )
     request = MessageRequest(
-        intent=Intent.PREPROCESS.value,
-        student_id="student_123",
-        student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
-        question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
-        parser_output=[{
-            "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-            "type": 'multiple_choice',
-            "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-            "options": [
-                'A.$\\frac{h}{3}$',
-                'B.$\\frac{h\\sqrt{2}}{2}.$',
-                'C.$\\frac{h}{2}.$',
-                'D.$\\frac{h\\sqrt{3}}{2}.$'
-            ],
-        }]
-    )
-    request = MessageRequest(
-        intent=Intent.ASK_HINT.value,
-        student_id="student_123",
-        student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
-        question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
-        parser_output=[{
-            "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-            "type": 'multiple_choice',
-            "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-            "options": [
-                'A.$\\frac{h}{3}$',
-                'B.$\\frac{h\\sqrt{2}}{2}.$',
-                'C.$\\frac{h}{2}.$',
-                'D.$\\frac{h\\sqrt{3}}{2}.$'
-            ],
-        }]
+		intent=Intent.ASK_HINT.value,
+        student_id="69df0e1d0e91c4f3d1d6353f",
+		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd"
     )
 
     result = await pipeline.run_superstep(request)

@@ -124,7 +124,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         if intent == Intent.ASK_HINT.value:
             question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
-            student_message = request.student_message
+            student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_hint_prompt(question, student_answer, student_message)
             response = await self._llm.ainvoke(prompt)
@@ -138,7 +138,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         if intent == Intent.REVIEW_MISTAKE.value:
             question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
-            student_message = request.student_message
+            student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_review_mistake_prompt(question, student_answer, student_message)
             response = await self._llm_with_single_output.ainvoke(prompt)

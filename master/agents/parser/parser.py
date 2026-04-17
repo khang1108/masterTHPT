@@ -3,8 +3,8 @@ from typing import Optional
 from langchain_core.messages import HumanMessage
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageDraw, ImageFont, ImageStat
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from master.agents import BaseAgent
 from master.agents.common.tools import ToolsRegistry
@@ -16,8 +16,8 @@ from master.agents.common.prompt import parser_ocr_instruction
 import requests
 import asyncio
 import base64
-import json
 import uuid
+import json
 import fitz
 import io
 import re
@@ -36,12 +36,11 @@ PARSER_IMAGE_BUCKET_URL = os.getenv("PARSER_IMAGE_BUCKET_URL")
 
 load_dotenv(override=True)
 
-
-class OCROutput(BaseModel):
-    id: Optional[str] = None
-    type: str = Field(description="Loại câu hỏi, có thể là 'multiple_choice' hoặc 'true_false' hoặc 'short_ans'")
-    content: str = Field(description="Đề bài thuần văn bản, có thể bao gồm cả LaTeX nhưng không bao gồm hình ảnh. Nếu đề bài có hình ảnh thì phần content chỉ cần mô tả ngắn gọn về hình ảnh đó.")
-    options: list[str] = Field(default_factory=list)
+class QuestionOutput(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    question_index: int = Field(description="Số thứ tự câu hỏi trong đề, bắt đầu từ 1")
+    content: str = Field(description="Nội dung câu hỏi, có thể bao gồm cả text và LaTeX")
+    
 
 
 class ParserAgent(ToolsRegistry, BaseAgent):
@@ -49,7 +48,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="Parser")
         self._llm = None
-        self._llm_with_output = None
 
     async def setup(self):
         if self._llm is None:
@@ -57,9 +55,11 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 provider="openai_compatible",
                 base_url=os.getenv("FPT_BASE_URL"),
                 api_key=os.getenv("FPT_API_KEY"),
-                model="Qwen2.5-VL-7B-Instruct",
+                model="gemma-4-31B-it",
+                temperature=0.1,
+                top_p=0.8,
+                max_tokens=4096,
             )
-            self._llm_with_output = self._llm.with_structured_output(OCROutput)
 
     def _load_file(self, file_path: str) -> tuple[str, list[tuple[int, bytes, str]]]:
         ext = os.path.splitext(file_path)[1].lower()
@@ -114,7 +114,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 ):
                     return False
 
-                pixels = list(grayscale.getdata())
+                pixels = list(grayscale.get_flattened_data())
                 total_pixels = max(1, len(pixels))
                 non_white_pixels = sum(pixel < WHITE_PIXEL_THRESHOLD for pixel in pixels)
                 return (non_white_pixels / total_pixels) >= MIN_NON_WHITE_RATIO
@@ -124,8 +124,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
     # ── OCR ─────────────────────────────────────────────────────────────────────
 
-    def _ocr_single_page(self, image_bytes: bytes, image_name: str) -> OCROutput:
-        """OCR một trang và trả về OCROutput đã ép kiểu."""
+    def _ocr_single_page(self, image_bytes: bytes, image_name: str) -> dict:
         message = HumanMessage(
             content=[
                 {
@@ -141,16 +140,30 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             ]
         )
 
-        result: OCROutput = self._llm_with_output.invoke([message])
-        # Gán id tự động nếu model không trả về
-        if not result.id:
-            result.id = uuid.uuid4().hex[:8]
-        return result
+        result = self._llm.invoke([message])
+        content = result.content if hasattr(result, "content") else result
+
+        if isinstance(content, list):
+            raw = "".join(
+                chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
+                for chunk in content
+            )
+        else:
+            raw = str(content)
+
+        clean = raw.strip()
+        clean = re.sub(r"^```json\s*", "", clean)
+        clean = re.sub(r"\s*```$", "", clean)
+
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            return {"raw_text": clean}
 
     # ── Run Batch OCR ────────────────────────────────────────────────────────────
 
-    def _ocr_file(self, file_path: str, batch_size: Optional[int] = None) -> list[OCROutput]:
-        """OCR toàn bộ file, trả về danh sách OCROutput theo thứ tự trang."""
+    def _ocr_file(self, file_path: str, batch_size: Optional[int] = None) -> list[dict]:
+        """OCR toàn bộ file, trả về danh sách JSON theo thứ tự trang."""
         if not os.path.exists(file_path):
             self.logger.warning(f"Parser input file not found: {file_path}")
             return []
@@ -160,12 +173,14 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             self.logger.warning(f"Parser input extension not supported: {extension}")
             return []
 
-        source_type, page_payloads = self._load_file(file_path)
+        if not batch_size or batch_size <= 0:
+            batch_size = 2
+
+        _, page_payloads = self._load_file(file_path)
         total_pages = len(page_payloads)
         total_batches = (total_pages + batch_size - 1) // batch_size
 
-        # Lưu kết quả theo page_num để giữ đúng thứ tự
-        all_results: dict[int, OCROutput] = {}
+        all_results: dict[int, dict] = {}
         completed_pages = 0
 
         for i in range(0, total_pages, batch_size):
@@ -187,7 +202,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 for future in as_completed(future_map):
                     page_num = future_map[future]
                     try:
-                        ocr_output: OCROutput = future.result()
+                        ocr_output = future.result()
                         all_results[page_num] = ocr_output
                         completed_pages += 1
                         self.logger.agent_node(
@@ -202,7 +217,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 f"Parser OCR batch {batch_index}/{total_batches} completed pages={batch_page_nums}"
             )
 
-        # Trả về danh sách sắp xếp theo thứ tự trang
+        # Return results sorted by page number to ensure correct order
         return [all_results[page_num] for page_num in sorted(all_results.keys())]
 
     async def run(self, input: str) -> str:
@@ -214,15 +229,10 @@ if __name__ == "__main__":
     asyncio.run(agent.setup())
 
     file = "c:\\Users\\abcsd\\Downloads\\test.pdf"
-    questions: list[OCROutput] = agent._ocr_file(file, batch_size=2)
+    questions: list[dict] = agent._ocr_file(file, batch_size=2)
 
     output_path = "ocr_output.json"
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(
-            [q.model_dump() for q in questions],
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
+        json.dump(questions, f, ensure_ascii=False, indent=2)
 
     print(f"Saved {len(questions)} questions to {output_path}")
