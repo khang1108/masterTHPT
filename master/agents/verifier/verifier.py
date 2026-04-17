@@ -156,6 +156,28 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             # prompt += self.format_conversation(state)
             
             responses: EvaluateBatch = await self._llm_with_output.ainvoke(prompt)
+
+            if intent == Intent.PREPROCESS.value and state["round"] >= state["max_round"] and need_verify:
+                need_verify_by_id = {item["id"]: item for item in need_verify}
+                for response in responses.results:
+                    item = need_verify_by_id.get(response.question_id)
+                    if not item:
+                        continue
+
+                    data = {
+                        "id": item["id"],
+                        "question_index": item["question_index"],
+                        "type": item.get("type"),
+                        "content": item.get("content"),
+                        "options": item.get("options"),
+                        "correct_answer": response.correct_answer,
+                        "has_image": item.get("has_image"),
+                        "image_url": item.get("image_url"),
+                        "discrimination_a": response.discrimination_a,
+                        "difficulty_b": response.difficulty_b,
+                    }
+                    await self.insert_data("masterthpt", "questions", [data])
+                    self.logger.agent_node(f"Finalize by verifier payload: {data}")
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:
@@ -190,10 +212,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
     async def verifier(self, state: AgentState) -> AgentState:
         self.logger.agent_node("Verifier debate started")
-        request = state["request"]
-        await self._run_batch(state, request)
+        next_state = await self._run_batch(state)
         self.logger.agent_node("Verifier debate completed")
-        return state
+        return next_state
     
     async def run(self, input: str) -> str:
         return "Use run_draft() or run_debate() instead."

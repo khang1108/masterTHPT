@@ -59,7 +59,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
             model="gemma-4-31B-it",
-            max_tokens=6000,
+            max_tokens=10000,
             temperature=0.7,
         )
         await self.setup_tools(llm)
