@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { buildEvaluationFromAnswerMap } from 'src/shared/exams/evaluation';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { findQuestionDocumentsByAnyIds } from 'src/shared/mongo/read-models';
 import { SubmitExamDto } from './dto/submit-exam.dto';
 
 @Injectable()
@@ -23,18 +24,7 @@ export class ExamsService {
 		);
 		const questions = submittedQuestionIds.length === 0
 			? []
-			: await this.prisma.question.findMany({
-				where: {
-					id: {
-						in: submittedQuestionIds,
-					},
-				},
-				select: {
-					id: true,
-					type: true,
-					correct_answer: true,
-				},
-			});
+			: await findQuestionDocumentsByAnyIds(this.prisma, submittedQuestionIds);
 		const answerMap = new Map(
 			questions.map((question) => [question.id, question]),
 		);
