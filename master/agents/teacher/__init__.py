@@ -1,3 +1,1 @@
-from .teacher import *
-
-__all__ = ["TeacherAgent", "DebateState", "DraftResult", "DebateResult", "Output"]
+from master.agents.teacher.teacher import Output, DraftResult, DebateResult, TeacherAgent

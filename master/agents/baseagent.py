@@ -1,12 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, AsyncGenerator, Awaitable, Callable, Optional
+from typing import Optional
+
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage
 
-from master.agents.common.llm_client import LLMClient
 from master.logging.logger import Logger
-
-import os
 
 class BaseAgent(ABC):
     def __init__(
@@ -24,7 +21,7 @@ class BaseAgent(ABC):
         self._llm: Optional[BaseChatModel] = None
         self._tools: list = []
         self._trial: list[str] = []
-        self.logger = Logger(f"agent.{agent_role}", service_prefix="Agent Service")
+        self.logger = Logger(agent_role)
 
     @abstractmethod
     async def run(self, input: str) -> str:

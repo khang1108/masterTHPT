@@ -11,6 +11,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from master.agents.common.learner_profile import LearnerProfile
+from master.agents.common.langsmith import build_langsmith_invoke_config
 from master.agents.common.message import ExamQuestion, MessageRequest, StudentAnswer
 from typing_extensions import TypedDict
 
@@ -172,7 +173,14 @@ class AdaptiveAgent:
     def run(self, state: AdaptiveWorkflowState) -> AdaptiveWorkflowState:
         """Invoke the LangGraph adaptive workflow on a shared state dict."""
 
-        return self.graph.invoke(state)
+        return self.graph.invoke(
+            state,
+            config=build_langsmith_invoke_config(
+                run_name="AdaptiveAgent.run",
+                agent_role="adaptive",
+                extra_tags=["adaptive", "question-selection"],
+            ),
+        )
 
     def update_profile(
         self,

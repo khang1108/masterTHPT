@@ -74,3 +74,30 @@ GDGoC_HackathonVietnam/
 | `UNKNOWN` | Không phân loại được | Manager hỏi lại |
 
 ## Agents Architecture
+
+## LangSmith Tracing
+Repo này dùng `LangChain` và `LangGraph`, nên theo hướng dẫn chính thức của LangSmith, chỉ cần bật đúng environment variables là các lời gọi runnable, graph, và chat model sẽ được trace tự động:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=<your-langsmith-api-key>
+export LANGSMITH_PROJECT=master-dev
+
+# Nếu API key của bạn gắn với nhiều workspace
+export LANGSMITH_WORKSPACE_ID=<your-workspace-id>
+
+# Với script ngắn hoặc process kết thúc nhanh, nên để callbacks flush đồng bộ
+export LANGCHAIN_CALLBACKS_BACKGROUND=false
+```
+
+Trong code, project đã được gắn thêm:
+- `run_name` cho các pipeline chính như grading, teacher draft/debate, verifier verify, adaptive run
+- `tags` như `agent:teacher`, `agent:verifier`, `agent:adaptive`
+- `metadata` như `ls_model_name`, `llm_provider`, `agent_role`
+
+Nhờ vậy trên LangSmith bạn sẽ dễ lọc trace theo agent, theo model và theo phase hơn, đồng thời phần `Messages view` sẽ hiển thị rõ các lượt chat/tool call của graph.
+
+Tài liệu chính thức:
+- LangGraph tracing: https://docs.langchain.com/langsmith/trace-with-langgraph
+- LangChain tracing: https://docs.langchain.com/langsmith/trace-with-langchain
+- Custom instrumentation: https://docs.langchain.com/langsmith/annotate-code

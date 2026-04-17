@@ -1,5 +1,7 @@
 .agents/
 .venv/
+.vscode/
+docs/
 .cursor/
 img/
 Tabs_Engineers.md
@@ -10,3 +12,6 @@ __pycache__/
 infra/.env.api
 infra/.env.web
 infra/.env.db
+test.py
+test.pdf
+logs/

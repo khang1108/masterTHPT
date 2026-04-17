@@ -1,5 +1,5 @@
 """
-Unified LangChain chat model factory: Google Gemini or any OpenAI-compatible API (vLLM, LM Studio, Ollama w/ OpenAI layer, remote GPU host, etc.).
+Unified LangChain chat model factory: Google Gemini, FPT AI Cloud, or any OpenAI-compatible API (vLLM, LM Studio, Ollama w/ OpenAI layer, remote GPU host, etc.).
 """
 
 from __future__ import annotations
@@ -7,8 +7,13 @@ from __future__ import annotations
 import os
 from enum import Enum
 from typing import Any, Optional, Union
+from dotenv import load_dotenv
 
 from langchain_core.language_models.chat_models import BaseChatModel
+
+from .langsmith import build_langsmith_metadata, build_langsmith_tags
+
+load_dotenv(override=True)
 
 
 class LLMProvider(str, Enum):
@@ -47,9 +52,10 @@ def _openai_base_url_for_role(agent_role: Optional[str]) -> Optional[str]:
     Priority per role (e.g. teacher):
       1. OPENAI_COMPATIBLE_BASE_URL_TEACHER (uppercase role)
       2. OPENAI_COMPATIBLE_BASE_URL
-      3. OPENAI_API_BASE
-      4. LLM_BASE_URL
-      5. Build from VLLM_BASE_URL host + VLLM_*_PORT (legacy layout)
+      3. FPT_BASE_URL
+      4. OPENAI_API_BASE
+      5. LLM_BASE_URL
+      6. Build from VLLM_BASE_URL host + VLLM_*_PORT (legacy layout)
     """
     role = (agent_role or "").strip().lower()
     if role:
@@ -59,6 +65,7 @@ def _openai_base_url_for_role(agent_role: Optional[str]) -> Optional[str]:
 
     for key in (
         "OPENAI_COMPATIBLE_BASE_URL",
+        "FPT_BASE_URL",
         "OPENAI_API_BASE",
         "LLM_BASE_URL",
     ):
@@ -114,6 +121,7 @@ def _resolve_provider(explicit: Optional[Union[str, LLMProvider]]) -> LLMProvide
 
     if (
         os.getenv("OPENAI_COMPATIBLE_BASE_URL")
+        or os.getenv("FPT_BASE_URL")
         or os.getenv("OPENAI_API_BASE")
         or os.getenv("LLM_BASE_URL")
         or os.getenv("VLLM_TEACHER_PORT")
@@ -148,10 +156,10 @@ class LLMClient:
         - ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY``
         - ``GEMINI_MODEL`` / ``LLM_MODEL``
 
-        **OpenAI-compatible** (vLLM on GPU, etc.):
+        **OpenAI-compatible** (vLLM on GPU, FPT AI Cloud, etc.):
 
-        - ``OPENAI_COMPATIBLE_BASE_URL`` or per-role ``OPENAI_COMPATIBLE_BASE_URL_TEACHER``
-        - ``OPENAI_COMPATIBLE_API_KEY`` (use ``EMPTY`` or any string if the server ignores it)
+        - ``OPENAI_COMPATIBLE_BASE_URL`` or per-role ``OPENAI_COMPATIBLE_BASE_URL_TEACHER`` or ``FPT_BASE_URL``
+        - ``OPENAI_COMPATIBLE_API_KEY`` or ``FPT_API_KEY`` (use ``EMPTY`` or any string if the server ignores it)
         - ``LLM_MODEL`` or ``LLM_MODEL_TEACHER``
 
         **Legacy GPU layout:** ``VLLM_BASE_URL`` (host or http URL) + ``VLLM_TEACHER_PORT`` etc.
@@ -162,7 +170,21 @@ class LLMClient:
         tp = top_p if top_p is not None else _env_float("LLM_DEFAULT_TOP_P", 0.9)
         mname = model or _model_for_role(agent_role)
         if not mname:
-            mname = "gemini-2.5-flash-lite"
+            mname = "gemini-2.5-flash"
+        role_name = (agent_role or "").strip().lower() or None
+        extra_tags = kwargs.pop("tags", None)
+        extra_metadata = kwargs.pop("metadata", None)
+        tags = build_langsmith_tags(
+            agent_role=role_name,
+            provider=prov.value,
+            extra_tags=extra_tags,
+        )
+        metadata = build_langsmith_metadata(
+            agent_role=role_name,
+            provider=prov.value,
+            model_name=mname,
+            extra_metadata=extra_metadata,
+        )
 
         if prov is LLMProvider.GOOGLE_GENAI:
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -174,6 +196,8 @@ class LLMClient:
                 max_output_tokens=mx,
                 top_p=tp,
                 api_key=key,
+                tags=tags,
+                metadata=metadata,
                 **kwargs,
             )
 
@@ -184,9 +208,9 @@ class LLMClient:
             if not b:
                 raise ValueError(
                     "OpenAI-compatible provider selected but no base URL found. Set "
-                    "OPENAI_COMPATIBLE_BASE_URL (full URL to …/v1) or VLLM_BASE_URL + VLLM_TEACHER_PORT."
+                    "OPENAI_COMPATIBLE_BASE_URL (full URL to …/v1) or FPT_BASE_URL or VLLM_BASE_URL + VLLM_TEACHER_PORT."
                 )
-            key = api_key or os.getenv("OPENAI_COMPATIBLE_API_KEY") or os.getenv("OPENAI_API_KEY") or "EMPTY"
+            key = api_key or os.getenv("FPT_API_KEY") or os.getenv("OPENAI_COMPATIBLE_API_KEY") or os.getenv("OPENAI_API_KEY") or "EMPTY"
             return ChatOpenAI(
                 model=mname,
                 base_url=b,
@@ -194,6 +218,8 @@ class LLMClient:
                 temperature=temp,
                 max_tokens=mx,
                 top_p=tp,
+                tags=tags,
+                metadata=metadata,
                 **kwargs,
             )
 
