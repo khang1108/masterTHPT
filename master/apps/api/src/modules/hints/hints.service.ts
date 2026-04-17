@@ -15,7 +15,7 @@ export class HintsService {
 		// for the frontend even if the upstream payload changes later.
 		if (!this.configService.get<string>('AI_API_BASE_URL')?.trim()) {
 			this.logger.warn('AI_API_BASE_URL is not configured for askHint');
-			throw new ServiceUnavailableException('Không thể lấy gợi ý lúc này');
+			throw new ServiceUnavailableException('Không thể lấy gợi ý lúc này - 1');
 		}
 
 		try {
@@ -42,7 +42,7 @@ export class HintsService {
 			};
 		} catch (error) {
 			this.logger.warn(`Failed to ask hint for exam ${dto.exam_id}, question ${dto.question_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-			throw new ServiceUnavailableException('Không thể lấy gợi ý lúc này');
+			throw new ServiceUnavailableException('Không thể lấy gợi ý lúc này - 2');
 		}
 	}
 

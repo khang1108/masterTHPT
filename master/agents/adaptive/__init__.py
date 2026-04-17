@@ -7,11 +7,15 @@ adaptive service, and scored question recommendations.
 from master.agents.adaptive.profile_builder import AdaptiveAttempt
 from master.agents.adaptive.question_gen import QuestionRecommendation
 from master.agents.adaptive.agent import AdaptiveAgent
+from master.agents.adaptive.db_tools import AdaptiveDBTools
+from master.agents.adaptive.generator import AdaptiveQuestionGenerator
 from master.agents.adaptive.service import AdaptiveService
 
 __all__ = [
     "AdaptiveAttempt",
     "AdaptiveAgent",
+    "AdaptiveDBTools",
+    "AdaptiveQuestionGenerator",
     "AdaptiveService",
     "QuestionRecommendation",
 ]

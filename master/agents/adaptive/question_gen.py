@@ -1,4 +1,4 @@
-"""Typed recommendation objects returned by the adaptive selector."""
+"""Typed outputs used by adaptive selection and adaptive question generation."""
 
 from __future__ import annotations
 
@@ -22,3 +22,23 @@ class QuestionRecommendation(BaseModel):
     prerequisite_topics: list[str] = Field(default_factory=list)
     prerequisite_labels: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
+
+
+class GeneratedQuestionDraft(BaseModel):
+    """Structured draft of one new question produced from RAG context."""
+
+    content: str
+    content_latex: str | None = None
+    options: list[str] = Field(default_factory=list)
+    correct_answer: str
+    topic_tags: list[str] = Field(default_factory=list)
+    difficulty_a: float = 1.0
+    difficulty_b: float = 0.0
+    type: str = "multiple_choice"
+    max_score: float | None = 1.0
+
+
+class GeneratedQuestionBatch(BaseModel):
+    """Structured output batch for adaptive question generation."""
+
+    questions: list[GeneratedQuestionDraft] = Field(default_factory=list)

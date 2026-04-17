@@ -47,6 +47,8 @@ class AgentState(TypedDict, total=False):
     profile_updates: dict[str, Any] | None
 
     response: MessageResponse | None
+    agent_trail: list[str] | None
+    history_record: dict[str, Any] | None
 
     _verdicts: list[Any]
     _pipeline_verdict: str
