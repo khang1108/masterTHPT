@@ -262,10 +262,11 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
             # Cần thảo luận thêm các câu chưa chắc chắn để đưa ra quyết định cuối cùng
             is_agreed.extend([response.agree for response in responses.results])
-            solutions.extend([
-                Solution(question_id=response.question_id, solution=response.correct_answer)
-                for response in responses.results
-            ])
+            for response in responses.results:
+                if response.correct_answer is not None and str(response.correct_answer).strip() != "":
+                    solutions.append(
+                        Solution(question_id=response.question_id, solution=str(response.correct_answer).strip())
+                    )
             confidence.extend([response.confidence for response in responses.results])
             feedback.extend([
                 AIMessage(content=f"Ở câu {response.question_id}: {response.feedback} vì {response.reasoning}")

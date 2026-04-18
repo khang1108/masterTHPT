@@ -206,10 +206,11 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(prompt)
 
                 is_agreed.extend([response.agree for response in responses.results])
-                solutions.extend([
-                    Solution(question_id=response.question_id, solution=response.correct_answer)
-                    for response in responses.results
-                ])
+                for response in responses.results:
+                    if response.correct_answer is not None and str(response.correct_answer).strip() != "":
+                        solutions.append(
+                            Solution(question_id=response.question_id, solution=str(response.correct_answer).strip())
+                        )
                 confidence.extend([response.confidence for response in responses.results])
                 discrimination_a.extend([response.discrimination_a for response in responses.results])
                 difficulty_b.extend([response.difficulty_b for response in responses.results])
