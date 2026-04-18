@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from master.agents.common.agent_logging import log_agent_event
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import ExamQuestion
 
@@ -64,6 +65,15 @@ class AdaptiveService:
         self.ability_params = ability_params or AbilityParameters()
         self.bkt = BKTEngine(params=bkt_params)
         self.weights = weights or RecommendationWeights()
+        log_agent_event(
+            "adaptive.service",
+            "initialized",
+            extra={
+                "graph": type(self.graph).__name__,
+                "bkt": type(self.bkt).__name__,
+            },
+            mode="completed",
+        )
 
     @staticmethod
     def default_graph_data_dir() -> Path:
@@ -80,11 +90,18 @@ class AdaptiveService:
     ) -> LearnerProfile:
         """Create an empty adaptive profile for a learner."""
 
-        return create_profile(
+        profile = create_profile(
             student_id,
             initial_theta=initial_theta,
             initial_mastery=initial_mastery,
         )
+        log_agent_event(
+            "adaptive.service",
+            "create_profile",
+            extra={"student_id": student_id},
+            mode="progress",
+        )
+        return profile
 
     def normalize_attempt_topics(self, attempt: AdaptiveAttempt) -> list[str]:
         """Map attempt topic tags to KG ids where possible.
@@ -155,6 +172,17 @@ class AdaptiveService:
             "weak_topics": profile.weak_topics(),
             "strong_topics": profile.strong_topics(),
         }
+        log_agent_event(
+            "adaptive.service",
+            "update_profile",
+            extra={
+                "student_id": profile.student_id,
+                "question_id": attempt.question_id,
+                "is_correct": attempt.is_correct,
+                "topics": len(normalized_topics),
+            },
+            mode="progress",
+        )
         return profile, summary
 
     def update_profile_from_attempts(
@@ -176,6 +204,12 @@ class AdaptiveService:
         for attempt in attempts:
             profile, summary = self.update_profile(profile, attempt)
             summaries.append(summary)
+        log_agent_event(
+            "adaptive.service",
+            "update_profile_from_attempts",
+            extra={"student_id": profile.student_id, "attempts": len(attempts)},
+            mode="completed",
+        )
         return profile, summaries
 
     def _coerce_question(self, question: ExamQuestion | dict) -> ExamQuestion:
@@ -321,7 +355,19 @@ class AdaptiveService:
             )
 
         recommendations.sort(key=lambda item: item.score, reverse=True)
-        return recommendations[:limit]
+        result = recommendations[:limit]
+        log_agent_event(
+            "adaptive.service",
+            "recommend_questions",
+            extra={
+                "student_id": profile.student_id,
+                "candidates": len(questions),
+                "selected": len(result),
+                "limit": limit,
+            },
+            mode="progress",
+        )
+        return result
 
     def select_questions(
         self,

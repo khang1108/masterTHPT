@@ -28,5 +28,5 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.ai
-    expose:
-      - "8001"
+    ports:
+      - "8000:8001"

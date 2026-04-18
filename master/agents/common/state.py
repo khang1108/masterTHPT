@@ -26,9 +26,6 @@ from master.agents.common.message import (
 
 class AgentState(TypedDict, total=False):
     """Top-level mutable state passed through the grading graph."""
-
-
-class AgentState(TypedDict):
     # Request
     request: MessageRequest
     phase: Literal["tools", "draft", "verify", "END"]

@@ -20,7 +20,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=30d
       - USE_MOCK_SERVICES=true
-      - AI_API_BASE_URL=https://mkp-api.fptcloud.com
+      - AI_API_BASE_URL=${AI_API_BASE_URL}
       - PORT=3001
     ports:
       - "3001:3001"

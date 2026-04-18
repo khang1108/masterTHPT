@@ -1,56 +1,39 @@
-"""Database access helpers for the adaptive-learning workflow.
-
-The adaptive agent is mostly deterministic, but it still needs live data from
-MongoDB to be useful in production:
-
-- a learner profile to continue the student's progression
-- a question bank (optionally scoped by exam or topics) to rank candidates
-
-This module isolates that persistence logic so the adaptive core remains easy to
-unit test by swapping in a fake repository.
-"""
+"""Adaptive repository backed by the shared MongoDB helpers."""
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, Iterable
 
-try:  # pragma: no cover - optional in lightweight test environments
-    from motor.motor_asyncio import AsyncIOMotorClient
-except Exception:  # pragma: no cover - fallback when motor is unavailable
-    AsyncIOMotorClient = None
-
-try:  # pragma: no cover - import availability depends on pymongo install
-    from bson import ObjectId
-except Exception:  # pragma: no cover - defensive fallback
-    ObjectId = None
+from bson import ObjectId
 
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import ExamQuestion
+from master.agents.common.tools import MongoDBTools
 
 
-class AdaptiveDBTools:
-    """Repository-like helpers for adaptive question/profile persistence."""
+class AdaptiveDBTools(MongoDBTools):
+    """Mongo-backed repository for adaptive and manager flows.
+
+    This class intentionally builds on the shared DB helpers exposed through
+    `master.agents.common.tools`, so future agents can reuse the same access
+    pattern instead of creating their own Mongo clients.
+    """
 
     def __init__(
         self,
-        *,
-        mongo_uri: str | None = None,
-        mongo_client: AsyncIOMotorClient | None = None,
         database_name: str | None = None,
         question_collection: str | None = None,
         exam_collection: str | None = None,
-        learner_profile_collection: str | None = None,
+        profile_collection: str | None = None,
         history_collection: str | None = None,
     ) -> None:
-        """Create a Mongo-backed toolset for the adaptive agent."""
-
-        resolved_uri = mongo_uri or os.getenv("MONGO_URI")
-        self._client = mongo_client
-        if self._client is None and resolved_uri and AsyncIOMotorClient is not None:
-            self._client = AsyncIOMotorClient(resolved_uri)
-        self.database_name = database_name or os.getenv("ADAPTIVE_DB_NAME") or "masterthpt"
+        self.database_name = (
+            database_name
+            or os.getenv("ADAPTIVE_DB_NAME")
+            or os.getenv("MONGO_DB_NAME")
+            or "masterthpt"
+        )
         self.question_collection = (
             question_collection
             or os.getenv("ADAPTIVE_QUESTION_COLLECTION")
@@ -61,8 +44,8 @@ class AdaptiveDBTools:
             or os.getenv("ADAPTIVE_EXAM_COLLECTION")
             or "exams"
         )
-        self.learner_profile_collection = (
-            learner_profile_collection
+        self.profile_collection = (
+            profile_collection
             or os.getenv("ADAPTIVE_PROFILE_COLLECTION")
             or "learner_profiles"
         )
@@ -72,199 +55,235 @@ class AdaptiveDBTools:
             or "histories"
         )
 
-    def _require_client(self) -> AsyncIOMotorClient:
-        """Return the configured Mongo client or raise a clear configuration error."""
-
-        if self._client is None:
-            raise RuntimeError(
-                "AdaptiveDBTools requires motor + MONGO_URI (or an injected "
-                "mongo_client) before it can query Questions/LearnerProfile data."
-            )
-        return self._client
-
-    def _collection(self, collection_name: str):
-        """Return a Mongo collection handle from the configured database."""
-
-        return self._require_client()[self.database_name][collection_name]
+    @staticmethod
+    def _clean_values(values: Iterable[str] | None) -> list[str]:
+        if not values:
+            return []
+        unique: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            normalized = str(value).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(normalized)
+        return unique
 
     @staticmethod
-    def _valid_object_ids(ids: Sequence[str]) -> list[Any]:
-        """Convert valid 24-char ids to ``ObjectId`` instances when available."""
-
-        if ObjectId is None:
-            return []
-        return [ObjectId(item) for item in ids if ObjectId.is_valid(item)]
+    def _to_object_ids(values: Iterable[str]) -> list[ObjectId]:
+        return [ObjectId(value) for value in values if ObjectId.is_valid(value)]
 
     @classmethod
-    def _build_any_id_filter(cls, ids: Sequence[str]) -> dict[str, Any] | None:
-        """Build a Mongo filter that matches either ``id`` or ``_id``."""
-
-        unique_ids = []
-        seen: set[str] = set()
-        for item in ids:
-            if not item or item in seen:
-                continue
-            seen.add(item)
-            unique_ids.append(item)
-
-        if not unique_ids:
+    def _build_any_id_filter(cls, values: Iterable[str] | None) -> dict[str, Any] | None:
+        normalized = cls._clean_values(values)
+        if not normalized:
             return None
 
-        object_ids = cls._valid_object_ids(unique_ids)
-        or_filters: list[dict[str, Any]] = []
-
-        if len(unique_ids) == 1:
-            or_filters.append({"id": unique_ids[0]})
+        object_ids = cls._to_object_ids(normalized)
+        if len(normalized) == 1:
             if object_ids:
-                or_filters.append({"_id": object_ids[0]})
-        else:
-            or_filters.append({"id": {"$in": unique_ids}})
-            if object_ids:
-                or_filters.append({"_id": {"$in": object_ids}})
+                return {"$or": [{"id": normalized[0]}, {"_id": object_ids[0]}]}
+            return {"id": normalized[0]}
 
-        if len(or_filters) == 1:
-            return or_filters[0]
-        return {"$or": or_filters}
+        if object_ids:
+            return {
+                "$or": [
+                    {"id": {"$in": normalized}},
+                    {"_id": {"$in": object_ids}},
+                ]
+            }
+        return {"id": {"$in": normalized}}
+
+    @classmethod
+    def _build_any_id_exclusion(
+        cls,
+        values: Iterable[str] | None,
+    ) -> dict[str, Any] | None:
+        normalized = cls._clean_values(values)
+        if not normalized:
+            return None
+
+        object_ids = cls._to_object_ids(normalized)
+        clauses: list[dict[str, Any]] = [{"id": {"$nin": normalized}}]
+        if object_ids:
+            clauses.append({"_id": {"$nin": object_ids}})
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"$and": clauses}
 
     @staticmethod
-    def _normalize_question_document(document: dict[str, Any]) -> ExamQuestion:
-        """Normalize a raw Mongo document into the shared ``ExamQuestion`` model."""
+    def _merge_filters(*filters: dict[str, Any] | None) -> dict[str, Any]:
+        active = [item for item in filters if item]
+        if not active:
+            return {}
+        if len(active) == 1:
+            return active[0]
+        return {"$and": active}
 
-        payload = dict(document)
-        mongo_id = payload.pop("_id", None)
-        if "id" not in payload and mongo_id is not None:
-            payload["id"] = str(mongo_id)
-        return ExamQuestion.model_validate(payload)
-
-    async def get_learner_profile(self, student_id: str) -> LearnerProfile | None:
-        """Fetch a persisted learner profile by ``student_id``."""
-
-        document = await self._collection(self.learner_profile_collection).find_one(
-            {"student_id": student_id},
-            projection={"_id": 0},
-        )
-        if not document:
+    @staticmethod
+    def _normalize_document(
+        document: dict[str, Any] | None,
+        *,
+        exam_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        if document is None:
             return None
-        return LearnerProfile.model_validate(document)
 
-    async def upsert_learner_profile(self, profile: LearnerProfile) -> None:
-        """Persist the latest learner profile snapshot with upsert semantics."""
+        normalized = dict(document)
+        mongo_id = normalized.get("_id")
+        if mongo_id is not None:
+            mongo_id_str = str(mongo_id)
+            normalized["_id"] = mongo_id_str
+            normalized.setdefault("mongo_id", mongo_id_str)
+            normalized.setdefault("id", mongo_id_str)
 
-        await self._collection(self.learner_profile_collection).update_one(
-            {"student_id": profile.student_id},
-            {"$set": profile.model_dump(mode="json")},
-            upsert=True,
-        )
+        if exam_id and not normalized.get("exam_id"):
+            normalized["exam_id"] = exam_id
 
-    async def get_exam_question_ids(self, exam_id: str) -> list[str]:
-        """Resolve an exam document to the ordered list of question ids it references."""
+        return normalized
+
+    async def _get_exam_question_ids(self, exam_id: str | None) -> list[str]:
+        if not exam_id:
+            return []
 
         exam_filter = self._build_any_id_filter([exam_id])
         if exam_filter is None:
             return []
 
-        document = await self._collection(self.exam_collection).find_one(
+        exam_document = await self.get_one(
+            self.database_name,
+            self.exam_collection,
             exam_filter,
-            projection={"questions": 1},
         )
-        raw_ids = document.get("questions", []) if document else []
-        return [item for item in raw_ids if isinstance(item, str) and item.strip()]
+        exam_document = self._normalize_document(exam_document)
+        if exam_document is None:
+            return []
+
+        return self._clean_values(exam_document.get("questions"))
+
+    async def get_learner_profile(self, student_id: str) -> LearnerProfile | None:
+        document = await self.get_one(
+            self.database_name,
+            self.profile_collection,
+            {"student_id": student_id},
+        )
+        normalized = self._normalize_document(document)
+        if normalized is None:
+            return None
+        return LearnerProfile.model_validate(normalized)
+
+    async def upsert_learner_profile(self, profile: LearnerProfile) -> int:
+        payload = profile.model_dump(mode="json")
+        return await self.upsert_one(
+            self.database_name,
+            self.profile_collection,
+            {"student_id": profile.student_id},
+            payload,
+        )
 
     async def get_history_by_id(self, history_id: str) -> dict[str, Any] | None:
-        """Fetch one history document by Mongo id string."""
-
         history_filter = self._build_any_id_filter([history_id])
         if history_filter is None:
             return None
-        return await self._collection(self.history_collection).find_one(history_filter)
+
+        document = await self.get_one(
+            self.database_name,
+            self.history_collection,
+            history_filter,
+        )
+        return self._normalize_document(document)
 
     async def get_latest_history(
         self,
-        *,
         user_id: str,
         exam_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Fetch the latest history document for a user, optionally scoped by exam."""
-
-        mongo_filter: dict[str, Any] = {"user_id": user_id}
+        query: dict[str, Any] = {"user_id": user_id}
         if exam_id:
-            mongo_filter["exam_id"] = exam_id
+            query["exam_id"] = exam_id
 
-        cursor = self._collection(self.history_collection).find(mongo_filter).sort(
-            [("created_at", -1), ("_id", -1)]
+        collection = self._collection(self.database_name, self.history_collection)
+        documents = await (
+            collection.find(query)
+            .sort([("created_at", -1), ("_id", -1)])
+            .limit(1)
+            .to_list(length=1)
         )
-        documents = await cursor.to_list(length=1)
-        return documents[0] if documents else None
+        if not documents:
+            return None
+        return self._normalize_document(documents[0])
 
     async def get_questions(
         self,
         *,
         exam_id: str | None = None,
-        question_ids: Sequence[str] | None = None,
-        topic_tags: Sequence[str] | None = None,
-        exclude_question_ids: Sequence[str] | None = None,
+        question_ids: list[str] | None = None,
+        topic_tags: list[str] | None = None,
+        exclude_question_ids: list[str] | None = None,
         limit: int = 100,
     ) -> list[ExamQuestion]:
-        """Fetch candidate questions from MongoDB for adaptive ranking."""
+        normalized_limit = max(1, int(limit))
+        explicit_question_ids = self._clean_values(question_ids)
+        requested_question_ids = self._clean_values(question_ids)
+        requested_topic_tags = self._clean_values(topic_tags)
+        exam_question_ids = await self._get_exam_question_ids(exam_id)
 
-        effective_question_ids = list(question_ids or [])
-        if exam_id and not effective_question_ids:
-            effective_question_ids = await self.get_exam_question_ids(exam_id)
+        if exam_id and not exam_question_ids and not requested_question_ids:
+            return []
 
-        mongo_filter: dict[str, Any] = {}
-        and_filters: list[dict[str, Any]] = []
+        if exam_question_ids:
+            if requested_question_ids:
+                allowed_ids = set(exam_question_ids)
+                requested_question_ids = [
+                    question_id
+                    for question_id in requested_question_ids
+                    if question_id in allowed_ids
+                ]
+            else:
+                requested_question_ids = exam_question_ids
 
-        if effective_question_ids:
-            any_id_filter = self._build_any_id_filter(effective_question_ids)
-            if any_id_filter:
-                and_filters.append(any_id_filter)
+        if exam_id and explicit_question_ids and exam_question_ids and not requested_question_ids:
+            return []
 
-        normalized_topics = [topic for topic in (topic_tags or []) if topic]
-        if normalized_topics:
-            and_filters.append({"topic_tags": {"$in": normalized_topics}})
+        if exam_id and exam_question_ids and not requested_question_ids and not requested_topic_tags:
+            return []
 
-        if and_filters:
-            mongo_filter = and_filters[0] if len(and_filters) == 1 else {"$and": and_filters}
+        query = self._merge_filters(
+            self._build_any_id_filter(requested_question_ids),
+            {"topic_tags": {"$in": requested_topic_tags}} if requested_topic_tags else None,
+            self._build_any_id_exclusion(exclude_question_ids),
+        )
 
-        cursor = self._collection(self.question_collection).find(mongo_filter)
-        if not effective_question_ids and limit > 0:
-            cursor = cursor.limit(int(limit))
+        documents = await self.get_data(
+            self.database_name,
+            self.question_collection,
+            query,
+            limit=normalized_limit,
+        )
 
-        documents = await cursor.to_list(length=None)
-        questions = [
-            self._normalize_question_document(document)
-            for document in documents
-        ]
+        questions: list[ExamQuestion] = []
+        for document in documents:
+            normalized = self._normalize_document(document, exam_id=exam_id)
+            if normalized is None:
+                continue
+            questions.append(ExamQuestion.model_validate(normalized))
 
-        excluded = {question_id for question_id in (exclude_question_ids or []) if question_id}
-        if excluded:
-            questions = [
-                question
-                for question in questions
-                if question.question_id not in excluded
-            ]
-
-        if effective_question_ids:
-            order = {question_id: index for index, question_id in enumerate(effective_question_ids)}
-            questions.sort(key=lambda question: order.get(question.question_id, len(order)))
+        if exam_question_ids:
+            question_order = {question_id: index for index, question_id in enumerate(exam_question_ids)}
+            questions.sort(key=lambda item: question_order.get(item.question_id, len(question_order)))
+        else:
+            questions.sort(key=lambda item: item.question_index)
         return questions
 
     async def get_rag_question_context(
         self,
         *,
         exam_id: str | None = None,
-        question_ids: Sequence[str] | None = None,
-        topic_tags: Sequence[str] | None = None,
-        exclude_question_ids: Sequence[str] | None = None,
+        question_ids: list[str] | None = None,
+        topic_tags: list[str] | None = None,
+        exclude_question_ids: list[str] | None = None,
         limit: int = 8,
     ) -> list[ExamQuestion]:
-        """Retrieve style/context questions that ground adaptive generation.
-
-        This is intentionally a thin semantic wrapper around ``get_questions`` so
-        callers can express that these results are RAG context, not the final
-        selected/generated output.
-        """
-
         return await self.get_questions(
             exam_id=exam_id,
             question_ids=question_ids,

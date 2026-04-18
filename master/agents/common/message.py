@@ -25,7 +25,6 @@ class Intent(str, Enum):
     VIEW_ANALYSIS = "VIEW_ANALYSIS"
     EXAM_PRACTICE = "EXAM_PRACTICE"
     PREPROCESS = "PREPROCESS"
-    GRADE_SUBMISSION = "GRADE_SUBMISSION"
     UPDATE_PRACTICE = "UPDATE_PRACTICE"
     UNKNOWN = "UNKNOWN"
 
@@ -104,7 +103,7 @@ class ExamQuestion(BaseModel):
     correct_answer: str | None = None
     has_image: bool = False
     image_url: str | None = None
-    difficulty_a: float = 1.0
+    discrimnination_a: float = 1.0
     difficulty_b: float = 0.0
     topic_tags: list[str] = Field(default_factory=list)
     max_score: float | None = None

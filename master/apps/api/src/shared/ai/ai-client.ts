@@ -57,6 +57,11 @@ function extractErrorDetail(responseBody: string) {
 	return trimmedBody;
 }
 
+function looksLikeHtml(responseBody: string) {
+	const trimmedBody = responseBody.trim().toLowerCase();
+	return trimmedBody.startsWith('<!doctype html') || trimmedBody.startsWith('<html');
+}
+
 export async function postToAiService<TResponse>(
 	configService: ConfigService,
 	payload: unknown,
@@ -87,10 +92,24 @@ export async function postToAiService<TResponse>(
 	if (!response.ok) {
 		const responseBody = await response.text();
 		const errorDetail = extractErrorDetail(responseBody);
+		const htmlResponse = looksLikeHtml(responseBody);
+		const aiUrlLower = aiApiUrl.toLowerCase();
 
 		logger.warn(
 			`AI response error: status=${response.status} url=${aiApiUrl} body=${truncateForLog(responseBody)}`,
 		);
+
+		if (htmlResponse && aiUrlLower.includes('mkp-api.fptcloud.com')) {
+			throw new Error(
+				'AI_API_BASE_URL đang trỏ nhầm sang FPT host. API layer phải gọi agent service /invoke, không gọi trực tiếp mkp-api.fptcloud.com.',
+			);
+		}
+
+		if (htmlResponse) {
+			throw new Error(
+				`AI service trả về HTML ${response.status}. Hãy kiểm tra lại AI_API_BASE_URL=${aiApiUrl}`,
+			);
+		}
 
 		throw new Error(errorDetail || `AI service returned ${response.status}`);
 	}

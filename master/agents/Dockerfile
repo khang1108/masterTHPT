@@ -79,6 +79,112 @@ from pathlib import Path
 files = {
     "/app/master/__init__.py": "",
     "/app/master/common/__init__.py": "",
+    "/app/master/common/tools.py": """import os
+
+from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
+
+load_dotenv(override=True)
+
+
+def _clean_env_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip().strip("\\"'")
+    return cleaned or None
+
+
+class MongoDBTools:
+    _mongo_client = None
+
+    @classmethod
+    def _mongo_uri(cls) -> str | None:
+        return _clean_env_value(os.getenv("MONGO_URI"))
+
+    @classmethod
+    def get_mongo_client(cls):
+        if cls._mongo_client is None:
+            mongo_uri = cls._mongo_uri()
+            if not mongo_uri:
+                raise RuntimeError("MONGO_URI is not configured.")
+            cls._mongo_client = AsyncIOMotorClient(mongo_uri)
+        return cls._mongo_client
+
+    def _on_mongo_event(self, message: str) -> None:
+        return None
+
+    def _collection(self, database_name: str, collection_name: str):
+        client = self.get_mongo_client()
+        return client[database_name][collection_name]
+
+    async def get_data(self, database_name: str, collection_name: str, query: dict, limit: int = 10):
+        self._on_mongo_event(
+            f"mongo:get_data:start db={database_name} collection={collection_name} limit={limit} query_keys={len(query)}"
+        )
+        collection = self._collection(database_name, collection_name)
+        result = await collection.find(query).to_list(length=limit)
+        self._on_mongo_event(
+            f"mongo:get_data:done db={database_name} collection={collection_name} result={len(result)}"
+        )
+        return result
+
+    async def get_one(self, database_name: str, collection_name: str, query: dict):
+        self._on_mongo_event(
+            f"mongo:get_one:start db={database_name} collection={collection_name} query_keys={len(query)}"
+        )
+        collection = self._collection(database_name, collection_name)
+        result = await collection.find_one(query)
+        self._on_mongo_event(
+            f"mongo:get_one:done db={database_name} collection={collection_name} found={result is not None}"
+        )
+        return result
+
+    async def insert_data(self, database_name: str, collection_name: str, documents: list[dict]):
+        if not documents:
+            self._on_mongo_event(
+                f"mongo:insert_data:skip_empty db={database_name} collection={collection_name}"
+            )
+            return
+        self._on_mongo_event(
+            f"mongo:insert_data:start db={database_name} collection={collection_name} documents={len(documents)}"
+        )
+        collection = self._collection(database_name, collection_name)
+        await collection.insert_many(documents)
+        self._on_mongo_event(
+            f"mongo:insert_data:done db={database_name} collection={collection_name} documents={len(documents)}"
+        )
+
+    async def insert_one(self, database_name: str, collection_name: str, document: dict):
+        self._on_mongo_event(
+            f"mongo:insert_one:start db={database_name} collection={collection_name} keys={len(document)}"
+        )
+        collection = self._collection(database_name, collection_name)
+        result = await collection.insert_one(document)
+        self._on_mongo_event(
+            f"mongo:insert_one:done db={database_name} collection={collection_name}"
+        )
+        return result.inserted_id
+
+    async def update_one(self, database_name: str, collection_name: str, query: dict, update: dict, upsert: bool = False):
+        self._on_mongo_event(
+            f"mongo:update_one:start db={database_name} collection={collection_name} query_keys={len(query)} update_keys={len(update)} upsert={upsert}"
+        )
+        collection = self._collection(database_name, collection_name)
+        result = await collection.update_one(query, update, upsert=upsert)
+        self._on_mongo_event(
+            f"mongo:update_one:done db={database_name} collection={collection_name} matched={result.matched_count} modified={result.modified_count} upserted={result.upserted_id is not None}"
+        )
+        return result.modified_count
+
+    async def upsert_one(self, database_name: str, collection_name: str, query: dict, payload: dict):
+        return await self.update_one(
+            database_name,
+            collection_name,
+            query,
+            {"$set": payload},
+            upsert=True,
+        )
+""",
     "/app/master/common/message.py": """from pydantic import BaseModel
 
 
@@ -143,6 +249,9 @@ class Logger:
 
     def tools_node(self, message: str) -> None:
         self.info(message)
+
+
+logger = Logger("master")
 """,
     "/app/master/data/__init__.py": "",
     "/app/master/data/knowledge/__init__.py": """from .knowledge_graph import KnowledgeGraph
@@ -221,7 +330,9 @@ class KnowledgeGraph:
             if mastery_scores.get(concept, 0.0) < threshold
         ]
 """,
-    "/app/docker_entrypoint.py": """from fastapi import FastAPI, HTTPException
+    "/app/docker_entrypoint.py": """import json
+
+from fastapi import FastAPI, HTTPException
 
 from master.agents.common.message import MessageRequest
 from master.agents.manager.orchestrator import run_manager_orchestrator
@@ -242,16 +353,33 @@ async def health():
 
 @app.post("/")
 @app.post("/invoke")
-async def invoke(payload: dict):
+async def invoke(payload: dict | str):
     try:
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Request body phải là JSON object hợp lệ, không phải chuỗi JSON bị stringify hai lần.",
+                ) from exc
+
+        if not isinstance(payload, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="Request body phải là JSON object.",
+            )
+
         request = MessageRequest.model_validate(payload)
         response = await run_manager_orchestrator(
             request,
             exam_id=request.exam_id,
         )
         return response.model_dump(mode="json", exclude_none=True)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=200, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.on_event("shutdown")

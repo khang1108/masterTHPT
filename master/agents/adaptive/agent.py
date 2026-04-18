@@ -12,6 +12,7 @@ import threading
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
+from master.agents.common.agent_logging import log_agent_event
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.langsmith import build_langsmith_invoke_config
 from master.agents.common.message import ExamQuestion, MessageRequest, StudentAnswer
@@ -58,6 +59,16 @@ class AdaptiveAgent:
         self.repository = repository or AdaptiveDBTools()
         self.generator = generator or AdaptiveQuestionGenerator()
         self.graph = self._build_graph()
+        log_agent_event(
+            "adaptive",
+            "initialized",
+            extra={
+                "service": type(self.service).__name__,
+                "repository": type(self.repository).__name__,
+                "generator": type(self.generator).__name__,
+            },
+            mode="completed",
+        )
 
     @staticmethod
     def _sync_await(coro):
@@ -97,7 +108,9 @@ class AdaptiveAgent:
         builder.add_edge("ensure_profile", "update_profile")
         builder.add_edge("update_profile", "recommend_questions")
         builder.add_edge("recommend_questions", END)
-        return builder.compile()
+        graph = builder.compile()
+        log_agent_event("adaptive", "graph_compiled", mode="completed")
+        return graph
 
     @staticmethod
     def _normalize_answer(value: str | None) -> str:
@@ -128,7 +141,22 @@ class AdaptiveAgent:
         """
 
         profile = state.get("learner_profile")
+        request = state.get("request")
+        log_agent_event(
+            "adaptive",
+            "ensure_profile:start",
+            state=state,
+            request=request,
+            mode="agent_node",
+        )
         if profile is not None:
+            log_agent_event(
+                "adaptive",
+                "ensure_profile:existing_profile",
+                state=state,
+                request=request,
+                mode="progress",
+            )
             return {"learner_profile": profile}
 
         request = state.get("request")
@@ -140,11 +168,25 @@ class AdaptiveAgent:
         if student_id != "anonymous":
             loaded_profile = self.load_learner_profile(student_id)
         if loaded_profile is not None:
+            log_agent_event(
+                "adaptive",
+                "ensure_profile:loaded_profile",
+                request=request,
+                extra={"student_id": student_id},
+                mode="completed",
+            )
             return {"learner_profile": loaded_profile}
 
         created_profile = self.service.create_profile(student_id)
         if student_id != "anonymous":
             self.save_learner_profile(created_profile)
+        log_agent_event(
+            "adaptive",
+            "ensure_profile:created_profile",
+            request=request,
+            extra={"student_id": student_id},
+            mode="completed",
+        )
         return {"learner_profile": created_profile}
 
     def _update_profile_node(self, state: AdaptiveWorkflowState) -> dict[str, Any]:
@@ -159,6 +201,14 @@ class AdaptiveAgent:
         """
 
         profile = state.get("learner_profile")
+        request = state.get("request")
+        log_agent_event(
+            "adaptive",
+            "update_profile:start",
+            state=state,
+            request=request,
+            mode="agent_node",
+        )
         questions = [ExamQuestion.model_validate(question) for question in state.get("questions", [])]
         answers = [StudentAnswer.model_validate(answer) for answer in state.get("student_answers", [])]
         question_map = {question.question_id: question for question in questions}
@@ -179,20 +229,29 @@ class AdaptiveAgent:
             )
 
         if not attempts or profile is None:
-            return {
+            no_update_result = {
                 "profile_updates": {
                     "attempts_processed": 0,
                     "weak_topics": profile.weak_topics() if profile else [],
                     "strong_topics": profile.strong_topics() if profile else [],
                 }
             }
+            log_agent_event(
+                "adaptive",
+                "update_profile:no_attempts",
+                state=state,
+                request=request,
+                extra={"attempts": len(attempts)},
+                mode="warning",
+            )
+            return no_update_result
 
         updated_profile, summaries = self.service.update_profile_from_attempts(
             profile,
             attempts,
         )
         self.save_learner_profile(updated_profile)
-        return {
+        update_result = {
             "learner_profile": updated_profile,
             "profile_updates": {
                 "attempts_processed": len(attempts),
@@ -201,6 +260,19 @@ class AdaptiveAgent:
                 "strong_topics": updated_profile.strong_topics(),
             },
         }
+        log_agent_event(
+            "adaptive",
+            "update_profile:done",
+            request=request,
+            extra={
+                "attempts": len(attempts),
+                "summary_count": len(summaries),
+                "weak_topics": len(updated_profile.weak_topics()),
+                "strong_topics": len(updated_profile.strong_topics()),
+            },
+            mode="completed",
+        )
+        return update_result
 
     def _recommend_questions_node(self, state: AdaptiveWorkflowState) -> dict[str, Any]:
         """Score the current question bank and select the next adaptive items.
@@ -213,14 +285,28 @@ class AdaptiveAgent:
         """
 
         profile = state.get("learner_profile")
+        request = state.get("request")
+        log_agent_event(
+            "adaptive",
+            "recommend_questions:start",
+            state=state,
+            request=request,
+            mode="agent_node",
+        )
         answers = [StudentAnswer.model_validate(answer) for answer in state.get("student_answers", [])]
         answered_question_ids = [answer.question_id for answer in answers if answer.question_id]
         questions = [ExamQuestion.model_validate(question) for question in state.get("questions", [])]
 
         if profile is None:
+            log_agent_event(
+                "adaptive",
+                "recommend_questions:missing_profile",
+                state=state,
+                request=request,
+                mode="warning",
+            )
             return {"selected_questions": []}
 
-        request = state.get("request")
         if self.should_generate_questions(request):
             rag_context_questions = self.load_rag_context_questions(
                 request=request,
@@ -228,6 +314,13 @@ class AdaptiveAgent:
                 exclude_question_ids=answered_question_ids,
             )
             if not rag_context_questions:
+                log_agent_event(
+                    "adaptive",
+                    "recommend_questions:no_rag_context",
+                    request=request,
+                    extra={"answered_questions": len(answered_question_ids)},
+                    mode="warning",
+                )
                 return {
                     "rag_context_questions": [],
                     "generated_questions": [],
@@ -239,11 +332,22 @@ class AdaptiveAgent:
                 profile=profile,
                 rag_context_questions=rag_context_questions,
             )
-            return {
+            generation_result = {
                 "rag_context_questions": rag_context_questions,
                 "generated_questions": generated_questions,
                 "selected_questions": generated_questions,
             }
+            log_agent_event(
+                "adaptive",
+                "recommend_questions:generated",
+                request=request,
+                extra={
+                    "rag_context_questions": len(rag_context_questions),
+                    "generated_questions": len(generated_questions),
+                },
+                mode="completed",
+            )
+            return generation_result
 
         if not questions:
             questions = self.load_questions(
@@ -252,6 +356,13 @@ class AdaptiveAgent:
                 exclude_question_ids=answered_question_ids,
             )
             if not questions:
+                log_agent_event(
+                    "adaptive",
+                    "recommend_questions:no_candidates",
+                    request=request,
+                    extra={"answered_questions": len(answered_question_ids)},
+                    mode="warning",
+                )
                 return {"questions": [], "selected_questions": []}
 
         selected = self.service.select_questions(
@@ -260,12 +371,30 @@ class AdaptiveAgent:
             limit=min(5, len(questions)),
             exclude_question_ids=answered_question_ids,
         )
-        return {"questions": questions, "selected_questions": selected}
+        result = {"questions": questions, "selected_questions": selected}
+        log_agent_event(
+            "adaptive",
+            "recommend_questions:selected",
+            request=request,
+            extra={
+                "candidate_questions": len(questions),
+                "selected_questions": len(selected),
+            },
+            mode="completed",
+        )
+        return result
 
     def run(self, state: AdaptiveWorkflowState) -> AdaptiveWorkflowState:
         """Invoke the LangGraph adaptive workflow on a shared state dict."""
 
-        return self.graph.invoke(
+        log_agent_event(
+            "adaptive",
+            "run:start",
+            state=state,
+            request=state.get("request"),
+            mode="agent_node",
+        )
+        final_state = self.graph.invoke(
             state,
             config=build_langsmith_invoke_config(
                 run_name="AdaptiveAgent.run",
@@ -273,13 +402,34 @@ class AdaptiveAgent:
                 extra_tags=["adaptive", "question-selection"],
             ),
         )
+        log_agent_event(
+            "adaptive",
+            "run:done",
+            state=final_state,
+            request=final_state.get("request"),
+            mode="completed",
+        )
+        return final_state
 
     def load_learner_profile(self, student_id: str) -> LearnerProfile | None:
         """Load the persisted learner profile from the adaptive profile store."""
 
         try:
-            return self._sync_await(self.repository.get_learner_profile(student_id))
+            profile = self._sync_await(self.repository.get_learner_profile(student_id))
+            log_agent_event(
+                "adaptive",
+                "load_learner_profile",
+                extra={"student_id": student_id, "found": profile is not None},
+                mode="progress",
+            )
+            return profile
         except RuntimeError:
+            log_agent_event(
+                "adaptive",
+                "load_learner_profile_failed",
+                extra={"student_id": student_id},
+                mode="warning",
+            )
             return None
 
     def save_learner_profile(self, profile: LearnerProfile) -> None:
@@ -287,7 +437,19 @@ class AdaptiveAgent:
 
         try:
             self._sync_await(self.repository.upsert_learner_profile(profile))
+            log_agent_event(
+                "adaptive",
+                "save_learner_profile",
+                extra={"student_id": profile.student_id},
+                mode="progress",
+            )
         except RuntimeError:
+            log_agent_event(
+                "adaptive",
+                "save_learner_profile_failed",
+                extra={"student_id": profile.student_id},
+                mode="warning",
+            )
             return None
 
     def load_questions(
@@ -322,7 +484,7 @@ class AdaptiveAgent:
             limit = 100
 
         try:
-            return self._sync_await(
+            questions = self._sync_await(
                 self.repository.get_questions(
                     exam_id=request.exam_id if request else None,
                     question_ids=requested_question_ids,
@@ -331,7 +493,28 @@ class AdaptiveAgent:
                     limit=limit,
                 )
             )
+            log_agent_event(
+                "adaptive",
+                "load_questions",
+                request=request,
+                extra={
+                    "question_ids": len(requested_question_ids),
+                    "topic_tags": len(requested_topic_tags),
+                    "exclude_question_ids": len(exclude_question_ids or []),
+                    "limit": limit,
+                    "result": len(questions),
+                },
+                mode="progress",
+            )
+            return questions
         except RuntimeError:
+            log_agent_event(
+                "adaptive",
+                "load_questions_failed",
+                request=request,
+                extra={"limit": limit},
+                mode="warning",
+            )
             return []
 
     def load_rag_context_questions(
@@ -359,7 +542,7 @@ class AdaptiveAgent:
             limit = 8
 
         try:
-            return self._sync_await(
+            questions = self._sync_await(
                 self.repository.get_rag_question_context(
                     exam_id=request.exam_id if request else None,
                     question_ids=requested_question_ids,
@@ -368,7 +551,28 @@ class AdaptiveAgent:
                     limit=limit,
                 )
             )
+            log_agent_event(
+                "adaptive",
+                "load_rag_context_questions",
+                request=request,
+                extra={
+                    "question_ids": len(requested_question_ids),
+                    "topic_tags": len(requested_topic_tags),
+                    "exclude_question_ids": len(exclude_question_ids or []),
+                    "limit": limit,
+                    "result": len(questions),
+                },
+                mode="progress",
+            )
+            return questions
         except RuntimeError:
+            log_agent_event(
+                "adaptive",
+                "load_rag_context_questions_failed",
+                request=request,
+                extra={"limit": limit},
+                mode="warning",
+            )
             return []
 
     @staticmethod
@@ -402,12 +606,24 @@ class AdaptiveAgent:
         except (TypeError, ValueError):
             limit = 3
 
-        return self.generator.generate_questions(
+        generated = self.generator.generate_questions(
             request=request,
             profile=profile,
             context_questions=rag_context_questions,
             limit=limit,
         )
+        log_agent_event(
+            "adaptive",
+            "generate_questions_from_context",
+            request=request,
+            extra={
+                "context_questions": len(rag_context_questions),
+                "limit": limit,
+                "generated": len(generated),
+            },
+            mode="completed",
+        )
+        return generated
 
     def update_profile(
         self,

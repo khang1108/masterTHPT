@@ -42,11 +42,10 @@ class AdaptiveQuestionGenerator:
                     "question_id": question.question_id,
                     "type": question.type,
                     "content": question.content,
-                    "content_latex": question.content_latex,
                     "options": question.options,
                     "correct_answer": question.correct_answer,
                     "topic_tags": question.topic_tags,
-                    "difficulty_a": question.difficulty_a,
+                    "discrimination_a": question.discrimination_a,
                     "difficulty_b": question.difficulty_b,
                 }
             )

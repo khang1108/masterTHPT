@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from .agent_logging import log_agent_event
 from .langsmith import build_langsmith_metadata, build_langsmith_tags
 
 load_dotenv(override=True)
@@ -35,6 +36,32 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def _clean_env_value(value: str | None) -> str | None:
+    """Trim quotes and surrounding whitespace from environment values."""
+
+    if value is None:
+        return None
+    cleaned = value.strip().strip("\"'")
+    return cleaned or None
+
+
+def _env_first(*names: str) -> str | None:
+    """Return the first non-empty environment value among candidate names."""
+
+    for name in names:
+        value = _clean_env_value(os.getenv(name))
+        if value:
+            return value
+    return None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = _clean_env_value(os.getenv(name))
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
 def _normalize_openai_base_url(url: str) -> str:
     u = url.strip()
     if not u.startswith(("http://", "https://")):
@@ -45,35 +72,96 @@ def _normalize_openai_base_url(url: str) -> str:
     return u
 
 
+def _looks_like_fpt_base_url(url: str | None) -> bool:
+    candidate = _clean_env_value(url)
+    if not candidate:
+        return False
+    lowered = candidate.lower()
+    return "fptcloud.com" in lowered or "mkp-api" in lowered
+
+
+def _normalize_fpt_base_url(url: str) -> str:
+    """
+    Normalize FPT AI Marketplace base URL.
+
+    FPT deployments may expose OpenAI-style chat completions either under the
+    raw host (for example ``https://mkp-api.fptcloud.com``) or under ``/v1``.
+    We therefore keep the raw host by default and only append ``/v1`` when the
+    env flag explicitly asks for it.
+    """
+
+    u = url.strip()
+    if not u.startswith(("http://", "https://")):
+        u = f"https://{u}"
+    u = u.rstrip("/")
+    if _env_bool("FPT_LLM_APPEND_OPENAI_V1", False) and not u.endswith("/v1"):
+        u = f"{u}/v1"
+    return u
+
+
+def _normalize_openai_compatible_base_url(url: str) -> str:
+    """Normalize explicit OpenAI-compatible base URLs with FPT-aware handling."""
+
+    if _looks_like_fpt_base_url(url):
+        return _normalize_fpt_base_url(url)
+    return _normalize_openai_base_url(url)
+
+
+def _openai_api_key() -> str:
+    """Resolve the OpenAI-compatible/FPT API key from supported env aliases."""
+
+    return (
+        _env_first(
+            "FPT_API_KEY",
+            "FPT_AI_KEY",
+            "FPT_LLM_API_KEY",
+            "OPENAI_COMPATIBLE_API_KEY",
+            "OPENAI_API_KEY",
+        )
+        or "EMPTY"
+    )
+
+
 def _openai_base_url_for_role(agent_role: Optional[str]) -> Optional[str]:
     """
-    Resolve OpenAI-compatible base URL (…/v1) from env.
+    Resolve OpenAI-compatible base URL from env.
 
     Priority per role (e.g. teacher):
-      1. OPENAI_COMPATIBLE_BASE_URL_TEACHER (uppercase role)
-      2. OPENAI_COMPATIBLE_BASE_URL
-      3. FPT_BASE_URL
-      4. OPENAI_API_BASE
-      5. LLM_BASE_URL
-      6. Build from VLLM_BASE_URL host + VLLM_*_PORT (legacy layout)
+      1. FPT_BASE_URL_TEACHER / FPT_LLM_BASE_URL_TEACHER
+      2. OPENAI_COMPATIBLE_BASE_URL_TEACHER
+      3. FPT_LLM_BASE_URL / FPT_BASE_URL
+      4. OPENAI_COMPATIBLE_BASE_URL / OPENAI_API_BASE / LLM_BASE_URL
+      5. Build from VLLM_BASE_URL host + VLLM_*_PORT (legacy layout)
+
+    FPT URLs are preserved as raw hosts by default and only receive ``/v1``
+    when ``FPT_LLM_APPEND_OPENAI_V1=true``.
     """
     role = (agent_role or "").strip().lower()
     if role:
-        specific = os.getenv(f"OPENAI_COMPATIBLE_BASE_URL_{role.upper()}")
+        fpt_specific = _env_first(
+            f"FPT_BASE_URL_{role.upper()}",
+            f"FPT_LLM_BASE_URL_{role.upper()}",
+        )
+        if fpt_specific:
+            return _normalize_fpt_base_url(fpt_specific)
+
+        specific = _env_first(f"OPENAI_COMPATIBLE_BASE_URL_{role.upper()}")
         if specific:
             return _normalize_openai_base_url(specific)
 
-    for key in (
+    shared_fpt_base = _env_first("FPT_LLM_BASE_URL", "FPT_BASE_URL", "OPENAI_COMPATIBLE_BASE_URL")
+    if shared_fpt_base and _looks_like_fpt_base_url(shared_fpt_base):
+        return _normalize_fpt_base_url(shared_fpt_base)
+
+    shared_base = _env_first(
         "OPENAI_COMPATIBLE_BASE_URL",
-        "FPT_BASE_URL",
         "OPENAI_API_BASE",
         "LLM_BASE_URL",
-    ):
-        v = os.getenv(key)
-        if v:
-            return _normalize_openai_base_url(v)
+    )
+    if shared_base:
+        return _normalize_openai_base_url(shared_base)
 
-    host = os.getenv("VLLM_BASE_URL", "").strip()
+    host = _clean_env_value(os.getenv("VLLM_BASE_URL")) or ""
     if not host:
         return None
 
@@ -120,12 +208,15 @@ def _resolve_provider(explicit: Optional[Union[str, LLMProvider]]) -> LLMProvide
         return LLMProvider.OPENAI_COMPATIBLE
 
     if (
-        os.getenv("OPENAI_COMPATIBLE_BASE_URL")
-        or os.getenv("FPT_BASE_URL")
-        or os.getenv("OPENAI_API_BASE")
-        or os.getenv("LLM_BASE_URL")
-        or os.getenv("VLLM_TEACHER_PORT")
-        or os.getenv("VLLM_BASE_URL")
+        _env_first(
+            "OPENAI_COMPATIBLE_BASE_URL",
+            "FPT_LLM_BASE_URL",
+            "FPT_BASE_URL",
+            "OPENAI_API_BASE",
+            "LLM_BASE_URL",
+            "VLLM_BASE_URL",
+        )
+        or _clean_env_value(os.getenv("VLLM_TEACHER_PORT"))
     ):
         return LLMProvider.OPENAI_COMPATIBLE
 
@@ -204,13 +295,30 @@ class LLMClient:
         if prov is LLMProvider.OPENAI_COMPATIBLE:
             from langchain_openai import ChatOpenAI
 
-            b = base_url or _openai_base_url_for_role(agent_role)
+            b = (
+                _normalize_openai_compatible_base_url(base_url)
+                if base_url
+                else _openai_base_url_for_role(agent_role)
+            )
             if not b:
                 raise ValueError(
                     "OpenAI-compatible provider selected but no base URL found. Set "
                     "OPENAI_COMPATIBLE_BASE_URL (full URL to …/v1) or FPT_BASE_URL or VLLM_BASE_URL + VLLM_TEACHER_PORT."
                 )
-            key = api_key or os.getenv("FPT_API_KEY") or os.getenv("OPENAI_COMPATIBLE_API_KEY") or os.getenv("OPENAI_API_KEY") or "EMPTY"
+            key = _clean_env_value(api_key) or _openai_api_key()
+            log_agent_event(
+                "llm_client",
+                "chat_model:openai_compatible",
+                extra={
+                    "agent_role": agent_role,
+                    "provider": prov.value,
+                    "model": mname,
+                    "base_url": b,
+                    "fpt_compatible": _looks_like_fpt_base_url(b),
+                    "api_key_present": key != "EMPTY",
+                },
+                mode="progress",
+            )
             return ChatOpenAI(
                 model=mname,
                 base_url=b,

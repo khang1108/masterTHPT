@@ -15,7 +15,7 @@ from master.agents.common.prompt import (
     teacher_hint_prompt,
     teacher_review_mistake_prompt,
 )
-from master.logging.logger import Logger
+from master.logging.logger import logger
 
 import json
 import os
@@ -54,7 +54,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup(self):
-        self.logger.agent_node("Teacher setup started")
+        logger.agent_node("Teacher setup started")
         llm = LLMClient.chat_model(
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
@@ -62,12 +62,12 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             model="gemma-4-31B-it",
             temperature=0.7,
         )
-        self.logger.info(f"LLM client for Teacher initialized: {os.getenv("FPT_API_KEY")}, {os.getenv("FPT_BASE_URL")}, model={llm.model}")
+        logger.info(f"LLM client for Teacher initialized: {os.getenv("FPT_API_KEY")}, {os.getenv("FPT_BASE_URL")}, model={llm.model}")
 
         await self.setup_tools(llm)
         self._llm_with_single_output = self._llm.with_structured_output(Evaluate)
         self._llm_with_batch_output = self._llm.with_structured_output(EvaluateBatch)
-        self.logger.agent_node("Teacher setup completed")
+        logger.agent_node("Teacher setup completed")
 
     def teacher_router(self, state: AgentState) -> str:
         last_feedback = state["teacher_feedback"][-1] if state["teacher_feedback"] else None
