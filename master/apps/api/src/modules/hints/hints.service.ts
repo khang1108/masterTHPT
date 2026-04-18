@@ -14,13 +14,51 @@ type HintLevels = {
 
 function normalizeReviewFeedback(feedback: unknown) {
 	if (typeof feedback === 'string') {
-		return feedback;
+		const parsed = parseMaybeJson(feedback);
+		if (parsed !== null) {
+			const nested = normalizeReviewFeedback(parsed);
+			return nested || feedback.trim();
+		}
+		return feedback.trim();
+	}
+
+	if (Array.isArray(feedback)) {
+		for (const item of feedback) {
+			const value = normalizeReviewFeedback(item);
+			if (value) {
+				return value;
+			}
+		}
+		return '';
 	}
 
 	if (feedback && typeof feedback === 'object') {
-		const reasoning = (feedback as { reasoning?: unknown }).reasoning;
-		if (typeof reasoning === 'string') {
-			return reasoning;
+		const payload = feedback as {
+			feedback?: unknown;
+			reasoning?: unknown;
+			content?: unknown;
+			text?: unknown;
+			results?: Array<{
+				feedback?: unknown;
+				reasoning?: unknown;
+				content?: unknown;
+				text?: unknown;
+			}>;
+		};
+
+		for (const value of [payload.feedback, payload.content, payload.text, payload.reasoning]) {
+			if (typeof value === 'string' && value.trim()) {
+				return value.trim();
+			}
+		}
+
+		if (Array.isArray(payload.results)) {
+			for (const item of payload.results) {
+				const value = normalizeReviewFeedback(item);
+				if (value) {
+					return value;
+				}
+			}
 		}
 	}
 
