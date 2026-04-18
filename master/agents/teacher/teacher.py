@@ -138,12 +138,12 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             continue
 
                         item_index = id_to_index.get(ids)
-                        discrimination_a = (
+                        discrimination_a_value = (
                             state_discrimination_a[item_index]
                             if item_index is not None and item_index < len(state_discrimination_a)
                             else None
                         )
-                        difficulty_b = (
+                        difficulty_b_value = (
                             state_difficulty_b[item_index]
                             if item_index is not None and item_index < len(state_difficulty_b)
                             else None
@@ -159,8 +159,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             "correct_answer": correct_answer_value,
                             "has_image": item.get("has_image"),
                             "image_url": item.get("image_url"),
-                            "discrimination_a": discrimination_a,
-                            "difficulty_b": difficulty_b,
+                            "discrimination_a": discrimination_a_value,
+                            "difficulty_b": difficulty_b_value,
                         }
 
                         await self.insert_data("masterthpt", "questions", [data])
@@ -256,39 +256,39 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         return "Use run_draft() or run_debate() instead."
 
 
-# if __name__ == "__main__":
-#     agent = TeacherAgent()
-#     request = MessageRequest(
-#         intent=Intent.REVIEW_MISTAKE.value,
-#         student_id="student_123",
-#         student_answers=[StudentAnswer(question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748', student_answer="B")],
-#         question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748',
-#         # parser_output=[{
-#         #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-#         #     "type": 'multiple_choice',
-#         #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-#         #     "options": [
-#         #         'A.$\\frac{h}{3}$',
-#         #         'B.$\\frac{h\\sqrt{2}}{2}.$',
-#         #         'C.$\\frac{h}{2}.$',
-#         #         'D.$\\frac{h\\sqrt{3}}{2}.$'
-#         #     ],
-#         # }]
-#     )
+if __name__ == "__main__":
+    agent = TeacherAgent()
+    request = MessageRequest(
+        intent=Intent.REVIEW_MISTAKE.value,
+        student_id="student_123",
+        student_answers=[StudentAnswer(question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748', student_answer="B")],
+        question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748',
+        # parser_output=[{
+        #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
+        #     "type": 'multiple_choice',
+        #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
+        #     "options": [
+        #         'A.$\\frac{h}{3}$',
+        #         'B.$\\frac{h\\sqrt{2}}{2}.$',
+        #         'C.$\\frac{h}{2}.$',
+        #         'D.$\\frac{h\\sqrt{3}}{2}.$'
+        #     ],
+        # }]
+    )
 
-#     state= {
-#         "request": request,
-#         "phase": "draft",
-#         "round": 0,
-#         "max_round": 3,
-#     }
+    state= {
+        "request": request,
+        "phase": "draft",
+        "round": 0,
+        "max_round": 3,
+    }
 
-#     asyncio.run(agent.setup())
-#     result = asyncio.run(agent._run_batch(state))
-#     try:
-#         print(json.dumps(result, ensure_ascii=True, default=str))
-#     except (BrokenPipeError, ValueError):
-#         pass
+    asyncio.run(agent.setup())
+    result = asyncio.run(agent._run_batch(state))
+    try:
+        print(json.dumps(result, ensure_ascii=True, default=str))
+    except (BrokenPipeError, ValueError):
+        pass
 
 
     

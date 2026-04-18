@@ -93,12 +93,15 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
         intent = request.intent
+        round_now = state.get("round", 0)
+        max_round = state.get("max_round", 3)
 
         is_agreed = []
         solutions = []
         confidence = []
         feedback = []
-        item_list = request.parser_output
+        item_list = request.parser_output or []
+        teacher_feedback = state.get("teacher_feedback") or []
         id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
         state_confidence = state.get("confidence", []) or []
         state_is_agreed = state.get("is_agreed", []) or []
@@ -174,7 +177,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             
             responses: EvaluateBatch = await self._llm_with_output.ainvoke(prompt)
 
-            if intent == Intent.PREPROCESS.value and state["round"] >= state["max_round"] and need_verify:
+            if intent == Intent.PREPROCESS.value and round_now >= max_round and need_verify:
                 need_verify_by_id = {item["id"]: item for item in need_verify}
                 for response in responses.results:
                     item = need_verify_by_id.get(response.question_id)
@@ -198,11 +201,12 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:
+                latest_teacher_feedback = teacher_feedback[-1] if teacher_feedback else ""
                 state.setdefault("response", []).append(MessageResponse(
                     student_id=request.student_id,
                     exam_id=request.exam_id,
                     question_id=ids,
-                    feedback=f"Câu trả lời đúng là {state['teacher_feedback'][-1]}"
+                    feedback=f"Câu trả lời đúng là {latest_teacher_feedback}"
                 ))
 
             # Cần thảo luận thêm các câu chưa chắc chắn để đưa ra quyết định cuối cùng
@@ -221,7 +225,8 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             "request": request,
             "phase": "teacher",
             "is_agreed": is_agreed,
-            "round": state["round"] + 1,
+            "round": round_now + 1,
+            "max_round": max_round,
             "confidence": confidence,
             "solutions": solutions,
             "verifier_feedback": feedback
