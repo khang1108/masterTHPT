@@ -43,7 +43,6 @@ class Pipeline:
     async def build_pipeline(self):
         log_agent_event("pipeline", "build_pipeline:start", extra={"thread_id": self.thread_id}, mode="agent_node")
         graph_builder = StateGraph(AgentState)
-        graph_builder.add_node("Tools", self.teacher.get_tool_node)
         graph_builder.add_node("Parser", self.parser.parser)
         graph_builder.add_node("Teacher", self.teacher.teacher)
         graph_builder.add_node("Verifier", self.verifier.verifier)
@@ -59,17 +58,15 @@ class Pipeline:
         graph_builder.add_conditional_edges(
             "Teacher", 
             self.teacher.teacher_router, 
-            {"tools": "Tools", "verify": "Verifier", "END": END}    
+            {"verify": "Verifier", "END": END}
         )
-        graph_builder.add_edge("Tools", "Teacher")
 
         # Verifier subgraph
         graph_builder.add_conditional_edges(
             "Verifier", 
             self.verifier.verifier_router, 
-            {"tools": "Tools", "teacher": "Teacher", "END": END}    
+            {"teacher": "Teacher", "END": END}
         )
-        graph_builder.add_edge("Tools", "Verifier")
 
         self.graph = graph_builder.compile(checkpointer=self.memory)
         log_agent_event("pipeline", "build_pipeline:done", extra={"thread_id": self.thread_id}, mode="completed")
@@ -77,6 +74,11 @@ class Pipeline:
     async def run_superstep(self, request):
         log_agent_event("pipeline", "run_superstep:start", request=request, extra={"thread_id": self.thread_id}, mode="agent_node")
         config = {"configurable": {"thread_id": self.thread_id}}
+        
+        # Clean up existing debug output
+        import os
+        if request.intent == Intent.PREPROCESS.value and os.path.exists("preprocess_output.json"):
+            os.remove("preprocess_output.json")
 
         state = AgentState(
             request=request,
@@ -114,47 +116,6 @@ async def run_superstep(request):
     pipeline = Pipeline()
     await pipeline.setup()
 
-    # request = MessageRequest(
-    #     intent=Intent.PREPROCESS.value,
-    #     student_id="student_123",
-    #     student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
-    #     question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
-    #     parser_output=[{
-    #         "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-    #         "type": 'multiple_choice',
-    #         "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-    #         "options": [
-    #             'A.$\\frac{h}{3}$',
-    #             'B.$\\frac{h\\sqrt{2}}{2}.$',
-    #             'C.$\\frac{h}{2}.$',
-    #             'D.$\\frac{h\\sqrt{3}}{2}.$'
-    #         ],
-    #     }]
-    # )
-
-    # result = await pipeline.run_superstep(request)
-    # try:
-    #     print(json.dumps(result, ensure_ascii=True, default=str))
-    # except (BrokenPipeError, ValueError):
-    #     pass
-        
-    # request = MessageRequest(
-    #     intent=Intent.ASK_HINT.value,
-    #     student_id="student_123",
-    #     student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
-    #     question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
-    #     parser_output=[{
-    #         "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-    #         "type": 'multiple_choice',
-    #         "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-    #         "options": [
-    #             'A.$\\frac{h}{3}$',
-    #             'B.$\\frac{h\\sqrt{2}}{2}.$',
-    #             'C.$\\frac{h}{2}.$',
-    #             'D.$\\frac{h\\sqrt{3}}{2}.$'
-    #         ],
-    #     }]
-    # )
     try:
         return await pipeline.run_superstep(request)
     finally:

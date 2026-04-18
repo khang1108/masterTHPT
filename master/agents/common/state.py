@@ -36,6 +36,7 @@ class AgentState(TypedDict, total=False):
     max_round: int
     is_agreed: list[bool]
     phase: Literal["tools", "draft", "debate", "verify", "finalize", "END"]
+    is_agreed: List[bool]
     reasoning: str
     confidence: list[float]
     teacher_feedback: list[Any]

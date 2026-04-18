@@ -1,6 +1,6 @@
 from typing import Optional, Annotated, Any, List
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -12,7 +12,10 @@ from master.agents.common.tools import ToolsRegistry
 from master.agents.common.langsmith import build_langsmith_invoke_config
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
+    teacher_system_prompt,
     teacher_preprocess_prompt,
+    teacher_counter_evidence_prompt,
+    teacher_tool_research_prompt,
     teacher_hint_prompt,
     teacher_review_mistake_prompt,
 )
@@ -33,7 +36,16 @@ class Evaluate(BaseModel):
     question_id: str
     agree: bool = Field(description="Teacher có đồng ý với feedback của Verifier không? Nếu feedback của Verifier để trống thì điền false.")
     confidence: float = 0.5
-    correct_answer: str = Field(description="Đáp án đúng A, B, C, D. Nếu không xác định được đáp án đúng thì để trống.")
+    correct_answer: Optional[str] = Field(
+        default=None,
+        description=(
+            "Đáp án đúng theo type của câu hỏi. "
+            "multiple_choice: chỉ A/B/C/D; "
+            "true_false: chuỗi T/F theo từng ý, ví dụ 'T, T, F, T'; "
+            "short_ans hoặc short_answer: chuỗi số thuần như '0.33' hoặc '2'. "
+            "Nếu không xác định được thì để null."
+        ),
+    )
     reasoning: str =  Field(description="Giải thích ngắn gọn về lý do đồng ý hay không đồng ý với đáp án của học sinh, hoặc giải thích cách giải nếu đang ở chế độ PREPROCESS.")         
     feedback: str = Field(description="Phản hồi cụ thể cho học sinh, có thể là gợi ý để cải thiện hoặc lời khen nếu đáp án đúng. Phản hồi phải rõ ràng, thân thiện và mang tính xây dựng.")
     discrimination_a: float = Field(description="Độ phân hóa của câu hỏi để đánh giá học sinh giỏi hay yếu, giá trị từ 0 đến 1, càng cao càng phân biệt tốt.")
@@ -49,6 +61,7 @@ class EvaluateBatch(BaseModel):
 class TeacherAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="Teacher")
+        self.system_prompt = teacher_system_prompt()
         self._llm        = None
         self._llm_with_single_output = None
         self._llm_with_batch_output = None
@@ -184,7 +197,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
             model="gpt-oss-120b",
-            max_tokens=6000,
+            max_tokens=8000,
             temperature=0.7,
         )
         logger.info(f"LLM client for Teacher initialized: {os.getenv("FPT_API_KEY")}, {os.getenv("FPT_BASE_URL")}, model={llm.model}")
@@ -195,27 +208,22 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         logger.agent_node("Teacher setup completed")
 
     def teacher_router(self, state: AgentState) -> str:
-        teacher_feedback = state.get("teacher_feedback") or []
-        last_feedback = teacher_feedback[-1] if teacher_feedback else None
         request = state["request"]
         intent = request.intent
+        current_phase = state.get("phase", "draft")
         round_now = state.get("round", 0)
         max_round = state.get("max_round", 3)
-        confidence = state.get("confidence") or []
         is_agreed = state.get("is_agreed") or []
 
-        if hasattr(last_feedback, "tool_calls") and last_feedback.tool_calls:
-            return "tools"
-        if state["phase"] == "END":
+        if current_phase == "END":
             return "END"
-        if state["phase"] == "verify":
+        if current_phase == "verify":
             # PREPROCESS should always go through Verifier; Verifier decides when to stop.
             if intent == Intent.PREPROCESS.value:
                 return "verify"
-            if round_now >= max_round or (confidence and (confidence[0] >= 0.9 or (is_agreed and is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value))):
+            if round_now >= max_round or (is_agreed and is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value):
                 return "END"
         return "verify"
-
 
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
@@ -233,7 +241,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             
             item_list = request.parser_output or []
             id_to_index = {(item.get("id") or item.get("question_id")): idx for idx, item in enumerate(item_list)} if item_list else {}
-            state_confidence = state.get("confidence", []) or []
+            remaining_items = []  # Collect items that still need verification
+            db_inserted = 0  # Track total DB inserts this round
+            db_saved_total_before = state.get("db_saved_total", 0) or 0
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
             state_difficulty_b = state.get("difficulty_b", []) or []
@@ -253,12 +263,14 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
             for i in range(0, len(item_list), BATCH_SIZE):
                 batch = item_list[i:i + BATCH_SIZE]
+                batch_saved = 0
                 skip_verify = [
                     question_id
                     for question_id in [(item.get("id") or item.get("question_id")) for item in batch]
                     if (
-                        (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_confidence) and state_confidence[id_to_index[question_id]] >= 0.9)
-                        or (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_is_agreed) and state_is_agreed[id_to_index[question_id]])
+                        id_to_index.get(question_id) is not None
+                        and id_to_index[question_id] < len(state_is_agreed)
+                        and state_is_agreed[id_to_index[question_id]]
                     )
                 ]
 
@@ -286,14 +298,35 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             options=item.get("options"),
                         )
                         topic_tags_by_id[ids] = topic_tags_value
+                        question_type = (item.get("type") or "").strip().lower()
+                        normalized_correct_answer = None
+
+                        # Normalize correct answer based on question type 
+                        if question_type == "true_false":
+                            expected_count = len(item.get("options") or [])
+                            answer_text = str(correct_answer_value or "").strip().upper()
+                            tokens = [token.strip() for token in answer_text.split(",") if token.strip()]
+                            if tokens and all(token in {"T", "F"} for token in tokens):
+                                if expected_count == 0 or len(tokens) == expected_count:
+                                    normalized_correct_answer = ", ".join(tokens)
+                        elif question_type == "multiple_choice":
+                            answer_text = str(correct_answer_value or "").strip().upper()
+                            if answer_text in {"A", "B", "C", "D"}:
+                                normalized_correct_answer = answer_text
+                        elif question_type in {"short_ans", "short_answer"}:
+                            answer_text = str(correct_answer_value or "").strip()
+                            if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)", answer_text):
+                                normalized_correct_answer = answer_text
+                        else:
+                            normalized_correct_answer = correct_answer_value
 
                         data = {
-                            "id": item.get("id") or item.get("question_id"),
+                            "question_id": item.get("id") or item.get("question_id"),
                             "question_index": item["question_index"],
                             "type": item.get("type"),
                             "content": item.get("content"),
                             "options": item.get("options"),
-                            "correct_answer": correct_answer_value,
+                            "correct_answer": normalized_correct_answer,
                             "has_image": item.get("has_image"),
                             "image_url": item.get("image_url"),
                             "discrimination_a": discrimination_a_value,
@@ -302,9 +335,14 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         }
 
                         await self.insert_data("masterthpt", "questions", [data])
-                        self.logger.agent_node(f"Teacher skip verify preprocess payload: {data}")
+                        db_inserted += 1
+                        batch_saved += 1
+                    self.logger.agent_node(
+                        f"Teacher batch {i//BATCH_SIZE + 1}: saved {batch_saved} skipped-verify questions to database"
+                    )
 
                 need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
+                remaining_items.extend(need_verify)
                 if not need_verify:
                     continue
 
@@ -338,6 +376,84 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     for response in responses.results
                 ])
                 self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {responses}")
+                try:
+                    research_evidence, _, research_source = await self.run_counter_evidence_then_tool(
+                        counter_prompt=teacher_counter_evidence_prompt(batch_input_json),
+                        tool_prompt=teacher_tool_research_prompt(batch_input_json),
+                        messages_key="Teacher_feedback",
+                    )
+                except Exception as error:
+                    research_evidence = ""
+                    research_source = "none"
+                    self.logger.warning(
+                        f"Teacher research failed for batch {i//BATCH_SIZE + 1}: {error}"
+                    )
+
+                if research_evidence:
+                    prompt += (
+                        f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n"
+                        f"{research_evidence}\n"
+                        "Nếu có bằng chứng từ tool thì phải nhắc ngắn gọn bằng chứng đó trong reasoning hoặc feedback."
+                    )
+                responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
+                    self.build_messages(prompt)
+                )
+
+                response_by_id = {r.question_id: r for r in responses.results}
+                missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+                retry_count = 0
+                while missing and retry_count < 2:
+                    retry_count += 1
+                    self.logger.agent_node(f"Teacher retry {retry_count}: {len(missing)} missing items")
+                    retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
+                    retry_prompt = teacher_preprocess_prompt(retry_json)
+                    if research_evidence:
+                        retry_prompt += (
+                            f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n"
+                            f"{research_evidence}\n"
+                        )
+                    retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
+                        self.build_messages(retry_prompt)
+                    )
+                    for r in retry_responses.results:
+                        response_by_id[r.question_id] = r
+                    missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+
+                for item in need_verify:
+                    item_id = item.get("id") or item.get("question_id")
+                    r = response_by_id.get(item_id)
+                    if r:
+                        is_agreed.append(r.agree)
+                        confidence.append(r.confidence)
+                        discrimination_a.append(r.discrimination_a)
+                        difficulty_b.append(r.difficulty_b)
+                        if r.correct_answer is not None and str(r.correct_answer).strip() != "":
+                            solutions.append(
+                                Solution(question_id=r.question_id, solution=str(r.correct_answer).strip())
+                            )
+                        feedback.append(f"Ở câu {r.question_id}: {r.feedback} vì {r.reasoning}")
+                    else:
+                        self.logger.agent_node(f"Teacher: no response for {item_id} after retries")
+                        is_agreed.append(False)
+                        confidence.append(0.0)
+                        discrimination_a.append(0.5)
+                        difficulty_b.append(0.5)
+                        feedback.append(f"Ở câu {item_id}: Không có phản hồi từ Teacher LLM")
+                self.logger.agent_node(
+                    f"Teacher batch {i//BATCH_SIZE + 1} summary: "
+                    f"{len(response_by_id)}/{len(need_verify)} responses, "
+                    f"{batch_saved} questions saved this batch, "
+                    f"{db_inserted} saved this round so far"
+                )
+            # Overwrite parser_output with only remaining items that need further verification
+            request.parser_output = remaining_items
+            db_saved_total = db_saved_total_before + db_inserted
+            self.logger.agent_node(
+                f"Teacher round {round_now} summary: "
+                f"{db_inserted} questions saved this round, "
+                f"{db_saved_total} total questions saved to database so far, "
+                f"{len(remaining_items)} remaining"
+            )
             return {
                 "request": request,
                 "phase": "verify",
@@ -353,6 +469,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     topic_tags_by_id.get(item.get("id") or item.get("question_id"), [])
                     for item in item_list
                 ],
+                "db_saved_total": db_saved_total,
             }
 
         if intent == Intent.ASK_HINT.value:
@@ -369,9 +486,13 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
             prompt = teacher_hint_prompt(content, student_answer, student_message)
             # print(prompt)
-            response = await self._llm.ainvoke(self.build_messages(prompt))
+            response = await self._llm_with_single_output.ainvoke(
+                self.build_messages(prompt)
+            )
             self.logger.agent_node(f"Hint response: {response}")
-            feedback = self._extract_feedback_text(response)
+            hint_feedback_message = AIMessage(
+                content=json.dumps(response.model_dump(), ensure_ascii=False)
+            )
             return {
                 "request": request,
                 "questions": state.get("questions", []),
@@ -380,7 +501,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "round": state.get("round", 0),
                 "confidence": state.get("confidence", []),
                 "is_agreed": state.get("is_agreed", []),
-                "teacher_feedback": [feedback]
+                "teacher_feedback": [hint_feedback_message]
             }
 
         if intent == Intent.REVIEW_MISTAKE.value:
