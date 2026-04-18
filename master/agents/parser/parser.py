@@ -141,9 +141,11 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
             model="gemma-4-31B-it",
+            # provider="google_genai",
+            # model="gemini-2.5-flash-lite",
             temperature=0.1,
             top_p=0.8,
-            max_tokens=4096,
+            max_tokens=8192,
         )
         self._llm = llm
         self.logger.agent_node("Parser setup completed")
@@ -224,7 +226,9 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             if raw in {"multiple_choice", "multiple choice", "trắc nghiệm", "trac nghiem"}:
                 return Type.MULTIPLE_CHOICE
             if raw in {"true_false", "true false", "đúng sai", "đúng/sai", "dung sai"}:
-                return Type.TRUE_FALSE
+                # If OCR says true_false but we still have no sub-options after extraction,
+                # keep the question instead of failing validation.
+                return Type.TRUE_FALSE if options else Type.SHORT_ANSWER
             try:
                 return Type(raw)
             except ValueError:
@@ -235,6 +239,104 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             return Type.SHORT_ANSWER
 
         return Type.MULTIPLE_CHOICE
+
+    def _decode_escaped_text(self, text: str | None) -> str:
+        normalized = str(text or "").strip()
+        if not normalized:
+            return ""
+
+        if any(token in normalized for token in ('\\"', "\\n", "\\r", "\\t")):
+            normalized = (
+                normalized
+                .replace("\\r", "\r")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace('\\"', '"')
+            )
+
+        return normalized.strip()
+
+    def _extract_embedded_questions(self, text: str | None) -> list[dict]:
+        normalized = self._decode_escaped_text(text)
+        if not normalized:
+            return []
+
+        candidates: list[str] = []
+
+        def add_candidate(value: str) -> None:
+            candidate = value.strip()
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+
+        add_candidate(normalized)
+
+        start = normalized.find("{")
+        end = normalized.rfind("}")
+        if 0 <= start < end:
+            add_candidate(normalized[start:end + 1])
+
+        trimmed = normalized.lstrip().strip(",")
+        if not trimmed.startswith("{") and ('"metadata"' in trimmed or '"questions"' in trimmed):
+            add_candidate("{" + trimmed + "}")
+
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+            if isinstance(payload, dict) and isinstance(payload.get("questions"), list):
+                embedded_questions = [
+                    question for question in payload["questions"]
+                    if isinstance(question, dict)
+                ]
+                if embedded_questions:
+                    return embedded_questions
+
+        return []
+
+    def _normalize_question_content(self, content: str | None) -> str:
+        normalized = self._decode_escaped_text(content)
+        if not normalized:
+            return ""
+
+        if '"metadata"' in normalized[:300] or '"questions"' in normalized[:300]:
+            question_start = re.search(
+                r"\b(Câu|Cau|CÃ¢u|Bài|Bai)\s*\d+\b",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+            if question_start:
+                normalized = normalized[question_start.start():]
+            elif re.search(r'^\s*[{[]?\s*"?(metadata|questions)"?\s*:', normalized, flags=re.IGNORECASE):
+                return ""
+
+        normalized = re.sub(
+            r"^(?:Câu|Cau|CÃ¢u)\s*\d+\s*[:.\-]?\s*",
+            "",
+            normalized,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        return normalized
+
+    def _normalize_options(self, options: list | None) -> list[str]:
+        if not isinstance(options, list):
+            return []
+
+        normalized_options: list[str] = []
+        for option in options:
+            normalized = self._decode_escaped_text(str(option))
+            if normalized:
+                normalized_options.append(normalized)
+
+        return normalized_options
 
 
     def _load_file(self, file_path: str) -> tuple[str, list[tuple[int, bytes, str]]]:
@@ -290,7 +392,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 ):
                     return False
 
-                pixels = list(grayscale.get_flattened_data())
+                pixels = list(grayscale.getdata())
                 total_pixels = max(1, len(pixels))
                 non_white_pixels = sum(pixel < WHITE_PIXEL_THRESHOLD for pixel in pixels)
                 return (non_white_pixels / total_pixels) >= MIN_NON_WHITE_RATIO
@@ -394,11 +496,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         # Sort results by page number to ensure correct order
         ocr_pages = [all_results[page_num] for page_num in sorted(all_results.keys())]
-
-        # Save ocr_pages to JSON for debugging
-        # debug_output_path = f"ocr_output.json"
-        # with open(debug_output_path, "w", encoding="utf-8") as f:
-        #     json.dump(ocr_pages, f, ensure_ascii=False, indent=2)
             
         raw_metadata = ocr_pages[0].get("metadata", {}) if ocr_pages else {}
         try:
@@ -411,6 +508,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         questions: list[QuestionOutput] = []
         question_index = 0
+        dropped_count = 0
 
         for page in ocr_pages:
             page_questions: list[dict] = []
@@ -422,15 +520,27 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             elif isinstance(page, dict) and "raw_text" in page:
                 page_questions = [{"content": page.get("raw_text", "")}]
 
+            normalized_page_questions: list[dict] = []
             for item in page_questions:
-                question_index += 1
-
-                # Get question content and normalize it to remove text like 'Câu 1:'
-                content = str(item.get("content", "")).strip()
-                content = re.sub(r"^Câu\s*\d+\s*[:.\-]?\s*", "", content, flags=re.IGNORECASE).strip()
-                if not content:
-                    question_index -= 1
+                embedded_questions = self._extract_embedded_questions(item.get("content"))
+                if embedded_questions:
+                    normalized_page_questions.extend(embedded_questions)
+                    self.logger.agent_node(
+                        f"Parser expanded embedded OCR JSON into {len(embedded_questions)} questions"
+                    )
                     continue
+                normalized_page_questions.append(item)
+
+            page_questions = normalized_page_questions
+
+            for item in page_questions:
+
+                # Get question content and normalize it to remove leaked JSON scaffolding
+                content = self._normalize_question_content(item.get("content"))
+                if not content:
+                    continue
+
+                question_index += 1
 
                 # Check if question has image and get image URL if available
                 image_url = item.get("image_url")
@@ -440,7 +550,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                     has_image = bool(image_url) or "![" in content or "<img" in lower_content
                 
                 # Extract options if it's a multiple choice question
-                options = item.get("options", [])
+                options = self._normalize_options(item.get("options"))
                 
                 # Normalize: extract options embedded in content for true_false questions
                 raw_type = item.get("type", "")
@@ -450,6 +560,11 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
                 # Get the type of the question
                 question_type = self._normalize_question_type(item.get("type"), options)
+                if question_type == Type.TRUE_FALSE and not options:
+                    self.logger.warning(
+                        f"Parser downgraded question index={question_index} from true_false to short_ans because options are missing"
+                    )
+                    question_type = Type.SHORT_ANSWER
 
                 # Create question output object
                 try:
@@ -462,13 +577,20 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                         image_url=image_url if has_image else None,
                     )
                 except ValidationError as error:
+                    dropped_count += 1
                     self.logger.warning(
-                        f"Parser question validation failed at index={question_index}: {error}"
+                        f"Parser question DROPPED index={question_index} "
+                        f"type={question_type} error={error}"
                     )
                     continue
 
                 # Add question object to the list
                 questions.append(question_obj)
+
+        self.logger.agent_node(
+            f"Parser extraction complete: kept={len(questions)} dropped={dropped_count} "
+            f"total_seen={question_index}"
+        )
 
         exam = ExamDocument.model_validate({
             "id": str(uuid.uuid4()),
@@ -486,10 +608,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         parser_output = {"questions": [q.model_dump() for q in questions]}
 
-        # output_path = "ocr_output.json"
-        # with open(output_path, "w", encoding="utf-8") as file:
-        #     json.dump(parser_output, file, ensure_ascii=False, indent=2)
-        # self.logger.agent_node(f"Parser saved parsed OCR output to {output_path}")
+        output_path = "ocr_output.json"
+        with open(output_path, "w", encoding="utf-8") as file:
+            json.dump(parser_output, file, ensure_ascii=False, indent=2)
+        self.logger.agent_node(f"Parser saved parsed OCR output to {output_path}")
         
         await self.insert_data("masterthpt", "exams", [exam.model_dump(mode="json")])
         self.logger.agent_node(f"Parser saved exam with {len(questions)} questions to database")
