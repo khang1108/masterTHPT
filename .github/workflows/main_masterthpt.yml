@@ -130,34 +130,41 @@ jobs:
 
       - name: Create or update AI container app
         uses: azure/cli@v2
+        env:
+          ACR_LOGIN_SERVER_SECRET: ${{ secrets.ACR_LOGIN_SERVER }}
+          MONGO_URI_SECRET: ${{ secrets.MONGO_URI }}
+          FPT_AI_KEY_SECRET: ${{ secrets.FPT_AI_KEY }}
+          GEMINI_API_KEY_SECRET: ${{ secrets.GEMINI_API_KEY }}
+          LANGSMITH_API_KEY_SECRET: ${{ secrets.LANGSMITH_API_KEY }}
+          MONGO_DB_NAME_SECRET: ${{ secrets.MONGO_DB_NAME }}
         with:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
-            ACR_NAME="$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | cut -d'.' -f1)"
+            ACR_NAME="$(echo "${ACR_LOGIN_SERVER_SECRET}" | cut -d'.' -f1)"
             ACR_USERNAME="$(az acr credential show -n "${ACR_NAME}" --query username -o tsv)"
             ACR_PASSWORD="$(az acr credential show -n "${ACR_NAME}" --query 'passwords[0].value' -o tsv)"
 
             SECRET_ARGS=(
-              mongo-uri="${{ secrets.MONGO_URI }}"
+              mongo-uri="${MONGO_URI_SECRET}"
             )
 
-            if [ -n "${{ secrets.FPT_AI_KEY }}" ]; then
-              SECRET_ARGS+=(fpt-api-key="${{ secrets.FPT_AI_KEY }}")
+            if [ -n "${FPT_AI_KEY_SECRET}" ]; then
+              SECRET_ARGS+=(fpt-api-key="${FPT_AI_KEY_SECRET}")
             fi
 
-            if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-              SECRET_ARGS+=(gemini-api-key="${{ secrets.GEMINI_API_KEY }}")
+            if [ -n "${GEMINI_API_KEY_SECRET}" ]; then
+              SECRET_ARGS+=(gemini-api-key="${GEMINI_API_KEY_SECRET}")
             fi
 
-            if [ -n "${{ secrets.LANGSMITH_API_KEY }}" ]; then
-              SECRET_ARGS+=(langsmith-api-key="${{ secrets.LANGSMITH_API_KEY }}")
+            if [ -n "${LANGSMITH_API_KEY_SECRET}" ]; then
+              SECRET_ARGS+=(langsmith-api-key="${LANGSMITH_API_KEY_SECRET}")
             fi
 
             ENV_ARGS=(
               PORT=8001
               MONGO_URI=secretref:mongo-uri
-              MONGO_DB_NAME="${{ secrets.MONGO_DB_NAME || 'masterthpt' }}"
+              MONGO_DB_NAME="${MONGO_DB_NAME_SECRET:-masterthpt}"
               FPT_BASE_URL=https://mkp-api.fptcloud.com
               FPT_LLM_BASE_URL=https://mkp-api.fptcloud.com
               LANGSMITH_TRACING=true
@@ -165,7 +172,7 @@ jobs:
               LANGSMITH_PROJECT=masterthpt
             )
 
-            if [ -n "${{ secrets.FPT_AI_KEY }}" ]; then
+            if [ -n "${FPT_AI_KEY_SECRET}" ]; then
               ENV_ARGS+=(
                 FPT_API_KEY=secretref:fpt-api-key
                 FPT_LLM_API_KEY=secretref:fpt-api-key
@@ -173,14 +180,14 @@ jobs:
               )
             fi
 
-            if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            if [ -n "${GEMINI_API_KEY_SECRET}" ]; then
               ENV_ARGS+=(
                 GEMINI_API_KEY=secretref:gemini-api-key
                 GOOGLE_API_KEY=secretref:gemini-api-key
               )
             fi
 
-            if [ -n "${{ secrets.LANGSMITH_API_KEY }}" ]; then
+            if [ -n "${LANGSMITH_API_KEY_SECRET}" ]; then
               ENV_ARGS+=(
                 LANGSMITH_API_KEY=secretref:langsmith-api-key
               )
@@ -197,22 +204,22 @@ jobs:
               az containerapp registry set \
                 --name "${{ env.AI_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --server "${ACR_LOGIN_SERVER_SECRET}" \
                 --username "${ACR_USERNAME}" \
                 --password "${ACR_PASSWORD}"
 
               az containerapp update \
                 --name "${{ env.AI_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-ai:${{ github.sha }}" \
+                --image "${ACR_LOGIN_SERVER_SECRET}/masterthpt-ai:${{ github.sha }}" \
                 --set-env-vars "${ENV_ARGS[@]}"
             else
               az containerapp create \
                 --name "${{ env.AI_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
                 --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
-                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-ai:${{ github.sha }}" \
-                --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --image "${ACR_LOGIN_SERVER_SECRET}/masterthpt-ai:${{ github.sha }}" \
+                --registry-server "${ACR_LOGIN_SERVER_SECRET}" \
                 --registry-username "${ACR_USERNAME}" \
                 --registry-password "${ACR_PASSWORD}" \
                 --ingress internal \
@@ -228,17 +235,23 @@ jobs:
 
       - name: Create or update API container app
         uses: azure/cli@v2
+        env:
+          ACR_LOGIN_SERVER_SECRET: ${{ secrets.ACR_LOGIN_SERVER }}
+          GOOGLE_CLIENT_ID_SECRET: ${{ secrets.GOOGLE_CLIENT_ID }}
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID_SECRET: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+          DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET_SECRET: ${{ secrets.JWT_SECRET }}
         with:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
-            ACR_NAME="$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | cut -d'.' -f1)"
+            ACR_NAME="$(echo "${ACR_LOGIN_SERVER_SECRET}" | cut -d'.' -f1)"
             ACR_USERNAME="$(az acr credential show -n "${ACR_NAME}" --query username -o tsv)"
             ACR_PASSWORD="$(az acr credential show -n "${ACR_NAME}" --query 'passwords[0].value' -o tsv)"
 
-            GOOGLE_CLIENT_ID_VALUE="${{ secrets.GOOGLE_CLIENT_ID }}"
+            GOOGLE_CLIENT_ID_VALUE="${GOOGLE_CLIENT_ID_SECRET}"
             if [ -z "${GOOGLE_CLIENT_ID_VALUE}" ]; then
-              GOOGLE_CLIENT_ID_VALUE="${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}"
+              GOOGLE_CLIENT_ID_VALUE="${NEXT_PUBLIC_GOOGLE_CLIENT_ID_SECRET}"
             fi
 
             if az containerapp show \
@@ -248,20 +261,20 @@ jobs:
                 --name "${{ env.API_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
                 --secrets \
-                  database-url="${{ secrets.DATABASE_URL }}" \
-                  jwt-secret="${{ secrets.JWT_SECRET }}"
+                  database-url="${DATABASE_URL_SECRET}" \
+                  jwt-secret="${JWT_SECRET_SECRET}"
 
               az containerapp registry set \
                 --name "${{ env.API_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --server "${ACR_LOGIN_SERVER_SECRET}" \
                 --username "${ACR_USERNAME}" \
                 --password "${ACR_PASSWORD}"
 
               az containerapp update \
                 --name "${{ env.API_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}" \
+                --image "${ACR_LOGIN_SERVER_SECRET}/masterthpt-api:${{ github.sha }}" \
                 --set-env-vars \
                   PORT=3001 \
                   DATABASE_URL=secretref:database-url \
@@ -275,8 +288,8 @@ jobs:
                 --name "${{ env.API_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
                 --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
-                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-api:${{ github.sha }}" \
-                --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --image "${ACR_LOGIN_SERVER_SECRET}/masterthpt-api:${{ github.sha }}" \
+                --registry-server "${ACR_LOGIN_SERVER_SECRET}" \
                 --registry-username "${ACR_USERNAME}" \
                 --registry-password "${ACR_PASSWORD}" \
                 --ingress internal \
@@ -286,8 +299,8 @@ jobs:
                 --cpu 2 \
                 --memory 4.0Gi \
                 --secrets \
-                  database-url="${{ secrets.DATABASE_URL }}" \
-                  jwt-secret="${{ secrets.JWT_SECRET }}" \
+                  database-url="${DATABASE_URL_SECRET}" \
+                  jwt-secret="${JWT_SECRET_SECRET}" \
                 --env-vars \
                   PORT=3001 \
                   DATABASE_URL=secretref:database-url \
@@ -300,11 +313,14 @@ jobs:
 
       - name: Create or update Web container app
         uses: azure/cli@v2
+        env:
+          ACR_LOGIN_SERVER_SECRET: ${{ secrets.ACR_LOGIN_SERVER }}
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID_SECRET: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
         with:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
-            ACR_NAME="$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | cut -d'.' -f1)"
+            ACR_NAME="$(echo "${ACR_LOGIN_SERVER_SECRET}" | cut -d'.' -f1)"
             ACR_USERNAME="$(az acr credential show -n "${ACR_NAME}" --query username -o tsv)"
             ACR_PASSWORD="$(az acr credential show -n "${ACR_NAME}" --query 'passwords[0].value' -o tsv)"
 
@@ -314,26 +330,26 @@ jobs:
               az containerapp registry set \
                 --name "${{ env.WEB_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --server "${ACR_LOGIN_SERVER_SECRET}" \
                 --username "${ACR_USERNAME}" \
                 --password "${ACR_PASSWORD}"
 
               az containerapp update \
                 --name "${{ env.WEB_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:${{ github.sha }}" \
+                --image "${ACR_LOGIN_SERVER_SECRET}/masterthpt-web:${{ github.sha }}" \
                 --set-env-vars \
                   PORT=3000 \
                   NEXT_PUBLIC_API_URL=/api \
                   API_PROXY_TARGET="http://${{ env.API_APP_NAME }}" \
-                  NEXT_PUBLIC_GOOGLE_CLIENT_ID="${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}"
+                  NEXT_PUBLIC_GOOGLE_CLIENT_ID="${NEXT_PUBLIC_GOOGLE_CLIENT_ID_SECRET}"
             else
               az containerapp create \
                 --name "${{ env.WEB_APP_NAME }}" \
                 --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
                 --environment "${{ env.CONTAINERAPPS_ENV_NAME }}" \
-                --image "${{ secrets.ACR_LOGIN_SERVER }}/masterthpt-web:${{ github.sha }}" \
-                --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+                --image "${ACR_LOGIN_SERVER_SECRET}/masterthpt-web:${{ github.sha }}" \
+                --registry-server "${ACR_LOGIN_SERVER_SECRET}" \
                 --registry-username "${ACR_USERNAME}" \
                 --registry-password "${ACR_PASSWORD}" \
                 --ingress external \
@@ -346,7 +362,7 @@ jobs:
                   PORT=3000 \
                   NEXT_PUBLIC_API_URL=/api \
                   API_PROXY_TARGET="http://${{ env.API_APP_NAME }}" \
-                  NEXT_PUBLIC_GOOGLE_CLIENT_ID="${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}"
+                  NEXT_PUBLIC_GOOGLE_CLIENT_ID="${NEXT_PUBLIC_GOOGLE_CLIENT_ID_SECRET}"
             fi
 
       - name: Print web URL
