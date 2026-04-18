@@ -1,6 +1,7 @@
 from typing import Optional, Annotated, Any, List
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
+from langchain_core.messages import AIMessage
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -80,10 +81,16 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
         conversation_lines = ["Conversation history:", ""]
         for i, t_feedback in enumerate(teacher_feedback):
+            teacher_text = t_feedback.content if hasattr(t_feedback, "content") else str(t_feedback)
+            if isinstance(teacher_text, list):
+                teacher_text = json.dumps(teacher_text, ensure_ascii=False)
             conversation_lines.append(f"Round {i + 1}:")
-            conversation_lines.append(f"Teacher feedback: {t_feedback}")
+            conversation_lines.append(f"Teacher feedback: {teacher_text}")
             if i < len(verifier_feedback):
-                conversation_lines.append(f"Verifier feedback: {verifier_feedback[i]}")
+                verifier_text = verifier_feedback[i].content if hasattr(verifier_feedback[i], "content") else str(verifier_feedback[i])
+                if isinstance(verifier_text, list):
+                    verifier_text = json.dumps(verifier_text, ensure_ascii=False)
+                conversation_lines.append(f"Verifier feedback: {verifier_text}")
             conversation_lines.append("")
 
         return "\n".join(conversation_lines)
@@ -132,7 +139,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             
             # TODO: CASTING OUTPUT AND INSERT IT TO DATABASE
             if intent == Intent.PREPROCESS.value and skip_verify:
-                batch_map = {item["id"]: item for item in batch}
+                batch_map = {(item.get("id") or item.get("question_id")): item for item in batch}
                 for ids in skip_verify:
                     item = batch_map.get(ids)
                     if not item:
@@ -152,7 +159,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     correct_answer = solution_by_id.get(ids)
 
                     data = {
-                        "id": item["id"],
+                        "question_id": item.get("id") or item.get("question_id"),
                         "question_index": item["question_index"],
                         "type": item.get("type"),
                         "content": item.get("content"),
@@ -167,7 +174,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     await self.insert_data("masterthpt", "questions", [data])
                     self.logger.agent_node(f"Skip verify preprocess payload: {data}")
             
-            need_verify = [item for item in batch if item["id"] not in skip_verify]
+            need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
             if not need_verify:
                 continue
 
@@ -201,7 +208,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:
-                latest_teacher_feedback = teacher_feedback[-1] if teacher_feedback else ""
+                latest_teacher_feedback = teacher_feedback[-1].content if teacher_feedback and hasattr(teacher_feedback[-1], "content") else (teacher_feedback[-1] if teacher_feedback else "")
+                if isinstance(latest_teacher_feedback, list):
+                    latest_teacher_feedback = json.dumps(latest_teacher_feedback, ensure_ascii=False)
                 state.setdefault("response", []).append(MessageResponse(
                     student_id=request.student_id,
                     exam_id=request.exam_id,
@@ -217,7 +226,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             ])
             confidence.extend([response.confidence for response in responses.results])
             feedback.extend([
-                f"Ở câu {response.question_id}: {response.feedback} vì {response.reasoning}"
+                AIMessage(content=f"Ở câu {response.question_id}: {response.feedback} vì {response.reasoning}")
                 for response in responses.results
             ])
             self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {responses}")

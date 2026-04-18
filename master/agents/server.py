@@ -143,7 +143,7 @@ async def main():
         student_id="69df0e1d0e91c4f3d1d6353f",
 		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
         file_path="c:\\Users\\abcsd\\Downloads\\test.pdf"
-)
+    )
 
     result = await pipeline.run_superstep(request)
     try:

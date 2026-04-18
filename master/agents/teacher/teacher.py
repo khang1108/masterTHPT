@@ -1,5 +1,6 @@
 from typing import Optional, Annotated, Any, List
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import AIMessage
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -20,7 +21,7 @@ import os
 import asyncio
 
 load_dotenv(override=True)
-BATCH_SIZE = 5
+BATCH_SIZE = 3
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
             model="gpt-oss-120b",
-            max_tokens=5000,
+            max_tokens=6000,
             temperature=0.7,
         )
         await self.setup_tools(llm)
@@ -104,7 +105,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             difficulty_b = []
             
             item_list = request.parser_output or []
-            id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
+            id_to_index = {(item.get("id") or item.get("question_id")): idx for idx, item in enumerate(item_list)} if item_list else {}
             state_confidence = state.get("confidence", []) or []
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
@@ -123,7 +124,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 batch = item_list[i:i + BATCH_SIZE]
                 skip_verify = [
                     question_id
-                    for question_id in [item["id"] for item in batch]
+                    for question_id in [(item.get("id") or item.get("question_id")) for item in batch]
                     if (
                         (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_confidence) and state_confidence[id_to_index[question_id]] >= 0.9)
                         or (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_is_agreed) and state_is_agreed[id_to_index[question_id]])
@@ -131,7 +132,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 ]
 
                 if skip_verify:
-                    batch_map = {item["id"]: item for item in batch}
+                    batch_map = {(item.get("id") or item.get("question_id")): item for item in batch}
                     for ids in skip_verify:
                         item = batch_map.get(ids)
                         if not item:
@@ -151,7 +152,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         correct_answer_value = solution_by_id.get(ids)
 
                         data = {
-                            "id": item["id"],
+                            "id": item.get("id") or item.get("question_id"),
                             "question_index": item["question_index"],
                             "type": item.get("type"),
                             "content": item.get("content"),
@@ -166,7 +167,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         await self.insert_data("masterthpt", "questions", [data])
                         self.logger.agent_node(f"Teacher skip verify preprocess payload: {data}")
 
-                need_verify = [item for item in batch if item["id"] not in skip_verify]
+                need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
                 if not need_verify:
                     continue
 
@@ -201,7 +202,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             }
 
         if intent == Intent.ASK_HINT.value:
-            question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
+            question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id})
             question = question[0] if question else None
             content = question.get("content") if question else ""
             options = question.get("options") if question else []
@@ -221,7 +222,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             }
 
         if intent == Intent.REVIEW_MISTAKE.value:
-            question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
+            question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id})
             question = question[0] if question else None
             content = question.get("content") if question else ""
             options = question.get("options") if question else []
@@ -234,6 +235,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             print(prompt)
             response = await self._llm_with_single_output.ainvoke(prompt)
             self.logger.agent_node(f"Review mistake response: {response}")
+            review_feedback_message = AIMessage(
+                content=json.dumps(response.model_dump(), ensure_ascii=False)
+            )
             return {
                 "request": request,
                 "phase": "verify",
@@ -242,7 +246,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "confidence": [response.confidence],
                 "is_agreed": [response.agree],
                 "student_answers": StudentAnswer(question_id=request.question_id, student_answer=student_answer),
-                "teacher_feedback": [response]
+                "teacher_feedback": [review_feedback_message]
             }
 
 
@@ -256,39 +260,39 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         return "Use run_draft() or run_debate() instead."
 
 
-if __name__ == "__main__":
-    agent = TeacherAgent()
-    request = MessageRequest(
-        intent=Intent.REVIEW_MISTAKE.value,
-        student_id="student_123",
-        student_answers=[StudentAnswer(question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748', student_answer="B")],
-        question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748',
-        # parser_output=[{
-        #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-        #     "type": 'multiple_choice',
-        #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-        #     "options": [
-        #         'A.$\\frac{h}{3}$',
-        #         'B.$\\frac{h\\sqrt{2}}{2}.$',
-        #         'C.$\\frac{h}{2}.$',
-        #         'D.$\\frac{h\\sqrt{3}}{2}.$'
-        #     ],
-        # }]
-    )
+# if __name__ == "__main__":
+#     agent = TeacherAgent()
+#     request = MessageRequest(
+#         intent=Intent.REVIEW_MISTAKE.value,
+#         student_id="student_123",
+#         student_answers=[StudentAnswer(question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748', student_answer="B")],
+#         question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748',
+#         # parser_output=[{
+#         #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
+#         #     "type": 'multiple_choice',
+#         #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
+#         #     "options": [
+#         #         'A.$\\frac{h}{3}$',
+#         #         'B.$\\frac{h\\sqrt{2}}{2}.$',
+#         #         'C.$\\frac{h}{2}.$',
+#         #         'D.$\\frac{h\\sqrt{3}}{2}.$'
+#         #     ],
+#         # }]
+#     )
 
-    state= {
-        "request": request,
-        "phase": "draft",
-        "round": 0,
-        "max_round": 3,
-    }
+#     state= {
+#         "request": request,
+#         "phase": "draft",
+#         "round": 0,
+#         "max_round": 3,
+#     }
 
-    asyncio.run(agent.setup())
-    result = asyncio.run(agent._run_batch(state))
-    try:
-        print(json.dumps(result, ensure_ascii=True, default=str))
-    except (BrokenPipeError, ValueError):
-        pass
+#     asyncio.run(agent.setup())
+#     result = asyncio.run(agent._run_batch(state))
+#     try:
+#         print(json.dumps(result, ensure_ascii=True, default=str))
+#     except (BrokenPipeError, ValueError):
+#         pass
 
 
     
