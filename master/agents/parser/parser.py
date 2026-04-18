@@ -1,14 +1,15 @@
 from accelerate.utils import transformer_engine
 from typing import Optional
 from langchain_core.messages import HumanMessage
+from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from master.agents import BaseAgent
 from master.agents.common.tools import ToolsRegistry
-from master.agents.common.message import Intent, MessageRequest
+from master.agents.common.message import Intent, MessageRequest, ExamDocument
 from master.agents.common.state import AgentState
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import parser_ocr_instruction, parser_system_prompt
@@ -37,14 +38,63 @@ PARSER_IMAGE_BUCKET_URL = os.getenv("PARSER_IMAGE_BUCKET_URL")
 
 load_dotenv(override=True)
 
+class Type(str, Enum):
+    MULTIPLE_CHOICE = "multiple_choice"
+    TRUE_FALSE = "true_false"
+    SHORT_ANSWER = "short_ans"
+
 class QuestionOutput(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     question_index: int = Field(description="Số thứ tự câu hỏi trong đề, bắt đầu từ 1")
-    type: str = Field(description="Loại câu hỏi, là 1 trong 3 loại sau 'multiple_choice' hoặc 'true_false' hoặc 'short_ans'")
+    type: Type = Field(description="Loại câu hỏi, là 1 trong 3 loại sau 'multiple_choice' hoặc 'true_false' hoặc 'short_ans'")
     content: str = Field(description="Nội dung câu hỏi, có thể bao gồm cả text và LaTeX")
     options: Optional[list[str]] = Field(default=None, description="Danh sách lựa chọn nếu là câu hỏi trắc nghiệm, để trống nếu là câu hỏi tự luận")
     has_image: bool = Field(description="Câu hỏi có chứa hình ảnh hay không")
     image_url: Optional[str] = Field(default=None, description="URL của hình ảnh nếu có")
+
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        content = value.strip()
+        if not content:
+            raise ValueError("content must not be empty")
+        return content
+
+    @field_validator("options")
+    @classmethod
+    def validate_options_items(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        if value is None:
+            return None
+
+        normalized_options = [str(option).strip() for option in value if str(option).strip()]
+        return normalized_options or None
+
+    @model_validator(mode="after")
+    def validate_question_rules(self) -> "QuestionOutput":
+        if self.type == Type.MULTIPLE_CHOICE:
+            if not self.options or len(self.options) != 4:
+                raise ValueError("multiple_choice must have exactly 4 options")
+
+            expected_prefixes = ("A.", "B.", "C.", "D.")
+            for option, prefix in zip(self.options, expected_prefixes):
+                if not option.startswith(prefix):
+                    raise ValueError("multiple_choice options must preserve prefixes A., B., C., D.")
+
+        elif self.type == Type.TRUE_FALSE:
+            if not self.options:
+                raise ValueError("true_false must have options")
+
+            for option in self.options:
+                normalized = option.strip().lower()
+                if not re.match(r"^[a-d][\)\.]", normalized):
+                    raise ValueError("true_false options must preserve clause prefixes a), b), c), d) or a., b., c., d.")
+
+        elif self.type == Type.SHORT_ANSWER:
+            if self.options is not None:
+                raise ValueError("short_ans must have options = []")
+
+        return self
 
 
 class OCRMetadataOutput(BaseModel):
@@ -79,6 +129,17 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         )
         self._llm = llm
         self.logger.agent_node("Parser setup completed")
+
+    def _normalize_question_type(self, raw_type: str | None) -> Type:
+        normalized_type = str(raw_type or Type.MULTIPLE_CHOICE.value).strip().lower()
+        if normalized_type in {"short_ans", "short_answer"}:
+            normalized_type = Type.SHORT_ANSWER.value
+
+        try:
+            return Type(normalized_type)
+        except ValueError:
+            self.logger.warning(f"Parser unsupported question type '{raw_type}', fallback to multiple_choice")
+            return Type.MULTIPLE_CHOICE
 
 
     def _load_file(self, file_path: str) -> tuple[str, list[tuple[int, bytes, str]]]:
@@ -283,36 +344,43 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 options = item.get("options", [])
                 
                 # Get the type of the question
-                types = item.get("type", "multiple_choice")
+                question_type = self._normalize_question_type(item.get("type"))
 
                 # Create question output object
-                question_obj = QuestionOutput(
-                    question_index=question_index,
-                    type=types,
-                    options=options if options else None,
-                    content=content,
-                    has_image=has_image,
-                    image_url=image_url if has_image else None,
-                )
+                try:
+                    question_obj = QuestionOutput(
+                        question_index=question_index,
+                        type=question_type,
+                        options=options if options else None,
+                        content=content,
+                        has_image=has_image,
+                        image_url=image_url if has_image else None,
+                    )
+                except ValidationError as error:
+                    self.logger.warning(
+                        f"Parser question validation failed at index={question_index}: {error}"
+                    )
+                    continue
 
                 # Add question object to the list
                 questions.append(question_obj)
                 question_index += 1
 
-        exam = {
+        exam = ExamDocument.model_validate({
             "id": str(uuid.uuid4()),
-            "subject": metadata.subject,
-            "exam_type": metadata.exam_type,
-            "year": metadata.year,
-            "grade": metadata.grade,
-            "source": metadata.source,
+            "subject": metadata.subject or "Toán",
+            "exam_type": metadata.exam_type or "PREPROCESS_OCR",
+            "year": metadata.year or datetime.datetime.now().year,
+            "grade": metadata.grade or 12,
+            "source": metadata.source or "OCR_PARSER",
+            "generated": metadata.generated,
             "total_questions": len(questions),
-            "duration": metadata.duration,
+            "duration": metadata.duration or 90,
             "created_at": datetime.datetime.now().isoformat(),
             "questions": [q.id for q in questions],
-        }
+        })
 
-        await self.insert_data("masterthpt", "exams", [exam])
+        await self.insert_data("masterthpt", "exams", [exam.model_dump(mode="json")])
         self.logger.agent_node(f"Parser saved exam with {len(questions)} questions to database")
         
         return {"questions": [q.model_dump() for q in questions]}

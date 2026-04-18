@@ -120,6 +120,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             id_to_index = {(item.get("id") or item.get("question_id")): idx for idx, item in enumerate(item_list)} if item_list else {}
             remaining_items = []  # Collect items that still need verification
             db_inserted = 0  # Track total DB inserts this round
+            db_saved_total_before = state.get("db_saved_total", 0) or 0
             state_confidence = state.get("confidence", []) or []
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
@@ -136,6 +137,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
             for i in range(0, len(item_list), BATCH_SIZE):
                 batch = item_list[i:i + BATCH_SIZE]
+                batch_saved = 0
                 skip_verify = [
                     question_id
                     for question_id in [(item.get("id") or item.get("question_id")) for item in batch]
@@ -167,6 +169,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         question_type = (item.get("type") or "").strip().lower()
                         normalized_correct_answer = None
 
+                        # Normalize correct answer based on question type 
                         if question_type == "true_false":
                             expected_count = len(item.get("options") or [])
                             answer_text = str(correct_answer_value or "").strip().upper()
@@ -200,7 +203,10 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
                         await self.insert_data("masterthpt", "questions", [data])
                         db_inserted += 1
-                    self.logger.agent_node(f"Teacher skip verify: {len(skip_verify)} items inserted")
+                        batch_saved += 1
+                    self.logger.agent_node(
+                        f"Teacher batch {i//BATCH_SIZE + 1}: saved {batch_saved} skipped-verify questions to database"
+                    )
 
                 need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
                 remaining_items.extend(need_verify)
@@ -244,10 +250,21 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         discrimination_a.append(0.5)
                         difficulty_b.append(0.5)
                         feedback.append(f"Ở câu {item_id}: Không có phản hồi từ Teacher LLM")
-                self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {len(response_by_id)}/{len(need_verify)} responses")
+                self.logger.agent_node(
+                    f"Teacher batch {i//BATCH_SIZE + 1} summary: "
+                    f"{len(response_by_id)}/{len(need_verify)} responses, "
+                    f"{batch_saved} questions saved this batch, "
+                    f"{db_inserted} saved this round so far"
+                )
             # Overwrite parser_output with only remaining items that need further verification
             request.parser_output = remaining_items
-            self.logger.agent_node(f"Teacher round {round_now} summary: {db_inserted} saved to DB, {len(remaining_items)} remaining")
+            db_saved_total = db_saved_total_before + db_inserted
+            self.logger.agent_node(
+                f"Teacher round {round_now} summary: "
+                f"{db_inserted} questions saved this round, "
+                f"{db_saved_total} total questions saved to database so far, "
+                f"{len(remaining_items)} remaining"
+            )
             return {
                 "request": request,
                 "phase": "verify",
@@ -259,6 +276,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "teacher_feedback": feedback,
                 "discrimination_a": discrimination_a,
                 "difficulty_b": difficulty_b,
+                "db_saved_total": db_saved_total,
             }
 
         if intent == Intent.ASK_HINT.value:
