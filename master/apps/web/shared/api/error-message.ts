@@ -1,17 +1,38 @@
-export function getApiErrorMessage(error: unknown, fallback: string) {
-	if (typeof error === 'object' && error !== null && 'response' in error) {
-		const maybeResponse = error as {
-			response?: { data?: { message?: string | string[] } };
+type ApiErrorResponse = {
+	response?: {
+		data?: {
+			message?: string | string[];
 		};
-		const message = maybeResponse.response?.data?.message;
+		status?: number;
+	};
+};
 
-		if (Array.isArray(message)) {
-			return message[0] ?? fallback;
-		}
+function getApiErrorResponse(error: unknown): ApiErrorResponse | null {
+	if (typeof error !== 'object' || error === null || !('response' in error)) {
+		return null;
+	}
 
-		if (typeof message === 'string' && message.trim()) {
-			return message;
-		}
+	return error as ApiErrorResponse;
+}
+
+function getApiErrorStatus(error: unknown) {
+	return getApiErrorResponse(error)?.response?.status;
+}
+
+function getRawApiErrorMessage(error: unknown) {
+	const message = getApiErrorResponse(error)?.response?.data?.message;
+
+	if (Array.isArray(message)) {
+		return message[0] ?? '';
+	}
+
+	return typeof message === 'string' ? message : '';
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string) {
+	const message = getRawApiErrorMessage(error);
+	if (message.trim()) {
+		return message;
 	}
 
 	if (error instanceof Error && error.message.trim()) {
@@ -19,4 +40,18 @@ export function getApiErrorMessage(error: unknown, fallback: string) {
 	}
 
 	return fallback;
+}
+
+export function isInvalidSessionError(error: unknown) {
+	const status = getApiErrorStatus(error);
+	if (status === 401) {
+		return true;
+	}
+
+	if (status !== 404) {
+		return false;
+	}
+
+	const message = getRawApiErrorMessage(error).toLowerCase();
+	return message.includes('không tìm thấy tài khoản học sinh');
 }

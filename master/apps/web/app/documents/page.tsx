@@ -1,5 +1,6 @@
 'use client';
 
+import { DocumentsPageSkeleton } from '@/features/dashboard/components/loading-skeletons';
 import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
 import { DocumentItem, getDocuments } from '@/shared/api/client';
 import { clearAuth, getStudent, getToken } from '@/shared/auth/storage';
@@ -47,6 +48,7 @@ export default function DocumentsPage() {
 	const [subjectFilter, setSubjectFilter] = useState('all');
 	const [gradeFilter, setGradeFilter] = useState('all');
 	const [yearFilter, setYearFilter] = useState('all');
+	const [completionFilter, setCompletionFilter] = useState('all');
 
 	useEffect(() => {
 		const handle = window.setTimeout(() => {
@@ -119,24 +121,33 @@ export default function DocumentsPage() {
 
 			const matchedYear = yearFilter === 'all' || String(item.year) === yearFilter;
 
-			return matchedKeyword && matchedSubject && matchedGrade && matchedYear;
+			const matchedCompletion =
+				completionFilter === 'all' ||
+				(completionFilter === 'completed' && item.is_completed) ||
+				(completionFilter === 'incomplete' && !item.is_completed);
+
+			return matchedKeyword && matchedSubject && matchedGrade && matchedYear && matchedCompletion;
 		});
-	}, [documents, gradeFilter, searchValue, subjectFilter, yearFilter]);
+	}, [completionFilter, documents, gradeFilter, searchValue, subjectFilter, yearFilter]);
 
 	function logout() {
 		clearAuth();
 		router.replace('/login');
 	}
 
+	if (loading) {
+		return <DocumentsPageSkeleton />;
+	}
+
 	return (
 		<main className="dashboard-shell documents-page">
 			{currentStudent ? <DashboardTopbar student={currentStudent} onLogout={logout} /> : null}
 
-			<section className="documents-toolbar" aria-label="Documents filters">
+			<section className="documents-toolbar" aria-label="Bộ lọc kho đề">
 				<input
 					type="text"
 					className="input-field documents-search-input"
-					placeholder="Tìm theo tên đề, môn học, exam type..."
+					placeholder="Tìm theo tên đề, môn học hoặc học kì..."
 					value={searchInput}
 					onChange={(event) => setSearchInput(event.target.value)}
 				/>
@@ -176,19 +187,31 @@ export default function DocumentsPage() {
 						</option>
 					))}
 				</select>
+
+				<select
+					className="documents-select documents-select-completion"
+					value={completionFilter}
+					onChange={(event) => setCompletionFilter(event.target.value)}
+				>
+					<option value="all">Tất cả trạng thái</option>
+					<option value="completed">Đã hoàn thành</option>
+					<option value="incomplete">Chưa hoàn thành</option>
+				</select>
 			</section>
 
-			{loading ? <p className="documents-message">Đang tải kho đề...</p> : null}
-			{!loading && error ? <p className="documents-error">{error}</p> : null}
+			{error ? <p className="documents-error">{error}</p> : null}
 
-			{!loading && !error ? (
+			{!error ? (
 				<>
 					<p className="documents-count">
 						Hiển thị {filteredDocuments.length} / {documents.length} đề thi
 					</p>
 					<section className="documents-grid">
 						{filteredDocuments.map((item) => (
-							<article key={item.id} className="documents-card">
+							<article
+								key={item.id}
+								className={`documents-card ${item.is_completed ? 'is-completed' : ''}`}
+							>
 								<div className="documents-card-top">
 									<p className="documents-card-type">{item.exam_type}</p>
 									<h2 className="documents-card-title">
@@ -200,6 +223,9 @@ export default function DocumentsPage() {
 								<div className="documents-card-bottom">
 									<div className="documents-tags">
 										<span className="documents-tag">Lớp {item.grade}</span>
+										{item.is_completed ? (
+											<span className="documents-tag documents-tag-completed">Đã hoàn thành</span>
+										) : null}
 									</div>
 									<div className="documents-card-actions">
 										<Link href={`/exams/${item.id}`} className="btn-primary documents-start-btn">

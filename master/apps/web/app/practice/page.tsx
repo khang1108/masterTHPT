@@ -1,5 +1,6 @@
 'use client';
 
+import { DocumentsPageSkeleton } from '@/features/dashboard/components/loading-skeletons';
 import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
 import { PracticeExamItem, getPracticeExams, updatePractice } from '@/shared/api/client';
 import { clearAuth, getStudent, getToken } from '@/shared/auth/storage';
@@ -130,6 +131,10 @@ export default function PracticePage() {
 		router.replace('/login');
 	}
 
+	if (loading) {
+		return <DocumentsPageSkeleton cardCount={4} showComposer />;
+	}
+
 	return (
 		<main className="dashboard-shell documents-page practice-page">
 			{currentStudent ? <DashboardTopbar student={currentStudent} onLogout={logout} /> : null}
@@ -140,10 +145,9 @@ export default function PracticePage() {
 				</p>
 			) : null}
 
-			{loading ? <p className="documents-message">Đang tải danh sách luyện tập...</p> : null}
-			{!loading && error ? <p className="documents-error">{error}</p> : null}
+			{error ? <p className="documents-error">{error}</p> : null}
 
-			{!loading && !error ? (
+			{!error ? (
 				<>
 					<p className="documents-count">
 						Có {items.length} câu luyện tập dành cho bạn
@@ -160,7 +164,6 @@ export default function PracticePage() {
 									<p className="documents-card-meta">
 										{item.source} • Năm {item.year}
 									</p>
-									<p className="documents-card-submeta">Mã đề: {item.id}</p>
 								</div>
 								<div className="documents-card-bottom">
 									<div className="documents-tags">
@@ -189,7 +192,7 @@ export default function PracticePage() {
 					<textarea
 						ref={textareaRef}
 						className="practice-composer-input"
-						placeholder="Nhập mong muốn luyện tập của bạn..."
+						placeholder="Bạn muốn luyện thêm dạng bài nào?"
 						value={requestText}
 						onChange={(event) => setRequestText(event.target.value)}
 						onKeyDown={onComposerKeyDown}

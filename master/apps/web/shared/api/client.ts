@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { Student } from '@/shared/models/student';
+import { clearAuth } from '@/shared/auth/storage';
+import { isInvalidSessionError } from '@/shared/api/error-message';
 
 type LoginBody = {
 	email: string;
@@ -43,6 +45,7 @@ export type DocumentItem = {
 	source?: string;
 	total_questions?: number;
 	duration?: number;
+	is_completed?: boolean;
 	created_at?: string;
 	metadata?: unknown;
 };
@@ -240,6 +243,27 @@ const api = axios.create({
 	baseURL: apiBaseUrl,
 	timeout: 60000,
 });
+
+api.interceptors.response.use(
+	(response) => response,
+	(error) => {
+		const authorizationHeader =
+			error?.config?.headers?.Authorization ??
+			error?.config?.headers?.authorization;
+		const hasAuthHeader =
+			typeof authorizationHeader === 'string' && authorizationHeader.trim().length > 0;
+
+		if (typeof window !== 'undefined' && hasAuthHeader && isInvalidSessionError(error)) {
+			clearAuth();
+
+			if (window.location.pathname !== '/login') {
+				window.location.replace('/login');
+			}
+		}
+
+		return Promise.reject(error);
+	},
+);
 
 export async function login(body: LoginBody) {
 	const { data } = await api.post<LoginResponse>('/auth/login', body);

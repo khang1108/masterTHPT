@@ -2,29 +2,11 @@
 
 import { GoogleLoginButton } from '@/features/auth/components/google-login-button';
 import { login, loginWithGoogle } from '@/shared/api/client';
+import { getApiErrorMessage } from '@/shared/api/error-message';
 import { getToken, saveAuth } from '@/shared/auth/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
-
-function getErrorMessage(error: unknown) {
-	if (typeof error === 'object' && error !== null && 'response' in error) {
-		const maybeResponse = error as {
-			response?: { data?: { message?: string | string[] } };
-		};
-
-		const message = maybeResponse.response?.data?.message;
-		if (Array.isArray(message)) {
-			return message[0] ?? 'Login failed';
-		}
-
-		if (typeof message === 'string') {
-			return message;
-		}
-	}
-
-	return 'Login failed. Please try again.';
-}
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -50,7 +32,7 @@ export default function LoginPage() {
 			saveAuth(data.access_token, data.student);
 			router.replace('/dashboard');
 		} catch (err: unknown) {
-			setError(getErrorMessage(err));
+			setError(getApiErrorMessage(err, 'Không thể đăng nhập lúc này. Vui lòng thử lại.'));
 		} finally {
 			setLoading(false);
 		}
@@ -65,7 +47,7 @@ export default function LoginPage() {
 			saveAuth(data.access_token, data.student);
 			router.replace('/dashboard');
 		} catch (err: unknown) {
-			setError(getErrorMessage(err));
+			setError(getApiErrorMessage(err, 'Không thể đăng nhập với Google lúc này. Vui lòng thử lại.'));
 		} finally {
 			setGoogleLoading(false);
 		}

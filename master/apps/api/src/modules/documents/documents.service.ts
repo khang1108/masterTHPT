@@ -4,8 +4,10 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import {
 	findExamDocumentByAnyId,
 	findPublishedExamDocuments,
+	findHistoryDocumentsByUserId,
 	findQuestionDocumentsByAnyIds,
 } from 'src/shared/mongo/read-models';
+import { requireStudentByIdentity } from 'src/modules/students/student-identity';
 
 @Injectable()
 export class DocumentsService {
@@ -21,8 +23,20 @@ export class DocumentsService {
 		return Number.isNaN(parsed) ? 0 : parsed;
 	}
 
-	async listDocuments() {
+	private async getCompletionExamIdSet(userId: string) {
+		const student = await requireStudentByIdentity(this.prisma, userId);
+		const histories = await findHistoryDocumentsByUserId(this.prisma, student.user_id);
+
+		return new Set(
+			histories
+				.map((history) => history.exam_id.trim())
+				.filter((examId) => examId.length > 0),
+		);
+	}
+
+	async listDocuments(userId: string) {
 		const exams = await findPublishedExamDocuments(this.prisma);
+		const completedExamIds = await this.getCompletionExamIdSet(userId);
 
 		return exams.sort(
 			(a, b) => this.toEpoch(b.created_at) - this.toEpoch(a.created_at),
@@ -35,12 +49,13 @@ export class DocumentsService {
 			source: exam.source ?? 'Nguồn chưa cập nhật',
 			total_questions: exam.total_questions ?? 0,
 			duration: exam.duration ?? 0,
+			is_completed: completedExamIds.has(exam.id) || completedExamIds.has(exam.mongo_id),
 			metadata: exam.metadata,
 			created_at: exam.created_at ?? undefined,
 		}));
 	}
 
-	async getDocumentDetail(id: string) {
+	private async buildDocumentDetail(id: string) {
 		const exam = await findExamDocumentByAnyId(this.prisma, id);
 
 		if (!exam) {
@@ -64,5 +79,9 @@ export class DocumentsService {
 			duration_minutes: metadata.duration_minutes ?? exam.duration ?? 0,
 			sections,
 		};
+	}
+
+	async getDocumentDetail(id: string) {
+		return this.buildDocumentDetail(id);
 	}
 }

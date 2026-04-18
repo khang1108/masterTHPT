@@ -1,5 +1,6 @@
 'use client';
 
+import { DashboardPageSkeleton } from '@/features/dashboard/components/loading-skeletons';
 import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
 import { StudentProfileFields } from '@/features/students/components/student-profile-fields';
 import { formatDateTime, formatScore } from '@/features/exams/lib/helpers';
@@ -11,6 +12,7 @@ import {
 	getHistoryList,
 	updateCurrentStudent,
 } from '@/shared/api/client';
+import { getApiErrorMessage, isInvalidSessionError } from '@/shared/api/error-message';
 import { clearAuth, getToken, saveStudent } from '@/shared/auth/storage';
 import { cacheExamDetail } from '@/features/exams/lib/exam-runtime-store';
 import { Student } from '@/shared/models/student';
@@ -30,33 +32,6 @@ type HistoryGroup = {
 	title: string;
 	items: HistoryListItem[];
 };
-
-function getErrorMessage(error: unknown, fallback: string) {
-	if (typeof error === 'object' && error !== null && 'response' in error) {
-		const maybeResponse = error as {
-			response?: { data?: { message?: string | string[] }; status?: number };
-		};
-		const message = maybeResponse.response?.data?.message;
-		if (Array.isArray(message)) {
-			return message[0] ?? fallback;
-		}
-
-		if (typeof message === 'string') {
-			return message;
-		}
-	}
-
-	return fallback;
-}
-
-function isUnauthorizedError(error: unknown) {
-	if (typeof error !== 'object' || error === null || !('response' in error)) {
-		return false;
-	}
-
-	const maybeResponse = error as { response?: { status?: number } };
-	return maybeResponse.response?.status === 401;
-}
 
 function intentToLabel(intent: HistoryListItem['intent']) {
 	return intent === 'EXAM_PRACTICE' ? 'Luyện tập' : 'Đề thi';
@@ -138,6 +113,11 @@ export default function DashboardPage() {
 	const [historyItems, setHistoryItems] = useState<HistoryListItem[]>([]);
 	const [historyLoading, setHistoryLoading] = useState(true);
 	const [historyError, setHistoryError] = useState('');
+	const [collapsedHistoryGroups, setCollapsedHistoryGroups] = useState<Record<HistoryGroup['key'], boolean>>({
+		today: false,
+		recent: false,
+		older: false,
+	});
 
 	useEffect(() => {
 		const token = getToken();
@@ -165,13 +145,13 @@ export default function DashboardPage() {
 			}
 
 			if (studentResult.status === 'rejected') {
-				if (isUnauthorizedError(studentResult.reason)) {
+				if (isInvalidSessionError(studentResult.reason)) {
 					clearAuth();
 					router.replace('/login');
 					return;
 				}
 
-				setStudentError(getErrorMessage(studentResult.reason, 'Không thể tải hồ sơ học sinh.'));
+				setStudentError(getApiErrorMessage(studentResult.reason, 'Không thể tải hồ sơ học sinh.'));
 				setPageLoading(false);
 				setHistoryLoading(false);
 				return;
@@ -214,6 +194,13 @@ export default function DashboardPage() {
 		router.replace('/login');
 	}
 
+	function toggleHistoryGroup(groupKey: HistoryGroup['key']) {
+		setCollapsedHistoryGroups((current) => ({
+			...current,
+			[groupKey]: !current[groupKey],
+		}));
+	}
+
 	async function onSubmitProfile(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		setProfileError('');
@@ -231,7 +218,7 @@ export default function DashboardPage() {
 			setProfileDraft(createStudentProfileDraft(updatedStudent));
 			saveStudent(updatedStudent);
 		} catch (error: unknown) {
-			setProfileError(getErrorMessage(error, 'Không thể lưu thông tin cá nhân.'));
+			setProfileError(getApiErrorMessage(error, 'Không thể lưu thông tin cá nhân.'));
 		} finally {
 			setProfileSaving(false);
 		}
@@ -257,7 +244,7 @@ export default function DashboardPage() {
 			cacheExamDetail(exam);
 			router.push(`/exams/${exam.exam_id}`);
 		} catch (error: unknown) {
-			setOnboardingError(getErrorMessage(error, 'Không tìm thấy đề phù hợp lúc này. Vui lòng thử lại.'));
+			setOnboardingError(getApiErrorMessage(error, 'Không tìm thấy đề phù hợp lúc này. Vui lòng thử lại.'));
 			setOnboardingLoading(false);
 		}
 	}
@@ -265,8 +252,16 @@ export default function DashboardPage() {
 	const averageScore = useMemo(() => calculateAverageScore(historyItems), [historyItems]);
 	const groupedHistoryItems = useMemo(() => groupHistoryItems(historyItems), [historyItems]);
 
+	useEffect(() => {
+		setCollapsedHistoryGroups((current) => ({
+			today: current.today ?? false,
+			recent: current.recent ?? false,
+			older: current.older ?? false,
+		}));
+	}, [groupedHistoryItems]);
+
 	if (pageLoading) {
-		return <main className="dashboard-root">Đang tải dữ liệu học sinh...</main>;
+		return <DashboardPageSkeleton />;
 	}
 
 	if (!student) {
@@ -297,10 +292,29 @@ export default function DashboardPage() {
 						<section className="dash-panel dash-history-panel">
 							<div className="dash-panel-head">
 								<h2>Lịch sử làm bài</h2>
-								<p>Bấm vào từng đề để xem lại chi tiết bài làm.</p>
+								<p>Chọn từng đề để xem lại chi tiết bài làm.</p>
 						</div>
 
-						{historyLoading ? <p className="documents-message">Đang tải lịch sử...</p> : null}
+						{historyLoading ? (
+							<div className="dash-history-feed dash-history-feed-skeleton" aria-hidden="true">
+								{Array.from({ length: 3 }).map((_, index) => (
+									<div key={index} className="dash-history-item dash-history-item-skeleton">
+										<div className="dash-history-main">
+											<div className="dash-history-topline">
+												<span className="ui-skeleton dash-skeleton-badge" />
+												<span className="ui-skeleton dash-skeleton-time" />
+											</div>
+											<span className="ui-skeleton dash-skeleton-title" />
+											<div className="dash-history-bottomline">
+												<span className="ui-skeleton dash-skeleton-metric" />
+												<span className="ui-skeleton dash-skeleton-meta" />
+											</div>
+										</div>
+										<span className="ui-skeleton dash-skeleton-link" />
+									</div>
+								))}
+							</div>
+						) : null}
 						{!historyLoading && historyError ? <p className="documents-error">{historyError}</p> : null}
 
 						{!historyLoading && !historyError ? (
@@ -308,34 +322,51 @@ export default function DashboardPage() {
 								{groupedHistoryItems.map((group) => (
 									<section key={group.key} className="dash-history-group">
 										<div className="dash-history-group-head">
-											<h3>{group.title}</h3>
-											<span>{group.items.length}</span>
+											<button
+												type="button"
+												className={`dash-history-group-toggle ${collapsedHistoryGroups[group.key] ? 'is-collapsed' : ''}`}
+												onClick={() => toggleHistoryGroup(group.key)}
+												aria-expanded={!collapsedHistoryGroups[group.key]}
+												aria-controls={`history-group-${group.key}`}
+											>
+												<span className="dash-history-group-toggle-copy">
+													<h3>{group.title}</h3>
+													<span className="dash-history-group-count">{group.items.length}</span>
+												</span>
+												<span className="dash-history-group-toggle-icon" aria-hidden="true">
+													<svg viewBox="0 0 16 16" focusable="false">
+														<path d="M4.47 6.22a.75.75 0 0 1 1.06 0L8 8.69l2.47-2.47a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 0 1 0-1.06Z" fill="currentColor" />
+													</svg>
+												</span>
+											</button>
 										</div>
 
-										<div className="dash-history-list">
-											{group.items.map((item) => (
-												<Link key={item.history_id} href={`/history/${item.history_id}`} className="dash-history-item">
-													<div className="dash-history-main">
-														<div className="dash-history-topline">
-															<span className="dash-badge">{intentToLabel(item.intent)}</span>
-															<span className="dash-history-timestamp">{formatDateTime(item.created_at)}</span>
-														</div>
-														<p className="dash-history-title">
-															{item.subject} - {item.exam_type}
-														</p>
-														<div className="dash-history-bottomline">
-															<strong className="dash-history-metric">{getHistoryMetric(item)}</strong>
-															<p className="dash-history-meta">
-																{item.source}
-																{item.grade ? ` • Lớp ${item.grade}` : ''}
-																{item.year ? ` • Năm ${item.year}` : ''}
+										{!collapsedHistoryGroups[group.key] ? (
+											<div id={`history-group-${group.key}`} className="dash-history-list">
+												{group.items.map((item) => (
+													<Link key={item.history_id} href={`/history/${item.history_id}`} className="dash-history-item">
+														<div className="dash-history-main">
+															<div className="dash-history-topline">
+																<span className="dash-badge">{intentToLabel(item.intent)}</span>
+																<span className="dash-history-timestamp">{formatDateTime(item.created_at)}</span>
+															</div>
+															<p className="dash-history-title">
+																{item.subject} - {item.exam_type}
 															</p>
+															<div className="dash-history-bottomline">
+																<strong className="dash-history-metric">{getHistoryMetric(item)}</strong>
+																<p className="dash-history-meta">
+																	{item.source}
+																	{item.grade ? ` • Lớp ${item.grade}` : ''}
+																	{item.year ? ` • Năm ${item.year}` : ''}
+																</p>
+															</div>
 														</div>
-													</div>
-													<span className="dash-history-link">Mở lại</span>
-												</Link>
-											))}
-										</div>
+														<span className="dash-history-link">Mở lại</span>
+													</Link>
+												))}
+											</div>
+										) : null}
 									</section>
 								))}
 
@@ -387,7 +418,7 @@ export default function DashboardPage() {
 
 						<div className="onboarding-actions">
 							<p className="onboarding-side-copy">
-								Thông tin này sẽ được lưu vào database và bạn có thể chỉnh sửa lại ở trang hồ sơ.
+								Thông tin này sẽ được lưu lại và bạn có thể chỉnh sửa ở trang hồ sơ.
 							</p>
 							<button type="submit" className="btn-primary" disabled={profileSaving}>
 								{profileSaving ? 'Đang lưu...' : 'Lưu và tiếp tục'}

@@ -73,6 +73,26 @@
 	box-shadow: var(--shadow-card);
 }
 
+.documents-toolbar-skeleton,
+.documents-card-skeleton,
+.practice-composer-dock-skeleton {
+	pointer-events: none;
+}
+
+.documents-skeleton-search {
+	height: 44px;
+	flex: 1 1 340px;
+	min-width: min(360px, 100%);
+	border-radius: 8px;
+}
+
+.documents-skeleton-select {
+	width: 148px;
+	height: 44px;
+	border-radius: 8px;
+	flex: 0 0 auto;
+}
+
 .documents-search-input {
 	width: min(360px, 100%);
 	flex: 1 1 340px;
@@ -123,6 +143,12 @@
 	padding: 0 4px;
 }
 
+.documents-skeleton-count {
+	width: 172px;
+	height: 16px;
+	margin-left: 4px;
+}
+
 .documents-error {
 	color: var(--warning);
 }
@@ -148,6 +174,13 @@
 	overflow: hidden;
 }
 
+.documents-card-skeleton:hover,
+.documents-card-skeleton:focus-within {
+	transform: none;
+	border-color: var(--border);
+	box-shadow: var(--shadow-card);
+}
+
 .documents-card::after {
 	content: '';
 	position: absolute;
@@ -167,6 +200,18 @@
 	box-shadow: var(--shadow-deep);
 }
 
+.documents-card.is-completed {
+	border-color: rgba(20, 138, 74, 0.3);
+	background:
+		linear-gradient(180deg, rgba(243, 253, 247, 0.98), rgba(232, 248, 238, 0.88)),
+		#ffffff;
+}
+
+.documents-card.is-completed::after {
+	opacity: 1;
+	background: linear-gradient(90deg, rgba(20, 138, 74, 0.92), rgba(116, 198, 148, 0.54));
+}
+
 .documents-card:hover::after,
 .documents-card:focus-within::after {
 	opacity: 1;
@@ -179,6 +224,11 @@
 	letter-spacing: 0.125em;
 	text-transform: uppercase;
 	color: var(--accent);
+}
+
+.documents-skeleton-kicker {
+	width: 92px;
+	height: 14px;
 }
 
 .documents-card-top,
@@ -194,6 +244,16 @@
 	letter-spacing: -0.6px;
 }
 
+.documents-skeleton-title {
+	width: min(260px, 92%);
+	height: 24px;
+	border-radius: 10px;
+}
+
+.documents-skeleton-title-short {
+	width: min(184px, 68%);
+}
+
 .documents-card-stat {
 	margin: 0;
 	font-size: 1.06rem;
@@ -202,11 +262,22 @@
 	letter-spacing: -0.25px;
 }
 
+.documents-skeleton-stat {
+	width: 132px;
+	height: 18px;
+	border-radius: 10px;
+}
+
 .documents-card-meta {
 	margin: 0;
 	font-size: 0.94rem;
 	line-height: 1.58;
 	color: var(--text-soft);
+}
+
+.documents-skeleton-meta {
+	width: min(220px, 80%);
+	height: 15px;
 }
 
 .documents-card-submeta {
@@ -235,6 +306,16 @@
 	color: #097fe8;
 }
 
+.documents-tag-completed {
+	background: rgba(20, 138, 74, 0.12);
+	color: #137348;
+}
+
+.documents-skeleton-tag {
+	width: 86px;
+	height: 28px;
+}
+
 .documents-card-actions {
 	margin-top: auto;
 	display: flex;
@@ -244,6 +325,12 @@
 
 .documents-start-btn {
 	font-size: 0.9rem;
+}
+
+.documents-skeleton-button {
+	width: 108px;
+	height: 40px;
+	border-radius: 8px;
 }
 
 .documents-start-btn:focus-visible {
@@ -283,6 +370,18 @@
 	width: min(900px, calc(100vw - 32px));
 	display: grid;
 	gap: 8px;
+}
+
+.practice-skeleton-input {
+	width: 100%;
+	height: 48px;
+	border-radius: 16px;
+}
+
+.practice-skeleton-send {
+	width: 44px;
+	height: 44px;
+	border-radius: 9999px;
 }
 
 .practice-composer-shell {
