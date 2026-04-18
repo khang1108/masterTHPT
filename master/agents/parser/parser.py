@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from master.agents import BaseAgent
 from master.agents.common.tools import ToolsRegistry
@@ -45,6 +45,17 @@ class QuestionOutput(BaseModel):
     options: Optional[list[str]] = Field(default=None, description="Danh sách lựa chọn nếu là câu hỏi trắc nghiệm, để trống nếu là câu hỏi tự luận")
     has_image: bool = Field(description="Câu hỏi có chứa hình ảnh hay không")
     image_url: Optional[str] = Field(default=None, description="URL của hình ảnh nếu có")
+
+
+class OCRMetadataOutput(BaseModel):
+    subject: Optional[str] = None
+    exam_type: Optional[str] = None
+    year: Optional[int] = None
+    grade: Optional[int] = None
+    source: Optional[str] = None
+    total_questions: Optional[int] = None
+    duration: Optional[int] = None
+    generated: Optional[bool] = None
     
 
 class ParserAgent(ToolsRegistry, BaseAgent):
@@ -232,7 +243,15 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         # with open(debug_output_path, "w", encoding="utf-8") as f:
         #     json.dump(ocr_pages, f, ensure_ascii=False, indent=2)
             
-        metadata = ocr_pages[0].get("metadata", {}) if ocr_pages else {}
+        raw_metadata = ocr_pages[0].get("metadata", {}) if ocr_pages else {}
+        try:
+            metadata = OCRMetadataOutput.model_validate(
+                raw_metadata if isinstance(raw_metadata, dict) else {}
+            )
+        except ValidationError as error:
+            self.logger.warning(f"Parser metadata validation failed: {error}")
+            metadata = OCRMetadataOutput()
+
         questions: list[QuestionOutput] = []
         question_index = 1
 
@@ -281,13 +300,13 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         exam = {
             "id": str(uuid.uuid4()),
-            "subject": metadata.get("subject"),
-            "exam_type": metadata.get("exam_type"),
-            "year": metadata.get("year"),
-            "grade": metadata.get("grade"),
-            "source": metadata.get("source"),
+            "subject": metadata.subject,
+            "exam_type": metadata.exam_type,
+            "year": metadata.year,
+            "grade": metadata.grade,
+            "source": metadata.source,
             "total_questions": len(questions),
-            "duration": metadata.get("duration"),
+            "duration": metadata.duration,
             "created_at": datetime.datetime.now().isoformat(),
             "questions": [q.id for q in questions],
         }

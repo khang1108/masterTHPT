@@ -19,6 +19,7 @@ from master.agents.common.prompt import (
 import json
 import os
 import asyncio
+import re
 
 load_dotenv(override=True)
 BATCH_SIZE = 3
@@ -30,7 +31,16 @@ class Evaluate(BaseModel):
     question_id: str
     agree: bool = Field(description="Teacher có đồng ý với feedback của Verifier không? Nếu feedback của Verifier để trống thì điền false.")
     confidence: float = 0.5
-    correct_answer: str = Field(description="Đáp án đúng A, B, C, D. Nếu không xác định được đáp án đúng thì để trống.")
+    correct_answer: Optional[str] = Field(
+        default=None,
+        description=(
+            "Đáp án đúng theo type của câu hỏi. "
+            "multiple_choice: chỉ A/B/C/D; "
+            "true_false: chuỗi T/F theo từng ý, ví dụ 'T, T, F, T'; "
+            "short_ans hoặc short_answer: chuỗi số thuần như '0.33' hoặc '2'. "
+            "Nếu không xác định được thì để null."
+        ),
+    )
     reasoning: str =  Field(description="Giải thích ngắn gọn về lý do đồng ý hay không đồng ý với đáp án của học sinh, hoặc giải thích cách giải nếu đang ở chế độ PREPROCESS.")         
     feedback: str = Field(description="Phản hồi cụ thể cho học sinh, có thể là gợi ý để cải thiện hoặc lời khen nếu đáp án đúng. Phản hồi phải rõ ràng, thân thiện và mang tính xây dựng.")
     discrimination_a: float = Field(description="Độ phân biệt của câu hỏi để đánh giá học sinh giỏi hay yếu, giá trị từ 0 đến 1, càng cao càng phân biệt tốt.")
@@ -150,6 +160,26 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             else None
                         )
                         correct_answer_value = solution_by_id.get(ids)
+                        question_type = (item.get("type") or "").strip().lower()
+                        normalized_correct_answer = None
+
+                        if question_type == "true_false":
+                            expected_count = len(item.get("options") or [])
+                            answer_text = str(correct_answer_value or "").strip().upper()
+                            tokens = [token.strip() for token in answer_text.split(",") if token.strip()]
+                            if tokens and all(token in {"T", "F"} for token in tokens):
+                                if expected_count == 0 or len(tokens) == expected_count:
+                                    normalized_correct_answer = ", ".join(tokens)
+                        elif question_type == "multiple_choice":
+                            answer_text = str(correct_answer_value or "").strip().upper()
+                            if answer_text in {"A", "B", "C", "D"}:
+                                normalized_correct_answer = answer_text
+                        elif question_type in {"short_ans", "short_answer"}:
+                            answer_text = str(correct_answer_value or "").strip()
+                            if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)", answer_text):
+                                normalized_correct_answer = answer_text
+                        else:
+                            normalized_correct_answer = correct_answer_value
 
                         data = {
                             "id": item.get("id") or item.get("question_id"),
@@ -157,7 +187,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             "type": item.get("type"),
                             "content": item.get("content"),
                             "options": item.get("options"),
-                            "correct_answer": correct_answer_value,
+                            "correct_answer": normalized_correct_answer,
                             "has_image": item.get("has_image"),
                             "image_url": item.get("image_url"),
                             "discrimination_a": discrimination_a_value,

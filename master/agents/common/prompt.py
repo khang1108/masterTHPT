@@ -13,12 +13,12 @@ def parser_ocr_instruction() -> str:
 	        Schema bắt buộc:
 	        {
 	          "metadata": {
-				"subject": "mã môn học (vd: math, physics, chemistry...)",
+				"subject": "mã môn học (vd: Toán, Vật lý, Hóa học...)",
 				"exam_type": "loại kỳ thi (vd: Cuối kì 1, Giữa kì 2...)",
-				"year": "Sử dụng định dạng NumberInt('YYYY')",
-				"grade": "Sử dụng định dạng NumberInt('số lớp')",
+				"year": Năm thi (vd: 2023),
+				"grade": lớp học (vd: 10, 11, 12),
 				"source": "Tên trường hoặc nguồn đề",
-				"duration": "Sử dụng định dạng NumberInt('thời gian làm bài')",
+				"duration": Thời gian làm bài (vd: 60, 90, ...),
 	          },
 	          "questions": [
 	            {
@@ -64,6 +64,12 @@ def teacher_preprocess_prompt(batch_input_json: str) -> str:
 
 		RÀNG BUỘC NGÔN NGỮ (BẮT BUỘC):
 		- Sử dụng TIẾNG VIỆT cho toàn bộ nội dung (reasoning, feedback).
+
+		RÀNG BUỘC ĐỊNH DẠNG correct_answer THEO type (BẮT BUỘC):
+		- Nếu type = "true_false": correct_answer phải là chuỗi gồm T/F theo từng ý, ngăn cách bằng dấu phẩy. Ví dụ: "T, T, F, T".
+		- Nếu type = "multiple_choice": correct_answer chỉ được là một ký tự trong tập "A", "B", "C", "D".
+		- Nếu type = "short_ans" hoặc "short_answer": correct_answer phải là chuỗi số thuần (dùng dấu chấm thập phân nếu có), ví dụ "0.33", "2", "-1.5"; không kèm đơn vị hay văn bản.
+		- Nếu không xác định chắc chắn đáp án thì để correct_answer = null.
 
 		BATCH_INPUT:
 		{batch_input_json}
@@ -127,6 +133,13 @@ def verifier_prompt(batch_input_json: str) -> str:
 		1. Đúng hay Sai: Xác định xem câu trả lời của học sinh có đúng hay không.
 		2. Mức độ tự tin: Đánh giá mức độ tự tin của bạn về đánh giá đúng/sai, với điểm số từ 0 đến 1.
 		3. Lý do: Cung cấp một giải thích ngắn gọn về lý do tại sao bạn đánh giá câu trả lời đó là đúng hay sai.
+
+		RÀNG BUỘC ĐỊNH DẠNG correct_answer THEO type (BẮT BUỘC):
+		- Nếu type = "true_false": correct_answer phải là chuỗi gồm T/F theo từng ý, ngăn cách bằng dấu phẩy. Ví dụ: "T, T, F, T".
+		- Nếu type = "multiple_choice": correct_answer chỉ được là một ký tự trong tập "A", "B", "C", "D".
+		- Nếu type = "short_ans" hoặc "short_answer": correct_answer phải là chuỗi số thuần (dùng dấu chấm thập phân nếu có), ví dụ "0.33", "2", "-1.5"; không kèm đơn vị hay văn bản.
+		- Nếu không xác định chắc chắn đáp án thì để correct_answer = null.
+
 		BATCH_INPUT:
 		{batch_input_json}
 	"""

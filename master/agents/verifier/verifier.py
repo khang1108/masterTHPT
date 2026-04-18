@@ -157,6 +157,26 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         else None
                     )
                     correct_answer = solution_by_id.get(ids)
+                    question_type = (item.get("type") or "").strip().lower()
+                    normalized_correct_answer = None
+
+                    if question_type == "true_false":
+                        expected_count = len(item.get("options") or [])
+                        answer_text = str(correct_answer or "").strip().upper()
+                        tokens = [token.strip() for token in answer_text.split(",") if token.strip()]
+                        if tokens and all(token in {"T", "F"} for token in tokens):
+                            if expected_count == 0 or len(tokens) == expected_count:
+                                normalized_correct_answer = ", ".join(tokens)
+                    elif question_type == "multiple_choice":
+                        answer_text = str(correct_answer or "").strip().upper()
+                        if answer_text in {"A", "B", "C", "D"}:
+                            normalized_correct_answer = answer_text
+                    elif question_type in {"short_ans", "short_answer"}:
+                        answer_text = str(correct_answer or "").strip()
+                        if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)", answer_text):
+                            normalized_correct_answer = answer_text
+                    else:
+                        normalized_correct_answer = correct_answer
 
                     data = {
                         "question_id": item.get("id") or item.get("question_id"),
@@ -164,7 +184,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         "type": item.get("type"),
                         "content": item.get("content"),
                         "options": item.get("options"),
-                        "correct_answer": correct_answer,
+                        "correct_answer": normalized_correct_answer,
                         "has_image": item.get("has_image"),
                         "image_url": item.get("image_url"),
                         "discrimination_a": discrimination_a,
@@ -191,13 +211,35 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     if not item:
                         continue
 
+                    question_type = (item.get("type") or "").strip().lower()
+                    normalized_correct_answer = None
+                    raw_correct_answer = response.correct_answer
+
+                    if question_type == "true_false":
+                        expected_count = len(item.get("options") or [])
+                        answer_text = str(raw_correct_answer or "").strip().upper()
+                        tokens = [token.strip() for token in answer_text.split(",") if token.strip()]
+                        if tokens and all(token in {"T", "F"} for token in tokens):
+                            if expected_count == 0 or len(tokens) == expected_count:
+                                normalized_correct_answer = ", ".join(tokens)
+                    elif question_type == "multiple_choice":
+                        answer_text = str(raw_correct_answer or "").strip().upper()
+                        if answer_text in {"A", "B", "C", "D"}:
+                            normalized_correct_answer = answer_text
+                    elif question_type in {"short_ans", "short_answer"}:
+                        answer_text = str(raw_correct_answer or "").strip()
+                        if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)", answer_text):
+                            normalized_correct_answer = answer_text
+                    else:
+                        normalized_correct_answer = raw_correct_answer
+
                     data = {
                         "id": item["id"],
                         "question_index": item["question_index"],
                         "type": item.get("type"),
                         "content": item.get("content"),
                         "options": item.get("options"),
-                        "correct_answer": response.correct_answer,
+                        "correct_answer": normalized_correct_answer,
                         "has_image": item.get("has_image"),
                         "image_url": item.get("image_url"),
                         "discrimination_a": response.discrimination_a,
