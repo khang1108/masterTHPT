@@ -219,11 +219,18 @@ export type AskHintBody = {
 	question_id: string;
 };
 
+export type AskHintLevels = {
+	hint_1: string;
+	hint_2: string;
+	hint_3: string;
+};
+
 export type AskHintResponse = {
 	user_id: string;
 	exam_id: string;
 	question_id: string;
 	feedback: string;
+	hints: AskHintLevels;
 };
 
 export type ReviewMistakeBody = {

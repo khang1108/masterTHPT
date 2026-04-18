@@ -1,16 +1,18 @@
-"""Shared tool registry and DB helpers for agent modules."""
+"""Shared tool registry and DB helpers for agent modules.
+
+The registry now supports role-scoped tool bundles so the manager/planner can
+inject a narrower capability surface into each specialist agent.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import re
 import unicodedata
-from typing import Type
+from typing import Any
 
 from dotenv import load_dotenv
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_community.agent_toolkits import PlayWrightBrowserToolkit
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_experimental.tools import PythonREPLTool
 from langgraph.prebuilt import ToolNode
@@ -21,8 +23,6 @@ from master.common.tools import MongoDBTools
 from master.agents.adaptive.graph import AdaptiveGraph
 
 from .agent_logging import log_agent_event
-from .langsmith import build_langsmith_invoke_config
-
 load_dotenv(override=True)
 
 __all__ = ["MongoDBTools", "ToolsRegistry"]
@@ -163,12 +163,11 @@ class ToolsRegistry(MongoDBTools):
     same browser and utility tool setup without repeatedly re-initializing them.
     """
 
-    _shared_tools: list[BaseTool] | None = None
-    _shared_tool_map: dict[str, BaseTool] | None = None
-    _shared_tool_node: ToolNode | None = None
-    _shared_browser = None
-    _shared_playwright = None
-    # ── Class-level cache (dùng chung toàn bộ agent instances) ────────────────
+    # Class-level caches are shared across every agent instance so scoped
+    # bundles can be reused without repeatedly booting Playwright.
+    _tool_bundles: dict[str, list[BaseTool]] | None = None
+    _tool_nodes: dict[str, ToolNode | None] | None = None
+    _tool_name_bundles: dict[str, list[str]] | None = None
     _tools: list[BaseTool] | None = None
     _tool_node: ToolNode | None = None
     _browser = None
@@ -185,43 +184,153 @@ class ToolsRegistry(MongoDBTools):
 
         self._log_tools(message)
 
-    async def setup_tools(self, llm):
-        if ToolsRegistry._tools is None:
-            self._log_tools("setup_tools:init_shared_toolkit")
+    @classmethod
+    def tool_bundle_names(cls) -> list[str]:
+        """Return the known tool-bundle names used for capability scoping."""
+
+        return ["default", "teacher", "verifier", "parser", "adaptive"]
+
+    @classmethod
+    def get_tool_names_for_role(cls, role: str) -> list[str]:
+        """Expose normalized tool names for planner/debug/test use.
+
+        The method works even before any agent instance has called
+        ``setup_tools(...)`` so unit tests can assert scoping policy without
+        paying Playwright startup cost.
+        """
+
+        canonical_role = (role or "default").strip().lower()
+        if canonical_role == "adaptive":
+            return []
+        if canonical_role == "parser":
+            return [
+                "copy_file",
+                "file_delete",
+                "file_search",
+                "list_directory",
+                "move_file",
+                "read_file",
+                "write_file",
+            ]
+        if canonical_role in {"teacher", "verifier"}:
+            return [
+                "python_repl",
+                "trace_knowledge_graph_topics",
+            ]
+        return [
+            "click_element",
+            "copy_file",
+            "current_webpage",
+            "extract_hyperlinks",
+            "extract_text",
+            "file_delete",
+            "file_search",
+            "get_elements",
+            "list_directory",
+            "move_file",
+            "navigate_back",
+            "navigate_browser",
+            "previous_webpage",
+            "python_repl",
+            "read_file",
+            "trace_knowledge_graph_topics",
+            "write_file",
+        ]
+
+    async def setup_tools(self, llm, *, bundle: str = "default"):
+        selected_bundle = (bundle or "default").strip().lower()
+        if ToolsRegistry._tool_bundles is None:
+            self._log_tools("setup_tools:init_scoped_toolkit")
             await self._init_tools()
         else:
-            self._log_tools("setup_tools:reuse_shared_toolkit")
+            self._log_tools("setup_tools:reuse_scoped_toolkit")
 
-        self._tools          = ToolsRegistry._tools
-        self._tool_node      = ToolsRegistry._tool_node
-        self.browser         = ToolsRegistry._browser
-        self.playwright      = ToolsRegistry._playwright
-        self._llm            = llm
-        self._llm_with_tools = llm.bind_tools(self._tools)
-        self._log_tools(f"setup_tools:done total_tools={len(self._tools)}")
+        available_bundles = ToolsRegistry._tool_bundles or {}
+        available_nodes = ToolsRegistry._tool_nodes or {}
+        tool_names = ToolsRegistry._tool_name_bundles or {}
+
+        if selected_bundle not in available_bundles:
+            selected_bundle = "default"
+
+        self._tool_bundle = selected_bundle
+        self._tools = list(available_bundles.get(selected_bundle, []))
+        self._tool_node = available_nodes.get(selected_bundle)
+        self._tool_names = list(tool_names.get(selected_bundle, []))
+        self.browser = ToolsRegistry._browser
+        self.playwright = ToolsRegistry._playwright
+        self._llm = llm
+        self._llm_with_tools = llm.bind_tools(self._tools) if self._tools else llm
+        self._log_tools(
+            f"setup_tools:done bundle={selected_bundle} total_tools={len(self._tools)}"
+        )
 
     async def _init_tools(self):
         self._log_tools("init_tools:start")
-        playwright    = await async_playwright().start()
-        browser       = await playwright.chromium.launch(headless=True)
+        playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(headless=True)
         browser_tools = PlayWrightBrowserToolkit.from_browser(async_browser=browser).get_tools()
-        file_tools    = FileManagementToolkit().get_tools()
-        repl_tool     = PythonREPLTool()
+        file_tools = FileManagementToolkit().get_tools()
+        repl_tool = PythonREPLTool()
         kg_trace_tool = KnowledgeGraphTraceTool()
-        all_tools     = browser_tools + file_tools + [repl_tool, kg_trace_tool]
+        all_tools = browser_tools + file_tools + [repl_tool, kg_trace_tool]
 
-        tool_node = ToolNode(all_tools)
+        bundle_map: dict[str, list[BaseTool]] = {
+            "default": all_tools,
+            "teacher": [repl_tool, kg_trace_tool],
+            "verifier": [repl_tool, kg_trace_tool],
+            "parser": file_tools,
+            # Adaptive currently uses repository methods directly rather than
+            # LangChain tools, so the scoped bundle intentionally stays empty.
+            "adaptive": [],
+        }
+        node_map: dict[str, ToolNode | None] = {
+            name: (ToolNode(tools) if tools else None)
+            for name, tools in bundle_map.items()
+        }
+        tool_name_map = {
+            name: [tool.name for tool in tools]
+            for name, tools in bundle_map.items()
+        }
 
-        ToolsRegistry._tools      = all_tools
-        ToolsRegistry._tool_node  = tool_node
-        ToolsRegistry._browser    = browser
+        ToolsRegistry._tool_bundles = bundle_map
+        ToolsRegistry._tool_nodes = node_map
+        ToolsRegistry._tool_name_bundles = tool_name_map
+        ToolsRegistry._tools = bundle_map["default"]
+        ToolsRegistry._tool_node = node_map["default"]
+        ToolsRegistry._browser = browser
         ToolsRegistry._playwright = playwright
         self._log_tools(
-            f"init_tools:done browser_tools={len(browser_tools)} file_tools={len(file_tools)} total_tools={len(all_tools)}"
+            "init_tools:done "
+            f"browser_tools={len(browser_tools)} file_tools={len(file_tools)} "
+            f"default_tools={len(all_tools)} teacher_tools={len(bundle_map['teacher'])} "
+            f"verifier_tools={len(bundle_map['verifier'])} parser_tools={len(bundle_map['parser'])}"
         )
 
-    def get_tool_node(self) -> ToolNode:
+    def get_tool_node(self, bundle: str | None = None) -> ToolNode | None:
+        """Return the current bundle tool node or another scoped bundle node."""
+
+        selected_bundle = (
+            (bundle or getattr(self, "_tool_bundle", "default")).strip().lower()
+        )
+        if ToolsRegistry._tool_nodes and selected_bundle in ToolsRegistry._tool_nodes:
+            return ToolsRegistry._tool_nodes[selected_bundle]
         return self._tool_node
+
+    def get_tools_for_role(self, role: str | None = None) -> list[BaseTool]:
+        """Return actual tool instances for a given scoped role."""
+
+        if not ToolsRegistry._tool_bundles:
+            return list(self._tools or [])
+        selected_role = (role or getattr(self, "_tool_bundle", "default")).strip().lower()
+        return list(ToolsRegistry._tool_bundles.get(selected_role, []))
+
+    def get_tool_names(self, role: str | None = None) -> list[str]:
+        """Return scoped tool names for planner/debug code paths."""
+
+        if ToolsRegistry._tool_name_bundles:
+            selected_role = (role or getattr(self, "_tool_bundle", "default")).strip().lower()
+            return list(ToolsRegistry._tool_name_bundles.get(selected_role, []))
+        return self.get_tool_names_for_role(role or "default")
 
     def trace_question_topics(
         self,
@@ -245,8 +354,6 @@ class ToolsRegistry(MongoDBTools):
             candidate_topics=candidate_topics,
             limit=limit,
         )
-
-
     @classmethod
     async def cleanup(cls):
         """Đóng browser và playwright. Gọi trong GradingPipeline.run() finally."""
@@ -263,6 +370,9 @@ class ToolsRegistry(MongoDBTools):
             await cls._browser.close()
         if cls._playwright:
             await cls._playwright.stop()
+        cls._tool_bundles = None
+        cls._tool_nodes = None
+        cls._tool_name_bundles = None
         cls._tools      = None
         cls._tool_node  = None
         cls._browser    = None

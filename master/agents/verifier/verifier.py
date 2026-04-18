@@ -138,7 +138,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             max_tokens=4096,
             temperature=0.7,
         )
-        await self.setup_tools(llm)
+        await self.setup_tools(llm, bundle="verifier")
         self._llm_with_output = self._llm.with_structured_output(EvaluateBatch)
         self.logger.agent_node("Verifier setup completed")
 

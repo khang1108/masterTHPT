@@ -18,12 +18,20 @@ các câu được gợi ý. Orchestrator chỉ dừng ở bước chọn/sinh c
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
 from master.agents.common.agent_logging import log_agent_event
 from master.agents.adaptive import AdaptiveAgent, AdaptiveDBTools
+from master.agents.common.execution_plan import (
+    ExecutionAgent,
+    ExecutionPlan,
+    ReplanSignal,
+    StepResult,
+    StepStatus,
+)
 from master.agents.common.langsmith import build_langsmith_invoke_config
 from master.agents.common.message import (
     ExamQuestion,
@@ -34,6 +42,7 @@ from master.agents.common.message import (
 )
 from master.agents.common.state import AgentState
 from master.agents.manager.classify_intent import classify_intent
+from master.agents.manager.request_planner import RequestPlannerAgent
 
 
 def preprocess_node(state: AgentState) -> AgentState:
@@ -66,6 +75,13 @@ def preprocess_node(state: AgentState) -> AgentState:
         "student_answers": state.get("student_answers", []),
         "selected_questions": state.get("selected_questions", []),
         "profile_updates": state.get("profile_updates", {}),
+        "execution_plan": state.get("execution_plan"),
+        "step_results": state.get("step_results", []),
+        "planner_summary": state.get("planner_summary"),
+        "tool_trace": state.get("tool_trace", []),
+        "allowed_tools": state.get("allowed_tools", []),
+        "needs_replan": bool(state.get("needs_replan", False)),
+        "replan_count": int(state.get("replan_count", 0) or 0),
         "agent_trail": agent_trail,
     }
     log_agent_event(
@@ -164,9 +180,11 @@ class ManagerOrchestrator:
         *,
         repository: AdaptiveDBTools | None = None,
         adaptive_agent: AdaptiveAgent | None = None,
+        request_planner: RequestPlannerAgent | None = None,
     ) -> None:
         self.repository = repository or AdaptiveDBTools()
         self.adaptive_agent = adaptive_agent or AdaptiveAgent(repository=self.repository)
+        self.request_planner = request_planner or RequestPlannerAgent()
         self.graph = self._build_graph()
         log_agent_event(
             "manager",
@@ -174,9 +192,18 @@ class ManagerOrchestrator:
             extra={
                 "repository": type(self.repository).__name__,
                 "adaptive_agent": type(self.adaptive_agent).__name__,
+                "request_planner": type(self.request_planner).__name__,
             },
             mode="completed",
         )
+
+    @staticmethod
+    async def _maybe_await(value: Any) -> Any:
+        """Await values only when the callee returned an awaitable."""
+
+        if inspect.isawaitable(value):
+            return await value
+        return value
 
     @staticmethod
     def _append_agent_trail(state: AgentState, *agents: str) -> list[str]:
@@ -251,6 +278,74 @@ class ManagerOrchestrator:
                 return item.strip()
 
         return None
+
+    @staticmethod
+    def _normalize_execution_plan(value: Any) -> ExecutionPlan | None:
+        """Coerce loose plan payloads into the canonical execution-plan model."""
+
+        if value is None:
+            return None
+        if isinstance(value, ExecutionPlan):
+            return value
+        if isinstance(value, dict):
+            return ExecutionPlan.model_validate(value)
+        return None
+
+    @staticmethod
+    def _normalize_step_results(value: Any) -> list[StepResult]:
+        """Coerce optional result payloads into ``StepResult`` objects."""
+
+        if not isinstance(value, list):
+            return []
+        normalized: list[StepResult] = []
+        for item in value:
+            if isinstance(item, StepResult):
+                normalized.append(item)
+            elif isinstance(item, dict):
+                normalized.append(StepResult.model_validate(item))
+        return normalized
+
+    @staticmethod
+    def _step_summary(step_output: dict[str, Any]) -> str:
+        """Create a compact, chain-of-thought-safe step summary for logs/debug."""
+
+        if step_output.get("feedback"):
+            return str(step_output["feedback"]).strip()
+        if step_output.get("selected_question_count") is not None:
+            return f"selected_questions={step_output['selected_question_count']}"
+        if step_output.get("response_type"):
+            return str(step_output["response_type"])
+        return "Step completed."
+
+    def _build_step_result(
+        self,
+        *,
+        step_id: str,
+        agent: ExecutionAgent,
+        step_output: dict[str, Any],
+        tool_calls_used: list[str],
+        replan_signal: ReplanSignal | None = None,
+        status: StepStatus = StepStatus.COMPLETED,
+    ) -> StepResult:
+        """Create a normalized step-result record for observability/debug."""
+
+        return StepResult(
+            step_id=step_id,
+            agent=agent,
+            step_status=status,
+            summary=self._step_summary(step_output),
+            step_output=step_output,
+            tool_calls_used=list(tool_calls_used),
+            replan_signal=replan_signal,
+        )
+
+    @staticmethod
+    def _remaining_plan_steps(plan: ExecutionPlan | None) -> int:
+        """Return the number of steps left from the current execution index."""
+
+        if plan is None:
+            return 0
+        return max(0, len(plan.steps) - int(plan.current_step_index or 0))
 
     async def _hydrate_backend_context_node(self, state: AgentState) -> AgentState:
         """Nạp thêm dữ liệu từ Mongo nếu backend chỉ gửi ID.
@@ -615,12 +710,14 @@ class ManagerOrchestrator:
             Intent.GRADE_SUBMISSION,
             Intent.VIEW_ANALYSIS,
         }:
+            metadata.setdefault("generate_questions", True)
             metadata.setdefault("generation_limit", 3)
             metadata.setdefault("rag_context_limit", 8)
             metadata.setdefault("adaptive_mode", "llm_decide")
 
         normalized_request = request.model_copy(update={"metadata": metadata})
-        adaptive_state = await self.adaptive_agent.run(
+        adaptive_state = await self._maybe_await(
+            self.adaptive_agent.run(
             {
                 "request": normalized_request,
                 "learner_profile": state.get("learner_profile"),
@@ -629,7 +726,10 @@ class ManagerOrchestrator:
                 "student_answers": state.get("student_answers", []),
                 "selected_questions": state.get("selected_questions", []),
                 "profile_updates": state.get("profile_updates", {}),
+                "planner_summary": state.get("planner_summary"),
+                "allowed_tools": state.get("allowed_tools", []),
             }
+        )
         )
         adaptive_result = {
             **state,
@@ -653,6 +753,174 @@ class ManagerOrchestrator:
             mode="completed",
         )
         return adaptive_result
+
+    async def _request_planner_node(self, state: AgentState) -> AgentState:
+        """Build or rebuild a short-lived execution plan for the current request."""
+
+        request = state.get("request")
+        log_agent_event(
+            "manager",
+            "request_planner:start",
+            state=state,
+            request=request,
+            mode="agent_node",
+        )
+
+        planner_patch = await self.request_planner.execute_step(state)
+        execution_plan = self._normalize_execution_plan(planner_patch.get("execution_plan"))
+        planner_summary = str(planner_patch.get("planner_summary") or "").strip() or None
+        current_step = execution_plan.current_step() if execution_plan is not None else None
+        prior_replan_count = int(state.get("replan_count", 0) or 0)
+        if state.get("needs_replan"):
+            prior_replan_count += 1
+        planned_state = {
+            **state,
+            "execution_plan": execution_plan,
+            "planner_summary": planner_summary,
+            "allowed_tools": list(current_step.allowed_tools) if current_step is not None else [],
+            "needs_replan": False,
+            "replan_count": prior_replan_count,
+        }
+        log_agent_event(
+            "manager",
+            "request_planner:done",
+            state=planned_state,
+            request=request,
+            extra={
+                "has_execution_plan": execution_plan is not None,
+                "planned_steps": len(execution_plan.steps) if execution_plan else 0,
+                "current_step_index": execution_plan.current_step_index if execution_plan else None,
+            },
+            mode="completed",
+        )
+        return planned_state
+
+    async def _specialist_execution_node(self, state: AgentState) -> AgentState:
+        """Execute the current planned specialist step while reusing legacy nodes."""
+
+        request = state.get("request")
+        execution_plan = self._normalize_execution_plan(state.get("execution_plan"))
+        current_step = execution_plan.current_step() if execution_plan is not None else None
+        if request is None or execution_plan is None or current_step is None:
+            return state
+
+        log_agent_event(
+            "manager",
+            "specialist_execution:start",
+            state=state,
+            request=request,
+            extra={
+                "step_id": current_step.step_id,
+                "agent": current_step.agent.value,
+                "current_step_index": execution_plan.current_step_index,
+            },
+            mode="agent_node",
+        )
+
+        base_state = {
+            **state,
+            "allowed_tools": list(current_step.allowed_tools),
+        }
+        step_results = self._normalize_step_results(state.get("step_results"))
+        tool_trace = list(state.get("tool_trace") or [])
+        replan_signal: ReplanSignal | None = None
+
+        if current_step.agent == ExecutionAgent.ADAPTIVE:
+            specialist_state = await self._adaptive_node(base_state)
+            execution_plan.current_step_index += 1
+            step_output = {
+                "selected_question_count": len(specialist_state.get("selected_questions") or []),
+                "profile_update_keys": sorted(
+                    self._ensure_dict(specialist_state.get("profile_updates")).keys()
+                ),
+                "response_type": execution_plan.final_response_mode.value,
+            }
+            step_results.append(
+                self._build_step_result(
+                    step_id=current_step.step_id,
+                    agent=current_step.agent,
+                    step_output=step_output,
+                    tool_calls_used=current_step.allowed_tools,
+                )
+            )
+            tool_trace.append(
+                {
+                    "step_id": current_step.step_id,
+                    "agent": current_step.agent.value,
+                    "allowed_tools": list(current_step.allowed_tools),
+                }
+            )
+            next_state = {
+                **specialist_state,
+                "execution_plan": execution_plan,
+                "step_results": step_results,
+                "tool_trace": tool_trace,
+                "needs_replan": False,
+                "allowed_tools": list(execution_plan.current_step().allowed_tools)
+                if execution_plan.current_step()
+                else [],
+            }
+        else:
+            specialist_state = await self._grading_node(base_state)
+            pipeline_agents: list[str] = list(current_step.metadata.get("pipeline_agents") or [])
+            contiguous_steps = execution_plan.steps[execution_plan.current_step_index :]
+            grading_steps = [
+                step
+                for step in contiguous_steps
+                if step.agent.value in {"parser", "teacher", "verifier"}
+            ]
+            step_output = {
+                "feedback": self._stringify_feedback_entry(
+                    (specialist_state.get("teacher_feedback") or [None])[-1]
+                )
+                or self._stringify_feedback_entry(
+                    (specialist_state.get("verifier_feedback") or [None])[-1]
+                ),
+                "response_type": execution_plan.final_response_mode.value,
+                "pipeline_agents": pipeline_agents or [step.agent.value for step in grading_steps],
+            }
+            for step in grading_steps:
+                step_results.append(
+                    self._build_step_result(
+                        step_id=step.step_id,
+                        agent=step.agent,
+                        step_output=step_output,
+                        tool_calls_used=step.allowed_tools,
+                    )
+                )
+                tool_trace.append(
+                    {
+                        "step_id": step.step_id,
+                        "agent": step.agent.value,
+                        "allowed_tools": list(step.allowed_tools),
+                    }
+                )
+            execution_plan.current_step_index += len(grading_steps)
+            next_state = {
+                **specialist_state,
+                "execution_plan": execution_plan,
+                "step_results": step_results,
+                "tool_trace": tool_trace,
+                "needs_replan": bool(replan_signal and replan_signal.requested),
+                "allowed_tools": list(execution_plan.current_step().allowed_tools)
+                if execution_plan.current_step()
+                else [],
+            }
+
+        log_agent_event(
+            "manager",
+            "specialist_execution:done",
+            state=next_state,
+            request=request,
+            extra={
+                "step_id": current_step.step_id,
+                "agent": current_step.agent.value,
+                "remaining_steps": self._remaining_plan_steps(execution_plan),
+                "needs_replan": next_state.get("needs_replan"),
+            },
+            mode="completed",
+        )
+        return next_state
 
     @staticmethod
     def _build_solution_student_answers(
@@ -875,6 +1143,17 @@ class ManagerOrchestrator:
         ]
         payload["profile_updates"] = profile_updates
         payload["agent_trail"] = list(state.get("agent_trail") or ["manager"])
+        if state.get("planner_summary"):
+            payload["planner_summary"] = state.get("planner_summary")
+        step_results = self._normalize_step_results(state.get("step_results"))
+        if step_results:
+            payload["step_results"] = [
+                step_result.model_dump(mode="json")
+                for step_result in step_results
+            ]
+        tool_trace = self._ensure_list(state.get("tool_trace"))
+        if tool_trace:
+            payload["tool_trace"] = tool_trace
         if isinstance(state.get("plan_patch"), dict):
             payload["plan_patch"] = state.get("plan_patch")
         if isinstance(state.get("plan_proposal"), dict):
@@ -900,18 +1179,22 @@ class ManagerOrchestrator:
     def _route_after_hydrate(state: AgentState) -> str:
         """Chọn nhánh xử lý chính sau khi đã hydrate xong context.
 
-        Quy tắc MVP:
-        - ``PREPROCESS`` / ``ASK_HINT`` / ``REVIEW_MISTAKE`` -> ``grading``
-        - ``VIEW_ANALYSIS`` / ``EXAM_PRACTICE`` / ``GRADE_SUBMISSION`` / ``UPDATE_PRACTICE`` -> ``adaptive``
-        - còn lại -> ``finalize`` để trả fallback
+        Workflow mới luôn đi qua request planner cho các intent đã biết để
+        manager có execution plan ngắn hạn trước khi dispatch specialist.
         """
 
         intent = state.get("intent")
         route = "finalize"
-        if intent in {Intent.ASK_HINT, Intent.PREPROCESS, Intent.REVIEW_MISTAKE}:
-            route = "grading"
-        elif intent in {Intent.EXAM_PRACTICE, Intent.GRADE_SUBMISSION, Intent.VIEW_ANALYSIS, Intent.UPDATE_PRACTICE}:
-            route = "adaptive"
+        if intent in {
+            Intent.ASK_HINT,
+            Intent.PREPROCESS,
+            Intent.REVIEW_MISTAKE,
+            Intent.EXAM_PRACTICE,
+            Intent.GRADE_SUBMISSION,
+            Intent.VIEW_ANALYSIS,
+            Intent.UPDATE_PRACTICE,
+        }:
+            route = "request_planner"
         log_agent_event(
             "manager",
             "route_after_hydrate",
@@ -922,17 +1205,14 @@ class ManagerOrchestrator:
         return route
 
     @staticmethod
-    def _route_after_grading(state: AgentState) -> str:
-        """Sau nhánh grading của MVP thì kết thúc luôn.
+    def _route_after_request_planner(state: AgentState) -> str:
+        """Route after planning depending on whether a valid execution plan exists."""
 
-        ``PREPROCESS`` / ``ASK_HINT`` / ``REVIEW_MISTAKE`` không cần đi tiếp sang
-        adaptive trong thiết kế hiện tại.
-        """
-
-        route = "finalize"
+        execution_plan = state.get("execution_plan")
+        route = "specialist_execution" if execution_plan is not None else "finalize"
         log_agent_event(
             "manager",
-            "route_after_grading",
+            "route_after_request_planner",
             state=state,
             extra={"route": route},
             mode="progress",
@@ -940,20 +1220,28 @@ class ManagerOrchestrator:
         return route
 
     @staticmethod
-    def _route_after_adaptive(state: AgentState) -> str:
-        """Sau adaptive thì trả kết quả luôn cho backend/frontend.
+    def _route_after_specialist_execution(state: AgentState) -> str:
+        """Handle the lightweight replan loop, then finalize when work is done."""
 
-        MVP hiện tại không yêu cầu teacher/verifier giải sẵn các câu adaptive vừa
-        được recommend/generate, nên node này luôn trả về ``finalize``.
-        """
-
-        selected_questions = state.get("selected_questions") or []
         route = "finalize"
+        execution_plan = state.get("execution_plan")
+        if isinstance(execution_plan, dict):
+            execution_plan = ExecutionPlan.model_validate(execution_plan)
+        needs_replan = bool(state.get("needs_replan"))
+        replan_count = int(state.get("replan_count", 0) or 0)
+        if needs_replan and replan_count < 1:
+            route = "request_planner"
+        elif isinstance(execution_plan, ExecutionPlan) and execution_plan.has_remaining_steps():
+            route = "specialist_execution"
         log_agent_event(
             "manager",
-            "route_after_adaptive",
+            "route_after_specialist_execution",
             state=state,
-            extra={"route": route, "selected_questions": len(selected_questions)},
+            extra={
+                "route": route,
+                "needs_replan": needs_replan,
+                "replan_count": replan_count,
+            },
             mode="progress",
         )
         return route
@@ -961,9 +1249,9 @@ class ManagerOrchestrator:
     def _build_graph(self):
         """Dựng graph điều phối chính cho AI service.
 
-        Cấu trúc hiện tại cố ý đơn giản:
+        Cấu trúc mới:
         START -> preprocess -> classify_intent -> hydrate_backend_context
-              -> grading hoặc adaptive hoặc finalize
+              -> request_planner -> specialist_execution -> (replan tối đa 1 lần)
               -> finalize -> END
         """
 
@@ -971,8 +1259,8 @@ class ManagerOrchestrator:
         builder.add_node("preprocess", preprocess_node)
         builder.add_node("classify_intent", classify_intent)
         builder.add_node("hydrate_backend_context", self._hydrate_backend_context_node)
-        builder.add_node("grading", self._grading_node)
-        builder.add_node("adaptive", self._adaptive_node)
+        builder.add_node("request_planner", self._request_planner_node)
+        builder.add_node("specialist_execution", self._specialist_execution_node)
         builder.add_node("finalize", self._finalize_response_node)
 
         builder.add_edge(START, "preprocess")
@@ -982,23 +1270,24 @@ class ManagerOrchestrator:
             "hydrate_backend_context",
             self._route_after_hydrate,
             {
-                "grading": "grading",
-                "adaptive": "adaptive",
+                "request_planner": "request_planner",
                 "finalize": "finalize",
             },
         )
         builder.add_conditional_edges(
-            "grading",
-            self._route_after_grading,
+            "request_planner",
+            self._route_after_request_planner,
             {
-                "adaptive": "adaptive",
+                "specialist_execution": "specialist_execution",
                 "finalize": "finalize",
             },
         )
         builder.add_conditional_edges(
-            "adaptive",
-            self._route_after_adaptive,
+            "specialist_execution",
+            self._route_after_specialist_execution,
             {
+                "request_planner": "request_planner",
+                "specialist_execution": "specialist_execution",
                 "finalize": "finalize",
             },
         )

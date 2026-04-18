@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
+from master.agents.common.execution_plan import ExecutionPlan, StepResult
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import (
     ExamQuestion,
@@ -25,6 +26,7 @@ class AgentState(TypedDict, total=False):
 
     learner_profile: LearnerProfile | None
     active_plan: SharedPlanMemory | None
+    execution_plan: ExecutionPlan | None
 
     exam_id: str | None
     questions: list[ExamQuestion]
@@ -45,6 +47,12 @@ class AgentState(TypedDict, total=False):
     profile_updates: dict[str, Any] | None
     plan_patch: dict[str, Any] | None
     plan_proposal: dict[str, Any] | None
+    step_results: list[StepResult] | None
+    planner_summary: str | None
+    tool_trace: list[dict[str, Any]] | None
+    allowed_tools: list[str] | None
+    needs_replan: bool
+    replan_count: int
 
     response: MessageResponse | None
     agent_trail: list[str] | None

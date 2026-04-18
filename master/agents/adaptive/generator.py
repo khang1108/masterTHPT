@@ -4,22 +4,133 @@ from __future__ import annotations
 
 import json
 from typing import Any, Sequence
+from uuid import uuid4
 
+from master.agents.baseagent import BaseAgent
 from master.agents.common.langsmith import build_langsmith_invoke_config
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.message import ExamQuestion, MessageRequest
+from master.agents.common.prompt import adaptive_generate_questions_prompt
 
 from .question_gen import GeneratedQuestionBatch
 
 
-class AdaptiveQuestionGenerator:
+class AdaptiveQuestionGenerator(BaseAgent):
     """Generate new THPTQG-style questions from learner state and RAG context."""
 
     def __init__(self, llm=None) -> None:
         """Create the generator with an optional injected chat model."""
 
+        super().__init__(agent_role="Adaptive")
+
         self._llm = llm
+        self.system_prompt = """
+        Bạn là một AI Question Generator chuyên tạo câu hỏi thi THPT Quốc Gia (THPTQG).
+
+        VAI TRÒ:
+            - Sinh câu hỏi mới dựa trên:
+            + LearnerProfile (trình độ, điểm yếu, điểm mạnh)
+            + Target topics
+            + RAG context từ database (bắt buộc sử dụng)
+            - Mục tiêu: giúp học sinh cải thiện kiến thức theo hướng cá nhân hóa.
+
+        NGUYÊN TẮC CỐT LÕI:
+            - KHÔNG được copy hoặc paraphrase gần giống câu hỏi trong RAG context.
+            - PHẢI giữ phong cách đề thi THPTQG:
+            + câu lệnh rõ ràng
+            + đúng chuẩn chương trình phổ thông
+            - Độ khó phải phù hợp learner_theta:
+            + ưu tiên vùng “học hiệu quả” (không quá dễ, không quá khó)
+            - Ưu tiên sinh câu vào weak_topics trước.
+        Các loại câu hỏi được hỗ trợ:
+
+        1. "type" có 3 giá trị:
+            - "multiple_choice": câu trắc nghiệm 4 lựa chọn A, B, C, D
+            - "true_false": câu đúng/sai gồm nhiều mệnh đề (a), b), c), d)
+            - "short_ans": câu tự luận, không có lựa chọn
+
+        Quy tắc cho từng field:
+            1. "content":
+                - Là toàn bộ nội dung câu hỏi.
+                - Bao gồm cả biểu thức LaTeX nếu có.
+                - Không chứa đáp án hoặc lời giải.
+                - Không chứa các lựa chọn.
+
+            2. "type":
+                - Phải là một trong ba giá trị: "multiple_choice", "true_false", "short_ans".
+                - Phải phản ánh đúng cấu trúc câu hỏi thực tế.
+
+            3. "options":
+                - "multiple_choice":
+                    + Là mảng gồm đúng 4 phần tử.
+                    + Giữ nguyên định dạng A., B., C., D. như trong đề.
+                - "true_false":
+                    + Là mảng các mệnh đề.
+                    + Mỗi phần tử tương ứng một mệnh đề (a), b), c), d), ...
+                    + Giữ nguyên nội dung từng mệnh đề.
+                - "short_ans":
+                    + Giá trị phải là null.
+                    + Không được chứa mảng rỗng.
+
+        RÀNG BUỘC BẮT BUỘC:
+        - Chỉ trả về JSON hợp lệ theo schema.
+        - Không giải thích.
+        - Không thêm text ngoài JSON.
+        - Không dùng markdown.
+        - Không dùng code fence.
+        - Không thêm field ngoài schema.
+        - Không được suy đoán hoặc tự tạo thêm lựa chọn nếu đề không có.
+        - Không được gộp nhiều câu thành một.
+        - Không được tách một câu thành nhiều câu nếu đề không thể hiện như vậy.
+
+        RÀNG BUỘC NỘI DUNG:
+        - Mỗi câu:
+        + có đúng 4 options
+        + correct_answer phải nằm trong options
+        + content phải rõ nghĩa, không mơ hồ
+        - Không tạo câu hỏi vô nghĩa hoặc không giải được.
+        - Không sinh câu quá giống nhau.
+        - topic_tags phải phản ánh đúng nội dung câu hỏi.
+        - difficulty_b phải hợp lý với learner (không random).
+
+        SỬ DỤNG RAG CONTEXT:
+        - Dùng context để:
+        + học style ra đề
+        + hiểu phân bố độ khó
+        + hiểu cách đặt bẫy / distractor
+        - KHÔNG được:
+        + copy câu
+        + đổi số đơn giản từ context
+        + giữ cấu trúc identical
+
+        PHÂN PHỐI CÂU HỎI:
+        - Nếu số lượng >= 3:
+        + ưu tiên đa dạng dạng câu
+        - Nếu ít:
+        + ưu tiên câu đánh đúng trọng tâm yếu
+
+        SCHEMA OUTPUT:
+        {
+        "questions": [
+            {
+            "type": "multiple_choice | true_false | short_ans",
+            "content": "string",
+            "content_latex": "string | null",
+            "options": ["string", "string", "string", "string"],
+            "correct_answer": "string",
+            "discrimination_a": "number",
+            "difficulty_b": "number",
+            "topic_tags": ["string"],
+            "max_score": "number"
+            }
+        ]
+        }
+
+        QUY TẮC CUỐI:
+        - Output phải parse được bằng JSON parser.
+        - Nếu không chắc, ưu tiên đơn giản hóa câu hỏi thay vì tạo sai.
+        """
 
     def _get_llm(self):
         """Lazily build the default LLM used for adaptive question generation."""
@@ -30,6 +141,35 @@ class AdaptiveQuestionGenerator:
                 temperature=0.6,
             )
         return self._llm
+
+    @staticmethod
+    def _response_text(response: Any) -> str:
+        """Normalize chat-model response content into plain text."""
+
+        content = getattr(response, "content", response)
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    parts.append(str(item.get("text", "")))
+                else:
+                    parts.append(str(item))
+            content = "".join(parts)
+        return str(content).strip()
+
+    async def run(self, input: str) -> str:
+        """BaseAgent compatibility entrypoint for simple chat-style calls."""
+
+        llm = self._get_llm()
+        response = await llm.ainvoke(
+            self.build_messages(input),
+            build_langsmith_invoke_config(
+                run_name="AdaptiveQuestionGenerator.run",
+                agent_role="adaptive",
+                extra_tags=["adaptive", "generator", "chat"],
+            ),
+        )
+        return self._response_text(response)
 
     @staticmethod
     def _context_payload(context_questions: Sequence[ExamQuestion]) -> list[dict[str, Any]]:
@@ -103,26 +243,15 @@ class AdaptiveQuestionGenerator:
             if request and getattr(request, "content", None)
             else request.student_message if request else ""
         )
-        prompt = (
-            "Ban la giao vien ra de THPT Quoc Gia. "
-            "Nhiem vu la SINH cau hoi moi cho hoc sinh dua tren LearnerProfile, "
-            "nhung BAT BUOC phai dua vao bo cau hoi truy xuat tu database lam RAG context. "
-            "Khong sao chep nguyen van context, nhung phai giu phong cach de thi THPTQG: "
-            "cau lenh ro rang, 4 lua chon, 1 dap an dung, muc do kho hop ly, "
-            "co xu huong danh vao cac chu de hoc sinh con yeu.\n\n"
-            f"So cau can sinh: {limit}\n"
-            f"LearnerProfile: {profile.model_dump_json()}\n"
-            f"Target topics uu tien: {json.dumps(target_topics, ensure_ascii=False)}\n"
-            f"Yeu cau bo sung cua nguoi dung: {learner_request or 'Khong co'}\n\n"
-            "RAG CONTEXT TU DATABASE (tham khao phong cach, topic, do kho):\n"
-            f"{json.dumps(self._context_payload(context_questions), ensure_ascii=False)}\n\n"
-            "Rang buoc dau ra:\n"
-            "- Chi sinh cau moi, khong lap lai y nguyen van tu context.\n"
-            "- Moi cau co 4 options.\n"
-            "- correct_answer phai khop mot trong 4 options.\n"
-            "- topic_tags phai phan anh dung chu de muc tieu.\n"
-            "- difficulty_b nen xap xi nang luc hien tai, uu tien vung hoc tap hieu qua.\n"
-            "- Khong giai thich ngoai schema."
+        prompt = adaptive_generate_questions_prompt(
+            limit=limit,
+            learner_profile_json=profile.model_dump_json(),
+            target_topics_json=json.dumps(target_topics, ensure_ascii=False),
+            learner_request=learner_request,
+            rag_context_json=json.dumps(
+                self._context_payload(context_questions),
+                ensure_ascii=False,
+            ),
         )
 
         llm = self._get_llm()
@@ -136,7 +265,7 @@ class AdaptiveQuestionGenerator:
             structured_llm = llm.with_structured_output(GeneratedQuestionBatch)
 
         result: GeneratedQuestionBatch = structured_llm.invoke(
-            prompt,
+            self.build_messages(prompt),
             build_langsmith_invoke_config(
                 run_name="AdaptiveQuestionGenerator.generate_questions",
                 agent_role="adaptive",
@@ -151,9 +280,10 @@ class AdaptiveQuestionGenerator:
 
         generated_questions: list[ExamQuestion] = []
         for index, item in enumerate(result.questions[:limit], start=1):
+            question_id = f"generated-{profile.student_id}-{uuid4().hex[:10]}-{index}"
             generated_questions.append(
                 ExamQuestion(
-                    question_id=f"generated-{profile.student_id}-{index}",
+                    question_id=question_id,
                     exam_id=request.exam_id if request else "adaptive-generated",
                     question_index=index,
                     type=item.type,

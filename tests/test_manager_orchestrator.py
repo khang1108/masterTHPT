@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import pytest
 
+from master.agents.common.execution_plan import ExecutionAgent, FinalResponseMode
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import (
     ExamQuestion,
     Intent,
     MessageRequest,
-    MessageResponse,
     StudentAnswer,
 )
+from master.agents.common.tools import ToolsRegistry
 from master.agents.manager.classify_intent import classify_intent, route_by_intent
 from master.agents.manager.orchestrator import ManagerOrchestrator
+from master.agents.manager.request_planner import RequestPlannerAgent
 
 
 class _FakeRepository:
@@ -153,61 +155,8 @@ def test_route_by_intent_includes_submission_and_practice_update() -> None:
 
 
 @pytest.mark.asyncio
-async def test_manager_orchestrator_runs_adaptive_then_solution_pipeline(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """VIEW_ANALYSIS should trigger adaptive generation then teacher/verifier solving."""
-
-    fake_solution_calls: list[dict] = []
-
-    async def _fake_solution_pipeline(
-        *,
-        request,
-        learner_profile,
-        exam_id,
-        questions,
-        student_answers,
-        max_rounds,
-        confidence_threshold,
-        thread_id,
-    ):
-        fake_solution_calls.append(
-            {
-                "request": request,
-                "learner_profile": learner_profile,
-                "exam_id": exam_id,
-                "questions": questions,
-                "student_answers": student_answers,
-                "max_rounds": max_rounds,
-                "confidence_threshold": confidence_threshold,
-                "thread_id": thread_id,
-            }
-        )
-        assert [question.question_id for question in questions] == [
-            "next-1",
-            "next-2",
-        ]
-        assert [answer.question_id for answer in student_answers] == [
-            "next-1",
-            "next-2",
-        ]
-        assert all(answer.student_answer == "" for answer in student_answers)
-        return {
-            "response": MessageResponse(
-                student_id=request.student_id,
-                exam_id=exam_id,
-                feedback="Teacher + Verifier da xu ly bo cau hoi moi.",
-            ),
-            "debate_outputs": [
-                {"question_id": "next-1"},
-                {"question_id": "next-2"},
-            ],
-        }
-
-    monkeypatch.setattr(
-        "master.agents.manager.orchestrator._run_teacher_verifier_solution_pipeline",
-        _fake_solution_pipeline,
-    )
+async def test_manager_orchestrator_runs_request_planner_then_adaptive() -> None:
+    """VIEW_ANALYSIS should go through planner, then the adaptive specialist step."""
 
     adaptive_agent = _FakeAdaptiveAgent()
     orchestrator = ManagerOrchestrator(
@@ -248,14 +197,68 @@ async def test_manager_orchestrator_runs_adaptive_then_solution_pipeline(
     assert adaptive_agent.last_state is not None
     assert adaptive_agent.last_state["request"].student_id == "user-42"
     assert adaptive_agent.last_state["request"].metadata["generate_questions"] is True
-    assert fake_solution_calls
-    assert payload["feedback"] == "Teacher + Verifier da xu ly bo cau hoi moi."
+    assert payload["feedback"] == "Adaptive đã phân tích lịch sử làm bài và cập nhật hồ sơ học tập."
     assert [question["question_id"] for question in payload["selected_questions"]] == [
         "next-1",
         "next-2",
     ]
     assert payload["profile_updates"]["attempts_processed"] == 1
-    assert payload["agent_trail"] == ["manager", "adaptive", "teacher", "verifier"]
+    assert payload["agent_trail"] == ["manager", "adaptive"]
+    assert payload["planner_summary"].startswith("Planner chọn workflow VIEW_ANALYSIS")
+    assert payload["step_results"][0]["agent"] == "adaptive"
+    assert payload["tool_trace"][0]["agent"] == "adaptive"
+
+
+def test_request_planner_routes_hint_to_teacher_only() -> None:
+    """Hint requests should produce a one-step teacher plan with hint response mode."""
+
+    planner = RequestPlannerAgent()
+    plan, summary = planner.build_plan(
+        {
+            "intent": Intent.ASK_HINT,
+            "request": MessageRequest(intent=Intent.ASK_HINT, student_id="student-1"),
+        }
+    )
+
+    assert plan is not None
+    assert plan.final_response_mode == FinalResponseMode.HINT
+    assert [step.agent for step in plan.steps] == [ExecutionAgent.TEACHER]
+    assert "ASK_HINT" in summary
+
+
+def test_request_planner_routes_review_to_teacher_then_verifier() -> None:
+    """Review requests should explicitly plan teacher followed by verifier."""
+
+    planner = RequestPlannerAgent()
+    plan, _ = planner.build_plan(
+        {
+            "intent": Intent.REVIEW_MISTAKE,
+            "request": MessageRequest(intent=Intent.REVIEW_MISTAKE, student_id="student-1"),
+        }
+    )
+
+    assert plan is not None
+    assert plan.requires_verification is True
+    assert [step.agent for step in plan.steps] == [
+        ExecutionAgent.TEACHER,
+        ExecutionAgent.VERIFIER,
+    ]
+
+
+def test_tool_scoping_exposes_role_specific_bundle_names() -> None:
+    """Scoped tool policy should keep specialist visibility narrow and explicit."""
+
+    teacher_tools = ToolsRegistry.get_tool_names_for_role("teacher")
+    verifier_tools = ToolsRegistry.get_tool_names_for_role("verifier")
+    adaptive_tools = ToolsRegistry.get_tool_names_for_role("adaptive")
+    parser_tools = ToolsRegistry.get_tool_names_for_role("parser")
+
+    assert "python_repl" in teacher_tools
+    assert "trace_knowledge_graph_topics" in teacher_tools
+    assert teacher_tools == verifier_tools
+    assert adaptive_tools == []
+    assert "read_file" in parser_tools
+    assert "python_repl" not in parser_tools
 
 
 @pytest.mark.asyncio

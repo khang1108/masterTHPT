@@ -34,6 +34,8 @@ class AdaptiveWorkflowState(TypedDict, total=False):
     request: MessageRequest
     learner_profile: LearnerProfile
     active_plan: SharedPlanMemory | None
+    planner_summary: str | None
+    allowed_tools: list[str]
     questions: list[ExamQuestion]
     rag_context_questions: list[ExamQuestion]
     generated_questions: list[ExamQuestion]
@@ -88,65 +90,77 @@ class AdaptiveAgent(BaseAgent):
         self.system_prompt = """
             Bạn là Adaptive Planner Agent cho hệ thống học tập THPT.
 
-            Mục tiêu của bạn:
+            Nhiệm vụ của bạn:
+            - Phân tích learner profile, learning goal, planner context, candidate question topics và rag context.
+            - Chọn chiến lược tạo lượt luyện tiếp theo sao cho người học tiến gần mục tiêu học tập.
+            - Quyết định mode sử dụng nguồn câu hỏi: reuse, generate, hoặc mix.
+            - Ưu tiên tiến bộ hợp lý theo prerequisite, tránh lặp lại nhàm chán, và giữ độ khó phù hợp với learner.
 
-            Tạo kế hoạch chọn bài luyện tiếp theo dựa trên learner_profile, learning_goal, planner_context và knowledge graph.
-            Quyết định chiến lược sử dụng nguồn câu hỏi: reuse, generate, hoặc mix.
-            Đảm bảo đề xuất cuối cùng giúp người học tiến gần mục tiêu học tập, không lặp nhàm chán, và có tiến trình hợp lý theo prerequisite.
-            Bạn chỉ được trả về một JSON object đúng schema đầu ra của hệ thống:
-            mode, reasoning, reuse_count, generate_count, confidence, focus_topics.
-            Không trả thêm field nào khác.
+            Bạn luôn nhận được các đầu vào sau:
+            - learner_theta
+            - weak_topics
+            - strong_topics
+            - answered_question_ids
+            - candidate_question_topics
+            - rag_context_topics
+            - learning_goal
+            - planner_context
+            - target_limit
+            - intent
 
-            Đầu vào bạn luôn có:
+            Quy trình suy luận nội bộ:
+            Bước 1. Xác định mục tiêu phiên học hiện tại
+            - Nếu learning_goal có nội dung rõ ràng, ưu tiên learning_goal.
+            - Nếu learning_goal trống hoặc quá mơ hồ, ưu tiên weak_topics kết hợp planner_context.
 
-            learner_theta
-            weak_topics, strong_topics
-            answered_question_ids
-            candidate_question_topics
-            rag_context_topics
-            learning_goal
-            planner_context
-            target_limit
-            intent
-            Quy trình suy luận bắt buộc (thực hiện nội bộ):
-            Bước 1. Xác định mục tiêu phiên học hiện tại:
+            Bước 2. Chọn focus_topics
+            - Chọn từ 2 đến 5 topic quan trọng nhất cho lượt này.
+            - Ưu tiên topic prerequisite trước, rồi mới đến topic mục tiêu.
+            - Tránh chọn toàn bộ các topic đã được luyện quá dày trong thời gian gần đây.
+            - Chỉ giữ lại các topic thật sự có giá trị cho bước tiến tiếp theo.
 
-            Ưu tiên learning_goal nếu có.
-            Nếu learning_goal trống, ưu tiên weak_topics + planner_context.
-            Bước 2. Tạo plan ngắn cho lượt này:
+            Bước 3. Quyết định mode
+            - Chọn "reuse" nếu candidate_question_topics phủ tốt focus_topics, đủ số lượng, có độ khó phù hợp learner_theta, và vẫn còn novelty.
+            - Chọn "generate" nếu ngân hàng câu hỏi thiếu coverage, thiếu novelty, hoặc không phù hợp độ khó hiện tại.
+            - Chọn "mix" nếu nguồn câu hỏi hiện có chỉ đáp ứng được một phần.
 
-            Xác định 2 đến 5 focus_topics quan trọng nhất.
-            Sắp xếp theo thứ tự: prerequisite cần củng cố trước, sau đó tới topic mục tiêu.
-            Tránh chọn toàn bộ topic đã luyện dày đặc gần đây.
-            Bước 3. Đánh giá khả năng dùng câu trong DB:
+            Bước 4. Xác định số lượng reuse và generate
+            - reuse_count và generate_count phải là số nguyên không âm.
+            - reuse_count + generate_count nên bằng hoặc xấp xỉ target_limit.
+            - Nếu mode = "reuse" thì generate_count = 0.
+            - Nếu mode = "generate" thì reuse_count = 0.
+            - Nếu mode = "mix" thì cả hai đều có thể lớn hơn 0.
 
-            Nếu candidate topics phủ tốt focus_topics, độ khó phù hợp learner_theta, và đủ số lượng thì ưu tiên reuse.
-            Nếu candidate thiếu coverage hoặc thiếu novelty thì ưu tiên generate.
-            Nếu candidate đủ một phần nhưng chưa đủ chất lượng thì chọn mix.
-            Bước 4. Lập chiến lược công cụ (tool strategy) theo mode:
+            Bước 5. Định hướng phân bổ loại câu nếu có generate
+            - Nếu target_limit >= 3: ưu tiên đa dạng, nên có multiple_choice, true_false, và short_ans nếu phù hợp.
+            - Nếu target_limit = 2: ưu tiên 1 câu objective (multiple_choice hoặc true_false) và 1 câu short_ans.
+            - Nếu target_limit = 1: chọn loại câu phù hợp nhất với focus topic quan trọng nhất.
+            - Vì output schema không có trường riêng cho question types, hãy mô tả định hướng này ngắn gọn trong reasoning.
 
-            reuse: ưu tiên truy xuất và xếp hạng câu từ DB.
-            generate: ưu tiên dùng RAG context để sinh câu mới.
-            mix: lấy câu tốt từ DB trước, phần thiếu sẽ sinh mới.
-            Bước 5. Ràng buộc đa dạng loại câu khi có generate:
+            Ràng buộc bắt buộc:
+            - Chỉ được trả về đúng một JSON object hợp lệ.
+            - Không được trả về bất kỳ văn bản nào ngoài JSON.
+            - Không dùng markdown.
+            - Không dùng code fence.
+            - Không thêm field ngoài schema quy định.
+            - mode chỉ được là một trong ba giá trị: "reuse", "generate", "mix".
+            - confidence phải là số thực trong đoạn [0, 1].
+            - focus_topics phải là mảng các topic ngắn gọn, rõ nghĩa, có giá trị học tập thực sự.
+            - reasoning phải ngắn gọn, rõ ràng, nêu được:
+            + mục tiêu học tập chính của lượt này
+            + vì sao chọn mode hiện tại
+            + logic chọn focus_topics
+            + định hướng phân bổ loại câu nếu cần
 
-            Nếu target_limit >= 3: định hướng nên có đủ multiple_choice, true_false, short_ans.
-            Nếu target_limit = 2: ưu tiên 1 câu objective (multiple_choice hoặc true_false) + 1 câu short_ans.
-            Nếu target_limit = 1: chọn loại câu phù hợp nhất với focus topic quan trọng nhất.
-            Lưu ý: vì schema đầu ra cố định, bạn phải mô tả định hướng phân bổ loại câu bên trong reasoning.
-
-            Ràng buộc an toàn:
-
-            mode chỉ được là reuse, generate, hoặc mix.
-            reuse_count và generate_count là số nguyên không âm.
-            confidence nằm trong khoảng 0 đến 1.
-            reuse_count + generate_count nên xấp xỉ target_limit.
-            focus_topics phải là danh sách topic ngắn gọn, ưu tiên topic thật sự cần cải thiện.
-            Ưu tiên học hiệu quả: vừa đủ khó, có tiến bộ, không lặp lại trải nghiệm gần đây.
-            Ngôn ngữ:
-
-            reasoning viết ngắn gọn, rõ ràng, có nhắc learning_goal và lý do chọn mode.
-            Không dùng markdown, không giải thích dài dòng ngoài nội dung cần thiết.
+            Schema đầu ra duy nhất:
+            {
+            "mode": "reuse | generate | mix",
+            "reasoning": "string",
+            "reuse_count": 0,
+            "generate_count": 0,
+            "confidence": 0.0,
+            "focus_topics": ["string"]
+            }
         """
         log_agent_event(
             "adaptive",
@@ -158,7 +172,6 @@ class AdaptiveAgent(BaseAgent):
             },
             mode="completed",
         )
-
     @staticmethod
     def _post_submission_intents() -> set[str]:
         """Return intents that should reload a fresh recommendation bank.
@@ -780,6 +793,29 @@ class AdaptiveAgent(BaseAgent):
         question_map = {question.question_id: question for question in questions}
         non_empty_answer_count = sum(1 for answer in answers if answer.normalized_answer())
 
+        # Hydration can occasionally miss question records when payload ids are
+        # mixed between legacy/id aliases. Pull missing questions directly from
+        # repository so profile updates are not silently skipped.
+        missing_answer_ids = self._dedupe_preserve_order(
+            [
+                answer.question_id
+                for answer in answers
+                if answer.question_id
+                and answer.normalized_answer()
+                and answer.question_id not in question_map
+            ]
+        )
+        if missing_answer_ids:
+            try:
+                fetched_questions = await self.repository.get_questions(
+                    question_ids=missing_answer_ids,
+                    limit=max(1, len(missing_answer_ids)),
+                )
+            except RuntimeError:
+                fetched_questions = []
+            for question in fetched_questions:
+                question_map.setdefault(question.question_id, question)
+
         attempts: list[AdaptiveAttempt] = []
         for answer in answers:
             question = question_map.get(answer.question_id)
@@ -814,6 +850,7 @@ class AdaptiveAgent(BaseAgent):
                     "non_empty_answers": non_empty_answer_count,
                     "questions": len(questions),
                     "mapped_questions": len(question_map),
+                    "missing_answer_ids": len(missing_answer_ids),
                 },
                 mode="warning",
             )
@@ -872,6 +909,13 @@ class AdaptiveAgent(BaseAgent):
         )
         answers = [StudentAnswer.model_validate(answer) for answer in state.get("student_answers", [])]
         answered_question_ids = [answer.question_id for answer in answers if answer.question_id]
+        recent_question_ids = profile.recent_question_ids if profile else []
+        excluded_question_ids = self._dedupe_preserve_order(
+            [
+                *answered_question_ids,
+                *recent_question_ids,
+            ]
+        )
         questions = [ExamQuestion.model_validate(question) for question in state.get("questions", [])]
         existing_profile_updates = (
             dict(state.get("profile_updates"))
@@ -895,7 +939,7 @@ class AdaptiveAgent(BaseAgent):
             questions = await self.load_questions(
                 request=request,
                 profile=profile,
-                exclude_question_ids=answered_question_ids,
+                exclude_question_ids=excluded_question_ids,
             )
         elif self._should_refresh_candidate_bank(
             request=request,
@@ -909,7 +953,7 @@ class AdaptiveAgent(BaseAgent):
             questions = await self.load_questions(
                 request=request,
                 profile=profile,
-                exclude_question_ids=answered_question_ids,
+                exclude_question_ids=excluded_question_ids,
             )
 
         # RAG context is always loaded from Mongo, so this node must await it
@@ -917,7 +961,7 @@ class AdaptiveAgent(BaseAgent):
         rag_context_questions = await self.load_rag_context_questions(
             request=request,
             profile=profile,
-            exclude_question_ids=answered_question_ids,
+            exclude_question_ids=excluded_question_ids,
         )
         decision = self.decide_question_strategy(
             request=request,
@@ -925,7 +969,7 @@ class AdaptiveAgent(BaseAgent):
             active_plan=active_plan,
             candidate_questions=questions,
             rag_context_questions=rag_context_questions,
-            answered_question_ids=answered_question_ids,
+            answered_question_ids=excluded_question_ids,
         )
 
         metadata = request.metadata if request else {}
@@ -960,7 +1004,7 @@ class AdaptiveAgent(BaseAgent):
             selected_reused, reuse_fit = self._select_reused_candidates(
                 profile=profile,
                 questions=questions,
-                exclude_question_ids=answered_question_ids,
+                exclude_question_ids=excluded_question_ids,
                 requested_count=min(reuse_target, len(questions)),
                 focus_topics=decision.focus_topics,
                 learning_goal=self._learning_goal(request),
@@ -1024,6 +1068,7 @@ class AdaptiveAgent(BaseAgent):
             "decision": decision.model_dump(mode="json"),
             "inputs": {
                 "answered_question_ids": answered_question_ids,
+                "excluded_question_ids": excluded_question_ids,
                 "candidate_question_count": len(questions),
                 "rag_context_count": len(rag_context_questions),
                 "weak_topics": profile.weak_topics(),
@@ -1103,6 +1148,29 @@ class AdaptiveAgent(BaseAgent):
             mode="completed",
         )
         return final_state
+
+    async def execute_step(
+        self,
+        state: dict[str, Any],
+        *,
+        step: Any | None = None,
+    ) -> dict[str, Any]:
+        """Structured specialist contract used by the manager planner layer."""
+
+        adaptive_state = await self.run(state)
+        selected_questions = adaptive_state.get("selected_questions", [])
+        return {
+            "step_output": {
+                "selected_question_count": len(selected_questions),
+                "profile_update_keys": sorted(
+                    (adaptive_state.get("profile_updates") or {}).keys()
+                ),
+            },
+            "step_status": "completed",
+            "tool_calls_used": list(state.get("allowed_tools", []) or []),
+            "replan_signal": None,
+            **adaptive_state,
+        }
 
     async def load_learner_profile(self, student_id: str) -> LearnerProfile | None:
         """Load the persisted learner profile from the adaptive profile store.

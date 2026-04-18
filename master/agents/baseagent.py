@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -34,6 +34,23 @@ class BaseAgent(ABC):
         else:
             messages.append(HumanMessage(content=content))
         return messages
+
+    async def execute_step(
+        self,
+        state: dict[str, Any],
+        *,
+        step: Any | None = None,
+    ) -> dict[str, Any]:
+        """Optional structured execution contract for manager-orchestrated steps.
+
+        Legacy agents can continue using their existing entrypoints. The newer
+        manager/planner layer may call this method when an agent supports a
+        request-level execution step contract.
+        """
+
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement structured step execution"
+        )
 
     @abstractmethod
     async def run(self, input: str) -> str:

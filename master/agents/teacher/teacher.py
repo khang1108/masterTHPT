@@ -189,7 +189,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         )
         logger.info(f"LLM client for Teacher initialized: {os.getenv("FPT_API_KEY")}, {os.getenv("FPT_BASE_URL")}, model={llm.model}")
 
-        await self.setup_tools(llm)
+        await self.setup_tools(llm, bundle="teacher")
         self._llm_with_single_output = self._llm.with_structured_output(Evaluate)
         self._llm_with_batch_output = self._llm.with_structured_output(EvaluateBatch)
         logger.agent_node("Teacher setup completed")

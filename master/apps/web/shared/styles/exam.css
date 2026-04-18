@@ -855,6 +855,12 @@
 	color: var(--text-main);
 }
 
+.exam-hint-content .exam-math-text,
+.exam-review-content .exam-math-text {
+	display: block;
+	white-space: pre-line;
+}
+
 .exam-hint-box {
 	border-color: rgba(9, 127, 232, 0.14);
 	background: #f8fbff;
@@ -862,6 +868,65 @@
 
 .exam-hint-title {
 	color: #005bab;
+}
+
+.exam-hint-level-list {
+	display: grid;
+	gap: 10px;
+}
+
+.exam-hint-level {
+	padding: 10px;
+	border-radius: 10px;
+	border: 1px solid rgba(9, 127, 232, 0.12);
+	background: #ffffff;
+	display: grid;
+	gap: 6px;
+}
+
+.exam-hint-level-toggle {
+	width: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.exam-hint-level-toggle:focus-visible {
+	outline: 2px solid rgba(9, 127, 232, 0.28);
+	outline-offset: 4px;
+	border-radius: 8px;
+}
+
+.exam-hint-level-title {
+	margin: 0;
+	font-size: 0.88rem;
+	font-weight: 700;
+	color: #1b5fa8;
+}
+
+.exam-hint-level-toggle-icon {
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	border-radius: 999px;
+	border: 1px solid rgba(9, 127, 232, 0.18);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 1rem;
+	font-weight: 700;
+	color: #1b5fa8;
+	background: #f4f9ff;
+}
+
+.exam-hint-level-toggle.is-expanded .exam-hint-level-toggle-icon {
+	background: #e8f3ff;
 }
 
 .exam-review-box {

@@ -43,6 +43,14 @@ def teacher_hint_prompt(question, student_answer: str | None, student_message: s
         - Không tiết lộ trọn vẹn đáp án nếu chưa thật sự cần thiết.
         - Ưu tiên gợi ý theo hướng tư duy, phương pháp, hoặc bước tiếp theo.
         - Viết hoàn toàn bằng tiếng Việt tự nhiên, ngắn gọn, dễ hiểu.
+        - BẮT BUỘC tạo đúng 3 mức gợi ý trong field feedback theo format:
+          Hint 1: ...
+          Hint 2: ...
+          Hint 3: ...
+        - Hint 1 phải là gợi ý định hướng.
+        - Hint 2 phải là gợi ý phương pháp hoặc công thức nên dùng.
+        - Hint 3 phải là bước làm tiếp theo, nhưng vẫn chưa được lộ toàn bộ lời giải.
+        - Không gộp cả ba hint thành một đoạn duy nhất không có nhãn.
 
         Thông tin bài toán:
         {question}
@@ -156,3 +164,30 @@ def adaptive_decide_question_strategy_prompt(
 		- Không xem bộ câu vừa làm xong là nguồn duy nhất cho lượt luyện tập tiếp theo.
 		- Nếu ngân hàng hiện có chưa đủ phủ mục tiêu học tập, hãy ưu tiên generate hoặc mix.
 	"""
+
+
+def adaptive_generate_questions_prompt(
+    *,
+    limit: int,
+    learner_profile_json: str,
+    target_topics_json: str,
+    learner_request: str,
+    rag_context_json: str,
+) -> str:
+    return f"""
+		Hãy sinh {limit} câu hỏi mới cho học sinh.
+
+		Dữ liệu đầu vào:
+		- LearnerProfile: {learner_profile_json}
+		- Target topics ưu tiên: {target_topics_json}
+		- Yêu cầu bổ sung của học sinh: {learner_request or "Không có"}
+
+		RAG context từ database (chỉ dùng để tham khảo phong cách, độ khó, và phạm vi kiến thức):
+		{rag_context_json}
+
+		Yêu cầu:
+		- Ưu tiên các chủ đề học sinh còn yếu và các target topics.
+		- Độ khó phù hợp với năng lực hiện tại của học sinh.
+		- Câu hỏi phải mới, không sao chép hoặc biến đổi nhẹ từ context.
+		- Chỉ trả về output đúng schema đã được quy định.
+		"""

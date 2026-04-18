@@ -176,37 +176,55 @@ class AdaptiveDBTools(MongoDBTools):
         return [ObjectId(value) for value in values if ObjectId.is_valid(value)]
 
     @classmethod
-    def _build_any_id_filter(cls, values: Iterable[str] | None) -> dict[str, Any] | None:
-        normalized = cls._clean_values(values)
-        if not normalized:
-            return None
-
-        object_ids = cls._to_object_ids(normalized)
-        if len(normalized) == 1:
-            if object_ids:
-                return {"$or": [{"id": normalized[0]}, {"_id": object_ids[0]}]}
-            return {"id": normalized[0]}
-
-        if object_ids:
-            return {
-                "$or": [
-                    {"id": {"$in": normalized}},
-                    {"_id": {"$in": object_ids}},
-                ]
-            }
-        return {"id": {"$in": normalized}}
-
-    @classmethod
-    def _build_any_id_exclusion(
+    def _build_any_id_filter(
         cls,
         values: Iterable[str] | None,
+        *,
+        string_fields: Iterable[str] | None = None,
     ) -> dict[str, Any] | None:
         normalized = cls._clean_values(values)
         if not normalized:
             return None
 
+        candidate_fields = cls._clean_values(string_fields) or ["id"]
         object_ids = cls._to_object_ids(normalized)
-        clauses: list[dict[str, Any]] = [{"id": {"$nin": normalized}}]
+        if len(normalized) == 1:
+            string_filters = [{field: normalized[0]} for field in candidate_fields]
+            if object_ids:
+                return {"$or": [*string_filters, {"_id": object_ids[0]}]}
+            if len(string_filters) == 1:
+                return string_filters[0]
+            return {"$or": string_filters}
+
+        string_filters = [{field: {"$in": normalized}} for field in candidate_fields]
+        if object_ids:
+            return {
+                "$or": [
+                    *string_filters,
+                    {"_id": {"$in": object_ids}},
+                ]
+            }
+        if len(string_filters) == 1:
+            return string_filters[0]
+        return {"$or": string_filters}
+
+    @classmethod
+    def _build_any_id_exclusion(
+        cls,
+        values: Iterable[str] | None,
+        *,
+        string_fields: Iterable[str] | None = None,
+    ) -> dict[str, Any] | None:
+        normalized = cls._clean_values(values)
+        if not normalized:
+            return None
+
+        candidate_fields = cls._clean_values(string_fields) or ["id"]
+        object_ids = cls._to_object_ids(normalized)
+        clauses: list[dict[str, Any]] = [
+            {field: {"$nin": normalized}}
+            for field in candidate_fields
+        ]
         if object_ids:
             clauses.append({"_id": {"$nin": object_ids}})
         if len(clauses) == 1:
@@ -404,9 +422,15 @@ class AdaptiveDBTools(MongoDBTools):
             return []
 
         query = self._merge_filters(
-            self._build_any_id_filter(requested_question_ids),
+            self._build_any_id_filter(
+                requested_question_ids,
+                string_fields=["id", "question_id"],
+            ),
             {"topic_tags": {"$in": requested_topic_tags}} if requested_topic_tags else None,
-            self._build_any_id_exclusion(exclude_question_ids),
+            self._build_any_id_exclusion(
+                exclude_question_ids,
+                string_fields=["id", "question_id"],
+            ),
         )
 
         documents = await self.get_data(

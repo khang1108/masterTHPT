@@ -6,7 +6,14 @@ import { MathText } from '@/features/exams/components/math-text';
 import { ExamQuestionHeader } from '@/features/exams/components/question-header';
 import { ResultAnswerPanel } from '@/features/exams/components/result-answer-panel';
 import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
-import { ExamEvaluationItem, HistoryDetailResponse, askHint, getHistoryDetail, reviewMistake } from '@/shared/api/client';
+import {
+	AskHintResponse,
+	ExamEvaluationItem,
+	HistoryDetailResponse,
+	askHint,
+	getHistoryDetail,
+	reviewMistake,
+} from '@/shared/api/client';
 import { getApiErrorMessage } from '@/shared/api/error-message';
 import { getToken } from '@/shared/auth/storage';
 import Link from 'next/link';
@@ -26,7 +33,7 @@ export default function HistoryDetailPage() {
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(true);
 	const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
-	const [hintFeedbacks, setHintFeedbacks] = useState<Record<string, string>>({});
+	const [hintFeedbacks, setHintFeedbacks] = useState<Record<string, AskHintResponse>>({});
 	const [loadingHintQuestionId, setLoadingHintQuestionId] = useState<string | null>(null);
 	const [hintError, setHintError] = useState('');
 	const [reviewFeedbacks, setReviewFeedbacks] = useState<Record<string, string>>({});
@@ -82,7 +89,8 @@ export default function HistoryDetailPage() {
 
 	const activeQuestion = flatQuestions[activeQuestionIndex];
 	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.question_id) : null;
-	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.question_id] : '';
+	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.question_id]?.feedback ?? '' : '';
+	const activeHintLevels = activeQuestion ? hintFeedbacks[activeQuestion.question_id]?.hints : undefined;
 	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.question_id] : '';
 	const scoreSummaryValue = history?.score !== null && history?.score !== undefined
 		? formatScore(history.score)
@@ -114,7 +122,7 @@ export default function HistoryDetailPage() {
 			});
 			setHintFeedbacks((prev) => ({
 				...prev,
-				[activeQuestion.question_id]: data.feedback,
+				[activeQuestion.question_id]: data,
 			}));
 		} catch (error) {
 			setHintError(getApiErrorMessage(error, 'Không thể lấy gợi ý lúc này. Vui lòng thử lại.'));
@@ -212,6 +220,7 @@ export default function HistoryDetailPage() {
 						<QuestionFeedbackPanels
 							hintError={hintError}
 							hintFeedback={activeHint}
+							hintLevels={activeHintLevels}
 							reviewError={reviewError}
 							reviewFeedback={activeReview}
 						/>

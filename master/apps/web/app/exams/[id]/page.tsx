@@ -6,6 +6,7 @@ import { MathText } from '@/features/exams/components/math-text';
 import { ExamQuestionHeader } from '@/features/exams/components/question-header';
 import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
 import {
+	AskHintResponse,
 	DocumentDetailResponse,
 	PracticeQuestionCheckResponse,
 	askHint,
@@ -59,7 +60,7 @@ export default function ExamRoomPage() {
 	const [checkingQuestionId, setCheckingQuestionId] = useState<string | null>(null);
 	const [isCompletingPractice, setIsCompletingPractice] = useState(false);
 	const [checkedResults, setCheckedResults] = useState<Record<string, PracticeQuestionCheckResponse>>({});
-	const [hintFeedbacks, setHintFeedbacks] = useState<Record<string, string>>({});
+	const [hintFeedbacks, setHintFeedbacks] = useState<Record<string, AskHintResponse>>({});
 	const [loadingHintQuestionId, setLoadingHintQuestionId] = useState<string | null>(null);
 	const [hintError, setHintError] = useState('');
 	const [reviewFeedbacks, setReviewFeedbacks] = useState<Record<string, string>>({});
@@ -259,7 +260,8 @@ export default function ExamRoomPage() {
 		};
 	}, []);
 	const isLowTime = remainingSeconds !== null && remainingSeconds <= 10 * 60;
-	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.question_id] : '';
+	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.question_id]?.feedback ?? '' : '';
+	const activeHintLevels = activeQuestion ? hintFeedbacks[activeQuestion.question_id]?.hints : undefined;
 	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.question_id] : '';
 	const answeredCount = useMemo(
 		() => flatQuestions.filter((question) => hasAnswerValue(answers[question.question_id])).length,
@@ -441,7 +443,7 @@ export default function ExamRoomPage() {
 			});
 			setHintFeedbacks((prev) => ({
 				...prev,
-				[activeQuestion.question_id]: data.feedback,
+				[activeQuestion.question_id]: data,
 			}));
 		} catch (error) {
 			setHintError(getApiErrorMessage(error, 'Không thể lấy gợi ý lúc này. Vui lòng thử lại.'));
@@ -594,6 +596,7 @@ export default function ExamRoomPage() {
 						<QuestionFeedbackPanels
 							hintError={hintError}
 							hintFeedback={activeHint}
+							hintLevels={activeHintLevels}
 							reviewError={reviewError}
 							reviewFeedback={activeReview}
 						/>
