@@ -140,16 +140,12 @@ jobs:
               mongo-uri="${{ secrets.MONGO_URI }}"
             )
 
-            if [ -n "${{ secrets.FPT_API_KEY }}" ]; then
-              SECRET_ARGS+=(fpt-api-key="${{ secrets.FPT_API_KEY }}")
+            if [ -n "${{ secrets.FPT_AI_KEY }}" ]; then
+              SECRET_ARGS+=(fpt-api-key="${{ secrets.FPT_AI_KEY }}")
             fi
 
             if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
               SECRET_ARGS+=(gemini-api-key="${{ secrets.GEMINI_API_KEY }}")
-            fi
-
-            if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
-              SECRET_ARGS+=(openai-api-key="${{ secrets.OPENAI_API_KEY }}")
             fi
 
             if [ -n "${{ secrets.LANGSMITH_API_KEY }}" ]; then
@@ -159,17 +155,15 @@ jobs:
             ENV_ARGS=(
               PORT=8001
               MONGO_URI=secretref:mongo-uri
-              MONGO_DB_NAME="${{ vars.MONGO_DB_NAME || 'masterthpt' }}"
-              FPT_BASE_URL="${{ vars.FPT_BASE_URL || 'https://mkp-api.fptcloud.com' }}"
-              FPT_LLM_BASE_URL="${{ vars.FPT_BASE_URL || 'https://mkp-api.fptcloud.com' }}"
-              FPT_LLM_MODEL="${{ vars.FPT_LLM_MODEL || 'SaoLa-Llama3.1-planner' }}"
-              LLM_MODEL="${{ vars.FPT_LLM_MODEL || 'SaoLa-Llama3.1-planner' }}"
-              LANGSMITH_TRACING="${{ vars.LANGSMITH_TRACING || 'true' }}"
-              LANGSMITH_ENDPOINT="${{ vars.LANGSMITH_ENDPOINT || 'https://api.smith.langchain.com' }}"
-              LANGSMITH_PROJECT="${{ vars.LANGSMITH_PROJECT || 'masterthpt' }}"
+              MONGO_DB_NAME="${{ secrets.MONGO_DB_NAME || 'masterthpt' }}"
+              FPT_BASE_URL=https://mkp-api.fptcloud.com
+              FPT_LLM_BASE_URL=https://mkp-api.fptcloud.com
+              LANGSMITH_TRACING=true
+              LANGSMITH_ENDPOINT=https://smith.langchain.com/api
+              LANGSMITH_PROJECT=masterthpt
             )
 
-            if [ -n "${{ secrets.FPT_API_KEY }}" ]; then
+            if [ -n "${{ secrets.FPT_AI_KEY }}" ]; then
               ENV_ARGS+=(
                 FPT_API_KEY=secretref:fpt-api-key
                 FPT_LLM_API_KEY=secretref:fpt-api-key
@@ -181,12 +175,6 @@ jobs:
               ENV_ARGS+=(
                 GEMINI_API_KEY=secretref:gemini-api-key
                 GOOGLE_API_KEY=secretref:gemini-api-key
-              )
-            fi
-
-            if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
-              ENV_ARGS+=(
-                OPENAI_API_KEY=secretref:openai-api-key
               )
             fi
 
