@@ -125,9 +125,17 @@ class AdaptiveQuestionGenerator:
             "- Khong giai thich ngoai schema."
         )
 
-        result: GeneratedQuestionBatch = self._get_llm().with_structured_output(
-            GeneratedQuestionBatch
-        ).invoke(
+        llm = self._get_llm()
+        try:
+            structured_llm = llm.with_structured_output(
+                GeneratedQuestionBatch,
+                method="function_calling",
+            )
+        except TypeError:
+            # Fallback for providers that do not support ``method`` override.
+            structured_llm = llm.with_structured_output(GeneratedQuestionBatch)
+
+        result: GeneratedQuestionBatch = structured_llm.invoke(
             prompt,
             build_langsmith_invoke_config(
                 run_name="AdaptiveQuestionGenerator.generate_questions",
@@ -153,7 +161,7 @@ class AdaptiveQuestionGenerator:
                     content_latex=item.content_latex,
                     options=item.options,
                     correct_answer=item.correct_answer,
-                    difficulty_a=item.difficulty_a,
+                    discrimination_a=item.discrimination_a,
                     difficulty_b=item.difficulty_b,
                     topic_tags=item.topic_tags or target_topics,
                     max_score=item.max_score,

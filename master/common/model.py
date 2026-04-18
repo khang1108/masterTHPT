@@ -67,7 +67,7 @@ class ExamQuestion(BaseModel):
         correct_answer: The correct answer of the question
         has_image: Whether the question has an image
         image_url: The URL of the image
-        difficulty_a: The difficulty of the question
+        discrimination_a: The discrimination of the question
         difficulty_b: The difficulty of the question
         topic_tags: The topic tags of the question
         max_score: The maximum score of the question
@@ -80,7 +80,7 @@ class ExamQuestion(BaseModel):
     correct_answer: Optional[str] = None
     has_image: bool = False
     image_url: Optional[str] = None
-    difficulty_a: float = 1.0
+    discrimination_a: float = 1.0
     difficulty_b: float = 0.0
     topic_tags: list[str] = Field(default_factory=list) # ["math.12.ch2.integrals", "math.12.ch4.solid_geometry", ...]
     max_score: float = 0.2

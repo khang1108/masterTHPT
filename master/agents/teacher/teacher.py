@@ -38,6 +38,7 @@ class Evaluate(BaseModel):
     feedback: str = Field(description="Phản hồi cụ thể cho học sinh, có thể là gợi ý để cải thiện hoặc lời khen nếu đáp án đúng. Phản hồi phải rõ ràng, thân thiện và mang tính xây dựng.")
     discrimination_a: float = Field(description="Độ phân hóa của câu hỏi để đánh giá học sinh giỏi hay yếu, giá trị từ 0 đến 1, càng cao càng phân biệt tốt.")
     difficulty_b: float = Field(description="Độ khó của câu hỏi, giá trị từ 0 đến 1, càng cao càng khó.")
+    topic_tags: list[str] = Field(default_factory=list, description="Danh sách topic tag ứng viên cho câu hỏi, sẽ được canonicalize qua knowledge graph.")
 
 class EvaluateBatch(BaseModel):
     results: list[Evaluate]
@@ -228,6 +229,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             feedback = []
             discrimination_a = []
             difficulty_b = []
+            topic_tags_by_id: dict[str, list[str]] = {}
             
             item_list = request.parser_output or []
             id_to_index = {(item.get("id") or item.get("question_id")): idx for idx, item in enumerate(item_list)} if item_list else {}
@@ -235,6 +237,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
             state_difficulty_b = state.get("difficulty_b", []) or []
+            state_topic_tags = state.get("topic_tags", []) or []
             state_solutions = state.get("solutions", []) or []
             solution_by_id = {}
             for solution in state_solutions:
@@ -244,6 +247,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     question_id = solution.get("question_id")
                     if question_id:
                         solution_by_id[question_id] = solution.get("solution")
+            for question_id, idx in id_to_index.items():
+                if idx < len(state_topic_tags):
+                    topic_tags_by_id[question_id] = state_topic_tags[idx] or []
 
             for i in range(0, len(item_list), BATCH_SIZE):
                 batch = item_list[i:i + BATCH_SIZE]
@@ -275,6 +281,11 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             else None
                         )
                         correct_answer_value = solution_by_id.get(ids)
+                        topic_tags_value = topic_tags_by_id.get(ids) or self.trace_question_topics(
+                            question_text=item.get("content", ""),
+                            options=item.get("options"),
+                        )
+                        topic_tags_by_id[ids] = topic_tags_value
 
                         data = {
                             "id": item.get("id") or item.get("question_id"),
@@ -287,6 +298,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             "image_url": item.get("image_url"),
                             "discrimination_a": discrimination_a_value,
                             "difficulty_b": difficulty_b_value,
+                            "topic_tags": topic_tags_value,
                         }
 
                         await self.insert_data("masterthpt", "questions", [data])
@@ -301,6 +313,10 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
                     self.build_messages(prompt)
                 )
+                batch_map = {
+                    item.get("id") or item.get("question_id"): item
+                    for item in need_verify
+                }
 
                 is_agreed.extend([response.agree for response in responses.results])
                 solutions.extend([
@@ -310,6 +326,13 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 confidence.extend([response.confidence for response in responses.results])
                 discrimination_a.extend([response.discrimination_a for response in responses.results])
                 difficulty_b.extend([response.difficulty_b for response in responses.results])
+                for response in responses.results:
+                    item = batch_map.get(response.question_id) or {}
+                    topic_tags_by_id[response.question_id] = self.trace_question_topics(
+                        question_text=item.get("content", ""),
+                        options=item.get("options"),
+                        candidate_topics=response.topic_tags,
+                    )
                 feedback.extend([
                     f"Ở câu {response.question_id}: {response.feedback} vì {response.reasoning}"
                     for response in responses.results
@@ -326,6 +349,10 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "teacher_feedback": feedback,
                 "discrimination_a": discrimination_a,
                 "difficulty_b": difficulty_b,
+                "topic_tags": [
+                    topic_tags_by_id.get(item.get("id") or item.get("question_id"), [])
+                    for item in item_list
+                ],
             }
 
         if intent == Intent.ASK_HINT.value:

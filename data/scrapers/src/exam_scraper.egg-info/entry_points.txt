@@ -1,0 +1,2 @@
+[console_scripts]
+exam-scraper = exam_scraper.cli:app

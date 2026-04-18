@@ -9,6 +9,7 @@ from bson import ObjectId
 
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import ExamQuestion
+from master.agents.common.shared_plan_memory import SharedPlanMemory
 from master.agents.common.tools import MongoDBTools
 
 
@@ -27,6 +28,8 @@ class AdaptiveDBTools(MongoDBTools):
         exam_collection: str | None = None,
         profile_collection: str | None = None,
         history_collection: str | None = None,
+        student_collection: str | None = None,
+        shared_plan_collection: str | None = None,
     ) -> None:
         self.database_name = (
             database_name
@@ -53,6 +56,16 @@ class AdaptiveDBTools(MongoDBTools):
             history_collection
             or os.getenv("ADAPTIVE_HISTORY_COLLECTION")
             or "histories"
+        )
+        self.student_collection = (
+            student_collection
+            or os.getenv("ADAPTIVE_STUDENT_COLLECTION")
+            or "students"
+        )
+        self.shared_plan_collection = (
+            shared_plan_collection
+            or os.getenv("ADAPTIVE_SHARED_PLAN_COLLECTION")
+            or "shared_plan_memory"
         )
         self._profile_schema_ready = False
 
@@ -123,7 +136,24 @@ class AdaptiveDBTools(MongoDBTools):
                 pass
 
         collection = database[self.profile_collection]
-        await collection.create_index("student_id", unique=True, name="student_id_unique")
+
+        # The API layer may have already created the same unique index with a
+        # different name (for example `learner_profiles_student_id_key` via
+        # Prisma). MongoDB rejects creating an equivalent index under another
+        # name, so we first inspect existing indexes and accept any equivalent
+        # unique index on `student_id` as valid.
+        existing_indexes = await collection.list_indexes().to_list(length=None)
+        for index in existing_indexes:
+            key = index.get("key") or {}
+            if list(key.items()) == [("student_id", 1)] and index.get("unique"):
+                self._profile_schema_ready = True
+                return
+
+        await collection.create_index(
+            "student_id",
+            unique=True,
+            name="learner_profiles_student_id_key",
+        )
         self._profile_schema_ready = True
 
     @staticmethod
@@ -212,6 +242,13 @@ class AdaptiveDBTools(MongoDBTools):
         if exam_id and not normalized.get("exam_id"):
             normalized["exam_id"] = exam_id
 
+        # Legacy data can store list-like fields as null; normalize early so
+        # model validation remains stable across old and new documents.
+        if normalized.get("options") is None:
+            normalized["options"] = []
+        if normalized.get("topic_tags") is None:
+            normalized["topic_tags"] = []
+
         return normalized
 
     async def _get_exam_question_ids(self, exam_id: str | None) -> list[str]:
@@ -286,6 +323,50 @@ class AdaptiveDBTools(MongoDBTools):
         if not documents:
             return None
         return self._normalize_document(documents[0])
+
+    async def get_student_profile(self, student_identity: str) -> dict[str, Any] | None:
+        if not student_identity:
+            return None
+
+        query: dict[str, Any]
+        if ObjectId.is_valid(student_identity):
+            query = {
+                "$or": [
+                    {"user_id": student_identity},
+                    {"_id": ObjectId(student_identity)},
+                ]
+            }
+        else:
+            query = {"user_id": student_identity}
+
+        document = await self.get_one(
+            self.database_name,
+            self.student_collection,
+            query,
+        )
+        return self._normalize_document(document)
+
+    async def get_active_shared_plan(self, user_id: str) -> SharedPlanMemory | None:
+        if not user_id:
+            return None
+
+        collection = self._collection(self.database_name, self.shared_plan_collection)
+        documents = await (
+            collection.find({"user_id": user_id, "status": "active"})
+            .sort([("updated_at", -1), ("_id", -1)])
+            .limit(1)
+            .to_list(length=1)
+        )
+        if not documents:
+            return None
+
+        normalized = self._normalize_document(documents[0]) or {}
+        payload = {
+            field_name: normalized[field_name]
+            for field_name in SharedPlanMemory.model_fields
+            if field_name in normalized
+        }
+        return SharedPlanMemory.model_validate(payload)
 
     async def get_questions(
         self,
@@ -365,3 +446,47 @@ class AdaptiveDBTools(MongoDBTools):
             exclude_question_ids=exclude_question_ids,
             limit=limit,
         )
+
+    async def upsert_generated_questions(
+        self,
+        questions: Iterable[ExamQuestion],
+        *,
+        user_id: str | None = None,
+        plan_id: str | None = None,
+        source: str = "adaptive_llm",
+    ) -> int:
+        """Persist generated questions so future recommendations can reuse them.
+
+        Each question is upserted by its logical id, allowing repeated
+        generations for the same id to refresh payload fields without creating
+        duplicate documents.
+        """
+
+        upserted = 0
+        for question in questions:
+            question_id = question.question_id
+            payload = question.model_dump(mode="json", by_alias=True)
+            payload["id"] = question_id
+            payload.setdefault("question_id", question_id)
+            payload["generated"] = True
+            payload["generated_by"] = "adaptive"
+
+            metadata = payload.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata.setdefault("source", source)
+            if user_id:
+                metadata["user_id"] = user_id
+            if plan_id:
+                metadata["plan_id"] = plan_id
+            payload["metadata"] = metadata
+
+            await self.upsert_one(
+                self.database_name,
+                self.question_collection,
+                {"$or": [{"id": question_id}, {"question_id": question_id}]},
+                payload,
+            )
+            upserted += 1
+
+        return upserted

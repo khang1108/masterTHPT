@@ -32,7 +32,7 @@ class GeneratedQuestionDraft(BaseModel):
     options: list[str] = Field(default_factory=list)
     correct_answer: str
     topic_tags: list[str] = Field(default_factory=list)
-    difficulty_a: float = 1.0
+    discrimination_a: float = 1.0
     difficulty_b: float = 0.0
     type: str = "multiple_choice"
     max_score: float | None = 1.0

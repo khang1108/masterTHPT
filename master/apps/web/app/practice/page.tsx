@@ -49,6 +49,25 @@ export default function PracticePage() {
 	}, [router]);
 
 	useEffect(() => {
+		if (loading || error || items.length > 0 || isUpdating) {
+			return;
+		}
+
+		const token = getToken();
+		if (!token) {
+			return;
+		}
+
+		const retryTimer = window.setTimeout(() => {
+			void loadPracticeExams(token);
+		}, 3000);
+
+		return () => {
+			window.clearTimeout(retryTimer);
+		};
+	}, [error, isUpdating, items.length, loading]);
+
+	useEffect(() => {
 		const textarea = textareaRef.current;
 		if (!textarea) {
 			return;
@@ -127,7 +146,7 @@ export default function PracticePage() {
 			{!loading && !error ? (
 				<>
 					<p className="documents-count">
-						Có {items.length} đề luyện tập dành cho bạn
+						Có {items.length} câu luyện tập dành cho bạn
 					</p>
 					<section className="documents-grid">
 						{items.map((item) => (
@@ -145,7 +164,7 @@ export default function PracticePage() {
 								</div>
 								<div className="documents-card-bottom">
 									<div className="documents-tags">
-										<span className="documents-tag">Luyện tập cá nhân</span>
+										<span className="documents-tag">Adaptive practice</span>
 									</div>
 									<div className="documents-card-actions">
 										<Link href={`/exams/${item.id}?intent=practice`} className="btn-primary documents-start-btn">
@@ -159,7 +178,7 @@ export default function PracticePage() {
 
 					{items.length === 0 ? (
 						<section className="documents-empty" aria-live="polite">
-							Hiện chưa có đề luyện tập nào được gán cho bạn.
+							Hiện chưa có câu luyện tập nào được gán cho bạn.
 						</section>
 					) : null}
 				</>

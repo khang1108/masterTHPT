@@ -52,7 +52,7 @@ class AdaptiveAttempt(BaseModel):
             is_correct=is_correct,
             topic_tags=list(question.topic_tags),
             difficulty_b=question.difficulty_b,
-            discrimination_a=question.difficulty_a,
+            discrimination_a=question.discrimination_a,
         )
 
 

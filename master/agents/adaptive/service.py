@@ -274,7 +274,10 @@ class AdaptiveService:
             estimated_probability, difficulty_score = difficulty_match_score(
                 theta=profile.theta,
                 difficulty=question.difficulty_b,
-                discrimination=question.difficulty_a,
+                # ``ExamQuestion`` now normalizes both the canonical field name
+                # and the old misspelling, so scoring should always read the
+                # canonical attribute from here.
+                discrimination=question.discrimination_a,
             )
             weakness_score = weakness_alignment_score(
                 topics=canonical_topics,

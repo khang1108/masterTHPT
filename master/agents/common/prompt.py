@@ -22,9 +22,10 @@ def teacher_preprocess_prompt(batch_input_json: str) -> str:
 
 		Yêu cầu cho mỗi kết quả:
 		- Xác định đáp án đúng nếu có thể.
-		- Đánh giá agree, confidence, correct_answer, reasoning, feedback, discrimination_a, difficulty_b.
+		- Đánh giá agree, confidence, correct_answer, reasoning, feedback, discrimination_a, difficulty_b, topic_tags.
 		- reasoning phải ngắn gọn, đúng bản chất toán học, không lan man.
 		- feedback phải viết bằng tiếng Việt, rõ ràng, có ích cho học sinh.
+		- topic_tags là danh sách ngắn các chủ đề/kỹ năng toán học liên quan nhất tới câu hỏi.
 		- confidence phải nằm trong khoảng [0, 1].
 		- discrimination_a và difficulty_b phải nằm trong khoảng [0, 1].
 		- Không bỏ sót question_id nào trong batch.
@@ -86,7 +87,7 @@ def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:
 		- Nếu câu hỏi có hình nhưng không tìm thấy IMAGE_URL theo trang thì đặt has_image=true và image_url={image_bucket_url}.
         - Nếu không có hình thì has_image=false và image_url=null.
         - topic_tags dùng danh sách rỗng nếu chưa xác định được.
-        - difficulty_a mặc định 1.0, difficulty_b mặc định 0.0.
+        - discrimination_a mặc định 1.0, difficulty_b mặc định 0.0.
         - exam.id ưu tiên dùng exam_id sẵn có; nếu không có thì tự tạo UUID.
         - Các trường văn bản phải giữ tiếng Việt tự nhiên, không dịch sang ngôn ngữ khác.
         - Không bịa thêm câu hỏi, đáp án, hoặc metadata không có trong OCR_TEXT.
@@ -105,10 +106,53 @@ def verifier_prompt(batch_input_json: str) -> str:
 		- agree = true nếu bạn đồng ý với đánh giá của Teacher; false nếu không đồng ý hoặc thấy chưa đủ chắc chắn.
 		- reasoning phải ngắn gọn, nêu rõ điểm đúng hoặc sai trong đánh giá của Teacher.
 		- feedback phải là phiên bản cuối cùng, rõ ràng, có thể gửi trực tiếp cho học sinh.
+		- topic_tags là danh sách ngắn các chủ đề/kỹ năng toán học liên quan nhất tới câu hỏi.
 		- confidence phải nằm trong khoảng [0, 1].
 		- Không bỏ sót question_id nào trong batch.
 		- Mỗi question_id chỉ có đúng một kết quả.
 
 		BATCH_INPUT:
 		{batch_input_json}
+	"""
+
+
+def adaptive_decide_question_strategy_prompt(
+	target_limit: int,
+	intent: str,
+	learner_theta: float,
+	weak_topics: list[str],
+	strong_topics: list[str],
+	answered_question_ids: list[str],
+	candidate_question_topics: list[list[str]],
+	rag_context_topics: list[list[str]],
+	learning_goal: str,
+	planner_context: str,
+	user_request: str,
+) -> str:
+	return f"""
+		Hãy quyết định chiến lược adaptive phù hợp nhất cho lượt ra câu tiếp theo.
+
+		Bối cảnh nhiệm vụ:
+		- intent = {intent}
+		- learning_goal = {learning_goal}
+		- planner_context = {planner_context}
+
+		Dữ liệu hiện tại:
+		- target_limit = {target_limit}
+		- learner_theta = {learner_theta}
+		- weak_topics = {weak_topics}
+		- strong_topics = {strong_topics}
+		- answered_question_ids = {answered_question_ids}
+		- candidate_question_count = {len(candidate_question_topics)}
+		- candidate_question_topics = {candidate_question_topics}
+		- rag_context_count = {len(rag_context_topics)}
+		- rag_context_topics = {rag_context_topics}
+		- user_request = {user_request}
+
+		Nguyên tắc quyết định:
+		- Hồ sơ học sinh đã được cập nhật riêng bằng lịch sử bài vừa nộp.
+		- Ở bước này bạn đang chọn chiến lược để tạo backlog luyện tập tiếp theo.
+		- Ưu tiên bám mục tiêu dài hạn của học sinh và các chủ đề cần master.
+		- Không xem bộ câu vừa làm xong là nguồn duy nhất cho lượt luyện tập tiếp theo.
+		- Nếu ngân hàng hiện có chưa đủ phủ mục tiêu học tập, hãy ưu tiên generate hoặc mix.
 	"""

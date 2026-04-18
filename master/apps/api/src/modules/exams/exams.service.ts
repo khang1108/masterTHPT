@@ -79,6 +79,15 @@ export class ExamsService {
 					score,
 					per_question: evaluation.per_question,
 					full_exam: dto.full_exam,
+					metadata: {
+						// Adaptive needs goal/context to plan the *next* backlog,
+						// not only the just-finished submission. Keep these values
+						// close to the grading payload so the AI service can shape
+						// practice recommendations around the learner's target.
+						learning_goal: student.learning_goal ?? null,
+						student_grade: student.grade ?? null,
+						school: student.school ?? null,
+					},
 				},
 			},
 		);

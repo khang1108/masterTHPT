@@ -62,14 +62,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
 	}
 
 	private async initializeMongoSchema() {
-		// MongoDB creates the database lazily. This ensures core collection/index exists on first boot.
-		try {
-			await this.$runCommandRaw({ create: 'students' });
-		} catch (error) {
-			if (!this.isIgnorableMongoError(error, ['NamespaceExists'], [48])) {
-				throw error;
-			}
-		}
+		// MongoDB tạo database/collection theo kiểu lazy.
+		// Vì vậy cần bootstrap sẵn các collection lõi để những luồng đầu tiên
+		// không bị phụ thuộc vào việc agent adaptive phải tự tạo collection.
+		// try {
+		// 	await this.$runCommandRaw({ create: 'students' });
+		// } catch (error) {
+		// 	if (!this.isIgnorableMongoError(error, ['NamespaceExists'], [48])) {
+		// 		throw error;
+		// 	}
+		// }
+
+		// // learner_profiles là nơi adaptive lưu hồ sơ học sinh theo thời gian.
+		// // Tạo sẵn collection này ngay khi API khởi động để các lần submit/practice
+		// // đầu tiên có thể đọc/ghi profile ngay lập tức.
+		// try {
+		// 	await this.$runCommandRaw({ create: 'learner_profiles' });
+		// } catch (error) {
+		// 	if (!this.isIgnorableMongoError(error, ['NamespaceExists'], [48])) {
+		// 		throw error;
+		// 	}
+		// }
 
 		await this.backfillStudentUserIds();
 		await this.backfillQuestionIds();
@@ -91,6 +104,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
 		});
 
 		await this.ensureQuestionIndexes();
+		await this.ensureLearnerProfileIndexes();
+		await this.ensureSharedPlanMemoryIndexes();
 
 		this.logger.log('Mongo schema bootstrap completed');
 	}
@@ -202,6 +217,62 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
 						key: { question_id: 1 },
 						name: 'questions_question_id_key',
 						unique: true,
+					},
+				],
+			});
+		} catch (error) {
+			if (!this.isIgnorableMongoError(error, ['IndexOptionsConflict', 'IndexKeySpecsConflict'], [85, 86])) {
+				throw error;
+			}
+		}
+	}
+
+	private async ensureLearnerProfileIndexes() {
+		try {
+			await this.$runCommandRaw({
+				createIndexes: 'learner_profiles',
+				indexes: [
+					{
+						key: { student_id: 1 },
+						name: 'learner_profiles_student_id_key',
+						unique: true,
+					},
+				],
+			});
+		} catch (error) {
+			if (!this.isIgnorableMongoError(error, ['IndexOptionsConflict', 'IndexKeySpecsConflict'], [85, 86])) {
+				throw error;
+			}
+		}
+	}
+
+	private async ensureSharedPlanMemoryIndexes() {
+		try {
+			await this.$runCommandRaw({
+				createIndexes: 'shared_plan_memory',
+				indexes: [
+					{
+						key: { plan_id: 1 },
+						name: 'shared_plan_memory_plan_id_key',
+						unique: true,
+					},
+					{
+						// SharedPlanMemory should expose at most one active plan per
+						// learner at a time. Mongo partial index is the easiest way
+						// to enforce that rule while still allowing many historical
+						// draft/superseded/completed plans for the same user.
+						key: { user_id: 1, status: 1 },
+						name: 'shared_plan_memory_user_active_plan_key',
+						unique: true,
+						partialFilterExpression: { status: 'active' },
+					},
+					{
+						key: { user_id: 1, updated_at: -1 },
+						name: 'shared_plan_memory_user_updated_at_idx',
+					},
+					{
+						key: { user_id: 1, target_exam: 1, status: 1 },
+						name: 'shared_plan_memory_user_target_exam_status_idx',
 					},
 				],
 			});

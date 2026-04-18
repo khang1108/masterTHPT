@@ -205,6 +205,8 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         state_is_agreed = state.get("is_agreed", []) or []
         state_discrimination_a = state.get("discrimination_a", []) or []
         state_difficulty_b = state.get("difficulty_b", []) or []
+        state_topic_tags = state.get("topic_tags", []) or []
+        topic_tags_by_id: dict[str, list[str]] = {}
         state_solutions = state.get("solutions", []) or []
         solution_by_id = {}
         for solution in state_solutions:
@@ -214,6 +216,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 question_id = solution.get("question_id")
                 if question_id:
                     solution_by_id[question_id] = solution.get("solution")
+        for question_id, idx in id_to_index.items():
+            if idx < len(state_topic_tags):
+                topic_tags_by_id[question_id] = state_topic_tags[idx] or []
 
         for i in range(0, len(item_list), BATCH_SIZE):
             batch = item_list[i:i + BATCH_SIZE]
@@ -248,6 +253,11 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         else None
                     )
                     correct_answer = solution_by_id.get(ids)
+                    topic_tags = topic_tags_by_id.get(ids) or self.trace_question_topics(
+                        question_text=item.get("content", ""),
+                        options=item.get("options"),
+                    )
+                    topic_tags_by_id[ids] = topic_tags
 
                     data = {
                         "question_id": item.get("id") or item.get("question_id"),
@@ -260,6 +270,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         "image_url": item.get("image_url"),
                         "discrimination_a": discrimination_a,
                         "difficulty_b": difficulty_b,
+                        "topic_tags": topic_tags,
                     }
 
                     await self.insert_data("masterthpt", "questions", [data])
@@ -283,6 +294,12 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     item = need_verify_by_id.get(response.question_id)
                     if not item:
                         continue
+                    topic_tags = self.trace_question_topics(
+                        question_text=item.get("content", ""),
+                        options=item.get("options"),
+                        candidate_topics=response.topic_tags,
+                    )
+                    topic_tags_by_id[response.question_id] = topic_tags
 
                     data = {
                         "id": item["id"],
@@ -295,6 +312,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         "image_url": item.get("image_url"),
                         "discrimination_a": response.discrimination_a,
                         "difficulty_b": response.difficulty_b,
+                        "topic_tags": topic_tags,
                     }
                     await self.insert_data("masterthpt", "questions", [data])
                     self.logger.agent_node(f"Finalize by verifier payload: {data}")
@@ -331,7 +349,11 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             "max_round": max_round,
             "confidence": confidence,
             "solutions": solutions,
-            "verifier_feedback": feedback
+            "verifier_feedback": feedback,
+            "topic_tags": [
+                topic_tags_by_id.get(item.get("id") or item.get("question_id"), [])
+                for item in item_list
+            ],
         }
 
     async def verifier(self, state: AgentState) -> AgentState:

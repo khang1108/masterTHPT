@@ -1,19 +1,9 @@
-"""Shared LangGraph state definition for the grading pipeline.
-
-The runtime pipeline uses plain dictionaries, but this ``TypedDict`` keeps the
-expected keys visible to maintainers and type checkers. The graph evolves over
-time, so the state is declared with ``total=False`` to allow partially-built
-states during intermediate steps.
-"""
+"""Shared LangGraph state definition for the grading and adaptive pipeline."""
 
 from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-from typing import Literal, Optional, TypedDict, Annotated, Any, List
-from master.agents.common.message import MessageRequest, MessageResponse
-from master.agents.common.message import ExamQuestion, StudentAnswer
-from master.common.message import GradeResult, Solution
 from master.agents.common.learner_profile import LearnerProfile
 from master.agents.common.message import (
     ExamQuestion,
@@ -22,21 +12,19 @@ from master.agents.common.message import (
     MessageResponse,
     StudentAnswer,
 )
+from master.agents.common.shared_plan_memory import SharedPlanMemory
+from master.common.message import GradeResult
+
 
 class AgentState(TypedDict, total=False):
-    """Top-level mutable state passed through the grading graph."""
-    # Request
-    request: MessageRequest
-    phase: Literal["tools", "draft", "verify", "END"]
-
-    # Learner context
-    learner_profile: LearnerProfile # BKT mastery per KC, IRT theta, history
+    """Top-level mutable state passed through the orchestration graph."""
 
     request: MessageRequest | None
     raw_request: MessageRequest | None
-    intent: Intent
+    intent: Intent | str
 
     learner_profile: LearnerProfile | None
+    active_plan: SharedPlanMemory | None
 
     exam_id: str | None
     questions: list[ExamQuestion]
@@ -44,29 +32,29 @@ class AgentState(TypedDict, total=False):
 
     round: int
     max_round: int
-    is_agreed: List[bool]
-    phase: Literal["draft", "debate", "verify", "finalize"]
+    is_agreed: list[bool]
+    phase: Literal["tools", "draft", "debate", "verify", "finalize", "END"]
     reasoning: str
-    confidence: List[float] # confidence per question                    
-    teacher_feedback: List[Any]
-    verifier_feedback: List[Any]
+    confidence: list[float]
+    teacher_feedback: list[Any]
+    verifier_feedback: list[Any]
 
-    # Grading result
-    grade_result: Optional[GradeResult]
+    grade_result: GradeResult | None
 
     selected_questions: list[ExamQuestion] | None
     profile_updates: dict[str, Any] | None
+    plan_patch: dict[str, Any] | None
+    plan_proposal: dict[str, Any] | None
 
     response: MessageResponse | None
     agent_trail: list[str] | None
     history_record: dict[str, Any] | None
-    
-    # Adaptive
-    selected_questions: Optional[list[ExamQuestion]]
-    profile_updates: Optional[dict]
-    discrimination_a: Optional[list[float]]
-    difficulty_b: Optional[list[float]]
 
+    discrimination_a: list[float] | None
+    difficulty_b: list[float] | None
+    topic_tags: list[list[str]] | None
+
+    debate_outputs: list[Any]
     _verdicts: list[Any]
     _pipeline_verdict: str
     _teacher_confidence_threshold: float

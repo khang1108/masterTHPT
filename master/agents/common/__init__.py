@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from importlib import import_module
 
-__all__ = ["settings", "LLMClient", "AgentState", "tools"]
+__all__ = ["settings", "LLMClient", "AgentState", "SharedPlanMemory", "tools"]
 
 
 def __getattr__(name: str):
@@ -36,6 +36,10 @@ def __getattr__(name: str):
         from .state import AgentState
 
         return AgentState
+    if name == "SharedPlanMemory":
+        from .shared_plan_memory import SharedPlanMemory
+
+        return SharedPlanMemory
     if name == "tools":
         return import_module(f"{__name__}.tools")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

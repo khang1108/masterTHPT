@@ -13,6 +13,7 @@ import {
 } from 'src/shared/exams/evaluation';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { requireStudentByIdentity } from 'src/modules/students/student-identity';
+import { persistAdaptivePracticeSet } from 'src/modules/practice/practice-assignment';
 import {
 	findExamDocumentByAnyId,
 	findExamDocumentsByAnyIds,
@@ -68,13 +69,36 @@ export class HistoryService {
 
 		const shouldNotifyAi = options.notifyAi ?? true;
 		if (shouldNotifyAi && this.configService.get<string>('AI_API_BASE_URL')?.trim()) {
-			const aiPayload = options.aiPayload ?? {
+			const baseAiPayload = options.aiPayload ?? {
 				// Practice completion still uses the lightweight analysis event so
 				// existing AI consumers do not need to change for this flow.
 				intent: 'VIEW_ANALYSIS',
 				user_id: canonicalUserId,
 				exam_id: dto.exam_id,
 			};
+			const baseAiMetadata =
+				typeof baseAiPayload === 'object' &&
+					baseAiPayload !== null &&
+					'metadata' in baseAiPayload &&
+					typeof (baseAiPayload as Record<string, unknown>).metadata === 'object' &&
+					(baseAiPayload as Record<string, unknown>).metadata !== null
+					? { ...((baseAiPayload as Record<string, unknown>).metadata as Record<string, unknown>) }
+					: {};
+			const aiPayload =
+				typeof baseAiPayload === 'object' && baseAiPayload !== null
+					? {
+						...(baseAiPayload as Record<string, unknown>),
+						user_id: canonicalUserId,
+						exam_id: dto.exam_id,
+						metadata: {
+							...baseAiMetadata,
+							// History id lets the AI service recover the exact
+							// submission snapshot later instead of guessing the
+							// latest history for a user/exam pair.
+							history_id: history.mongo_id,
+						},
+					}
+					: baseAiPayload;
 
 			// Không await AI service ở đây để tránh chặn luồng submit của người dùng.
 			// Mục tiêu của màn submit là:
@@ -84,11 +108,31 @@ export class HistoryService {
 			// Việc gửi payload sang AI chỉ là xử lý hậu kỳ (phân tích / đồng bộ thêm),
 			// nên cho chạy nền là phù hợp hơn. Nếu AI service chậm hoặc tạm thời lỗi,
 			// người dùng vẫn nộp bài thành công và không phải chờ.
-			void postToAiService(this.configService, aiPayload).catch((error) => {
-				this.logger.warn(
-					`Failed to notify AI service for history ${history.mongo_id}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-				);
-			});
+			this.logger.log(
+				`Queueing background adaptive sync for history ${history.mongo_id} and user ${canonicalUserId}`,
+			);
+			void postToAiService<{
+				selected_questions?: Array<Record<string, unknown>>;
+				profile_updates?: Record<string, unknown>;
+				learner_profile?: Record<string, unknown>;
+				feedback?: string | null;
+			}>(this.configService, aiPayload)
+				.then(async (adaptiveResponse) => {
+					this.logger.log(
+						`Background adaptive sync completed for history ${history.mongo_id} with ${Array.isArray(adaptiveResponse?.selected_questions) ? adaptiveResponse.selected_questions.length : 0} selected question(s)`,
+					);
+					await persistAdaptivePracticeSet(this.prisma, {
+						userId: canonicalUserId,
+						studentGrade: student.grade,
+						requestText: undefined,
+						adaptiveResponse,
+					});
+				})
+				.catch((error) => {
+					this.logger.warn(
+						`Failed to notify AI service for history ${history.mongo_id}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+					);
+				});
 		}
 
 		return history;

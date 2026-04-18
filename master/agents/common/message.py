@@ -24,6 +24,7 @@ class Intent(str, Enum):
     REVIEW_MISTAKE = "REVIEW_MISTAKE"
     VIEW_ANALYSIS = "VIEW_ANALYSIS"
     EXAM_PRACTICE = "EXAM_PRACTICE"
+    GRADE_SUBMISSION = "GRADE_SUBMISSION"
     PREPROCESS = "PREPROCESS"
     UPDATE_PRACTICE = "UPDATE_PRACTICE"
     UNKNOWN = "UNKNOWN"
@@ -60,6 +61,11 @@ class StudentAnswer(BaseModel):
         if self.answer is None and self.student_answer is not None:
             self.answer = self.student_answer
         return self
+
+    def normalized_answer(self) -> str:
+        """Canonical normalized answer string used for grading and analysis."""
+
+        return (self.student_answer or "").strip().lower()
 """
 INTENT = PREPROCESS
     - Metadata:
@@ -103,16 +109,47 @@ class ExamQuestion(BaseModel):
     correct_answer: str | None = None
     has_image: bool = False
     image_url: str | None = None
-    discrimnination_a: float = 1.0
+    # Keep ``discrimination_a`` as the canonical field name, but still accept
+    # the historical misspelling ``discrimnination_a`` from older documents.
+    discrimination_a: float = Field(
+        default=1.0,
+        validation_alias=AliasChoices("discrimination_a", "discrimnination_a"),
+        serialization_alias="discrimination_a",
+    )
     difficulty_b: float = 0.0
     topic_tags: list[str] = Field(default_factory=list)
     max_score: float | None = None
+
+    @field_validator("options", "topic_tags", mode="before")
+    @classmethod
+    def _coerce_list_fields(cls, value: Any) -> list[str]:
+        """Normalize nullable/legacy list payloads from DB and APIs.
+
+        Some historical records store list-like fields as ``null`` or plain
+        strings. We coerce these into stable string lists so validation remains
+        tolerant without leaking ``None`` into the agent pipeline.
+        """
+
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            return [str(item) for item in value if item is not None]
+        if isinstance(value, str):
+            stripped = value.strip()
+            return [stripped] if stripped else []
+        return [str(value)]
 
     @property
     def id(self) -> str:
         """Backward-compatible accessor used by older pipeline code."""
 
         return self.question_id
+
+    @property
+    def discrimnination_a(self) -> float:
+        """Backward-compatible accessor for legacy typo-based callers."""
+
+        return self.discrimination_a
 
 
 class ExamSection(BaseModel):

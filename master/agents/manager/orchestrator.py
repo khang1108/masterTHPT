@@ -276,14 +276,22 @@ class ManagerOrchestrator:
         resolved_student_id = request.student_id or request.user_id
         resolved_exam_id = state.get("exam_id") or request.exam_id
         metadata = dict(request.metadata or {})
+        active_plan = state.get("active_plan")
 
         history_record = state.get("history_record")
 
-        student_answers = []
-        for ans in (state.get("student_answers") or request.student_answers or {}):
+        raw_student_answers = state.get("student_answers") or request.student_answers
+        legacy_student_answers = getattr(request, "student_ans", None)
+        if not raw_student_answers and isinstance(legacy_student_answers, list):
+            raw_student_answers = legacy_student_answers
+
+        student_answers: list[StudentAnswer] = []
+        for ans in (raw_student_answers or []):
+            payload = ans
             if isinstance(ans, dict) and "_id" in ans:
-                ans["_id"] = str(ans["_id"]) # Ép kiểu phòng hờ
-            student_answers.append(StudentAnswer.model_validate(ans))
+                # Ép kiểu ObjectId sang str trước khi đưa cho Pydantic.
+                payload = {**ans, "_id": str(ans["_id"])}
+            student_answers.append(StudentAnswer.model_validate(payload))
 
         questions_from_state = []
         for q in (state.get("questions") or []):
@@ -332,6 +340,66 @@ class ManagerOrchestrator:
             if raw_history_id is not None:
                 metadata.setdefault("history_id", str(raw_history_id))
 
+        student_lookup_identity = request.user_id or resolved_student_id
+        student_record = None
+        if student_lookup_identity:
+            try:
+                student_record = await self.repository.get_student_profile(student_lookup_identity)
+            except RuntimeError:
+                log_agent_event(
+                    "manager",
+                    "hydrate:student_lookup_failed",
+                    request=request,
+                    extra={"student_lookup_identity": student_lookup_identity},
+                    mode="warning",
+                )
+                student_record = None
+
+        if student_record is not None:
+            learning_goal = student_record.get("learning_goal")
+            if isinstance(learning_goal, str) and learning_goal.strip():
+                metadata.setdefault("learning_goal", learning_goal.strip())
+
+            student_grade = student_record.get("grade")
+            if student_grade is not None:
+                metadata.setdefault("student_grade", str(student_grade))
+
+            school = student_record.get("school")
+            if isinstance(school, str) and school.strip():
+                metadata.setdefault("school", school.strip())
+
+        plan_lookup_user_id = request.user_id or resolved_student_id
+        """Sinh plan lookup user id tương tự như student lookup id để tăng khả năng tìm được plan phù hợp với người dùng, 
+        dù backend có thể chỉ gửi student_id hoặc user_id."""
+        if active_plan is None and plan_lookup_user_id:
+            try:
+                active_plan = await self.repository.get_active_shared_plan(plan_lookup_user_id)
+            except RuntimeError:
+                log_agent_event(
+                    "manager",
+                    "hydrate:active_plan_lookup_failed",
+                    request=request,
+                    extra={"plan_lookup_user_id": plan_lookup_user_id},
+                    mode="warning",
+                )
+                active_plan = None
+
+        if active_plan is not None:
+            if active_plan.goal:
+                metadata.setdefault("learning_goal", active_plan.goal)
+            if active_plan.target_exam:
+                metadata.setdefault("target_exam", active_plan.target_exam)
+            if active_plan.target_exam_name:
+                metadata.setdefault("target_exam_name", active_plan.target_exam_name)
+            if active_plan.target_exam_type:
+                metadata.setdefault("target_exam_type", active_plan.target_exam_type)
+
+            exam_matrix_summary = active_plan.metadata.get("exam_matrix_summary")
+            if isinstance(exam_matrix_summary, str) and exam_matrix_summary.strip():
+                metadata.setdefault("exam_matrix_summary", exam_matrix_summary.strip())
+            elif active_plan.summary:
+                metadata.setdefault("exam_matrix_summary", active_plan.summary)
+
         if not questions:
             question_ids: list[str] = []
             if request.question_id:
@@ -354,7 +422,8 @@ class ManagerOrchestrator:
                         question_ids=deduped_question_ids,
                         limit=max(len(deduped_question_ids), 1),
                     )
-                elif resolved_exam_id:
+
+                if not questions and resolved_exam_id:
                     requested_limit = metadata.get("question_limit") or metadata.get("limit") or 100
                     try:
                         limit = max(1, int(requested_limit))
@@ -393,6 +462,7 @@ class ManagerOrchestrator:
             "student_answers": student_answers,
             "questions": questions,
             "history_record": history_record,
+            "active_plan": active_plan,
         }
         log_agent_event(
             "manager",
@@ -402,6 +472,7 @@ class ManagerOrchestrator:
             extra={
                 "history_found": history_record is not None,
                 "resolved_student_id": resolved_student_id,
+                "has_active_plan": active_plan is not None,
             },
             mode="progress",
         )
@@ -511,13 +582,17 @@ class ManagerOrchestrator:
         )
         return graded_state
 
-    def _adaptive_node(self, state: AgentState) -> AgentState:
+    async def _adaptive_node(self, state: AgentState) -> AgentState:
         """Chạy adaptive để cập nhật hồ sơ và gợi ý bài tiếp theo.
 
         Adaptive trong MVP hiện tại có thể:
         - cập nhật learner profile từ lịch sử làm bài
         - quyết định nên chọn câu hỏi cũ hay sinh câu hỏi mới
         - trả về ``selected_questions`` phù hợp để frontend/backend dùng tiếp
+
+        Node này phải là async vì AdaptiveAgent hiện chạy bằng ``ainvoke`` và
+        gọi thẳng repository Motor. Giữ toàn bộ nhánh adaptive trên cùng event
+        loop với manager sẽ tránh lỗi lệch loop khi save/load learner profile.
         """
 
         request = state.get("request")
@@ -537,17 +612,19 @@ class ManagerOrchestrator:
         if intent in {
             Intent.UPDATE_PRACTICE,
             Intent.EXAM_PRACTICE,
+            Intent.GRADE_SUBMISSION,
             Intent.VIEW_ANALYSIS,
         }:
-            metadata.setdefault("generate_questions", True)
             metadata.setdefault("generation_limit", 3)
             metadata.setdefault("rag_context_limit", 8)
+            metadata.setdefault("adaptive_mode", "llm_decide")
 
         normalized_request = request.model_copy(update={"metadata": metadata})
-        adaptive_state = self.adaptive_agent.run(
+        adaptive_state = await self.adaptive_agent.run(
             {
                 "request": normalized_request,
                 "learner_profile": state.get("learner_profile"),
+                "active_plan": state.get("active_plan"),
                 "questions": state.get("questions", []),
                 "student_answers": state.get("student_answers", []),
                 "selected_questions": state.get("selected_questions", []),
@@ -558,8 +635,11 @@ class ManagerOrchestrator:
             **state,
             "request": normalized_request,
             "learner_profile": adaptive_state.get("learner_profile"),
+            "active_plan": adaptive_state.get("active_plan", state.get("active_plan")),
             "selected_questions": adaptive_state.get("selected_questions", []),
             "profile_updates": adaptive_state.get("profile_updates", {}),
+            "plan_patch": adaptive_state.get("plan_patch"),
+            "plan_proposal": adaptive_state.get("plan_proposal"),
             "agent_trail": self._append_agent_trail(state, "adaptive"),
         }
         log_agent_event(
@@ -677,6 +757,12 @@ class ManagerOrchestrator:
 
         if intent == Intent.EXAM_PRACTICE:
             return f"Adaptive đã chuẩn bị {selected_count} câu hỏi luyện tập tiếp theo."
+        if intent == Intent.GRADE_SUBMISSION:
+            return (
+                f"Adaptive đã gợi ý {selected_count} câu luyện tập tiếp theo sau khi chấm bài."
+                if selected_count
+                else "Adaptive đã chấm bài và cập nhật hồ sơ học tập."
+            )
         if intent == Intent.UPDATE_PRACTICE:
             return f"Adaptive đã cập nhật danh sách luyện tập với {selected_count} câu hỏi."
         if intent == Intent.VIEW_ANALYSIS:
@@ -789,6 +875,10 @@ class ManagerOrchestrator:
         ]
         payload["profile_updates"] = profile_updates
         payload["agent_trail"] = list(state.get("agent_trail") or ["manager"])
+        if isinstance(state.get("plan_patch"), dict):
+            payload["plan_patch"] = state.get("plan_patch")
+        if isinstance(state.get("plan_proposal"), dict):
+            payload["plan_proposal"] = state.get("plan_proposal")
 
         learner_profile = state.get("learner_profile")
         if learner_profile is not None:
@@ -812,7 +902,7 @@ class ManagerOrchestrator:
 
         Quy tắc MVP:
         - ``PREPROCESS`` / ``ASK_HINT`` / ``REVIEW_MISTAKE`` -> ``grading``
-        - ``VIEW_ANALYSIS`` / ``EXAM_PRACTICE`` / ``UPDATE_PRACTICE`` -> ``adaptive``
+        - ``VIEW_ANALYSIS`` / ``EXAM_PRACTICE`` / ``GRADE_SUBMISSION`` / ``UPDATE_PRACTICE`` -> ``adaptive``
         - còn lại -> ``finalize`` để trả fallback
         """
 
@@ -820,7 +910,7 @@ class ManagerOrchestrator:
         route = "finalize"
         if intent in {Intent.ASK_HINT, Intent.PREPROCESS, Intent.REVIEW_MISTAKE}:
             route = "grading"
-        elif intent in {Intent.EXAM_PRACTICE, Intent.VIEW_ANALYSIS, Intent.UPDATE_PRACTICE}:
+        elif intent in {Intent.EXAM_PRACTICE, Intent.GRADE_SUBMISSION, Intent.VIEW_ANALYSIS, Intent.UPDATE_PRACTICE}:
             route = "adaptive"
         log_agent_event(
             "manager",
@@ -968,6 +1058,7 @@ class ManagerOrchestrator:
                 "request": request,
                 "exam_id": exam_id or request.exam_id,
                 "max_round": max_round,
+                "student_answers": request.student_answers or [],
                 "_thread_id": thread_id or f"manager-{request.user_id or request.student_id or 'anonymous'}",
             }
         )
@@ -996,34 +1087,34 @@ class ManagerOrchestrator:
         return response
 
 
-def _build_tutoring_graph() -> StateGraph:
-    """Wrapper tương thích ngược cho các import cũ."""
+# def _build_tutoring_graph() -> StateGraph:
+#     """Wrapper tương thích ngược cho các import cũ."""
 
-    return ManagerOrchestrator().graph
-
-
-def _build_content_pipeline_graph() -> StateGraph:
-    """Wrapper tương thích ngược cho các import cũ."""
-
-    return ManagerOrchestrator().graph
+#     return ManagerOrchestrator().graph
 
 
-def _build_adaptive_graph() -> StateGraph:
-    """Wrapper tương thích ngược cho các import cũ."""
+# def _build_content_pipeline_graph() -> StateGraph:
+#     """Wrapper tương thích ngược cho các import cũ."""
 
-    return ManagerOrchestrator().graph
-
-
-def _build_solution_gen_graph() -> StateGraph:
-    """Wrapper tương thích ngược cho các import cũ."""
-
-    return ManagerOrchestrator().graph
+#     return ManagerOrchestrator().graph
 
 
-def _build_analysis_graph() -> StateGraph:
-    """Wrapper tương thích ngược cho các import cũ."""
+# def _build_adaptive_graph() -> StateGraph:
+#     """Wrapper tương thích ngược cho các import cũ."""
 
-    return ManagerOrchestrator().graph
+#     return ManagerOrchestrator().graph
+
+
+# def _build_solution_gen_graph() -> StateGraph:
+#     """Wrapper tương thích ngược cho các import cũ."""
+
+#     return ManagerOrchestrator().graph
+
+
+# def _build_analysis_graph() -> StateGraph:
+#     """Wrapper tương thích ngược cho các import cũ."""
+
+#     return ManagerOrchestrator().graph
 
 
 async def run_manager_orchestrator(

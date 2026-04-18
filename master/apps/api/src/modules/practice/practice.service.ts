@@ -11,6 +11,7 @@ import {
 	findQuestionDocumentByAnyId,
 } from 'src/shared/mongo/read-models';
 import { CheckPracticeQuestionDto } from './dto/check-practice-question.dto';
+import { persistAdaptivePracticeSet } from './practice-assignment';
 import { UpdatePracticeDto } from './dto/update-practice.dto';
 
 @Injectable()
@@ -90,7 +91,12 @@ export class PracticeService {
 		}
 
 		try {
-			await postToAiService(
+			const adaptiveResponse = await postToAiService<{
+				selected_questions?: Array<Record<string, unknown>>;
+				profile_updates?: Record<string, unknown>;
+				learner_profile?: Record<string, unknown>;
+				feedback?: string | null;
+			}>(
 				this.configService,
 				{
 					intent: 'UPDATE_PRACTICE',
@@ -98,6 +104,13 @@ export class PracticeService {
 					user_message: dto.request,
 				},
 			);
+
+			await persistAdaptivePracticeSet(this.prisma, {
+				userId: canonicalUserId,
+				studentGrade: student.grade,
+				requestText: dto.request,
+				adaptiveResponse,
+			});
 
 			return {
 				success: true,

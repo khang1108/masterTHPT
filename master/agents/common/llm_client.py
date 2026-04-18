@@ -261,7 +261,7 @@ class LLMClient:
         tp = top_p if top_p is not None else _env_float("LLM_DEFAULT_TOP_P", 0.9)
         mname = model or _model_for_role(agent_role)
         if not mname:
-            mname = "gemini-2.5-flash"
+            mname = "gemini-2.5-flash-lite"
         role_name = (agent_role or "").strip().lower() or None
         extra_tags = kwargs.pop("tags", None)
         extra_metadata = kwargs.pop("metadata", None)

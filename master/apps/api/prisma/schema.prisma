@@ -98,3 +98,46 @@ model LearnerProfile {
 
   @@map("learner_profiles")
 }
+
+model SharedPlanMemory {
+  mongo_id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  plan_id                  String   @unique
+  user_id                  String
+  student_id               String?
+
+  status                   String   @default("draft")
+  version                  Int      @default(1)
+
+  goal                     String
+  summary                  String   @default("")
+  rationale                String   @default("")
+  evidence_summary         String   @default("")
+
+  target_exam              String?
+  target_exam_name         String?
+  target_exam_type         String?
+  planning_horizon         String?
+
+  focus_topics             String[]
+  constraints              String[]
+  mastery_targets          Json?
+  steps                    Json?
+  notes                    Json?
+
+  exam_matrix_refs         String[]
+  kg_refs                  String[]
+  derived_from_history_ids String[]
+  derived_from_exam_ids    String[]
+
+  created_by_agent         String
+  updated_by_agent         String
+  active_from              DateTime?
+  active_until             DateTime?
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+  metadata                 Json?
+
+  @@index([user_id, updated_at])
+  @@index([user_id, target_exam, status])
+  @@map("shared_plan_memory")
+}
