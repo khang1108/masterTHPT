@@ -55,7 +55,7 @@ class OCRMetadataOutput(BaseModel):
     source: Optional[str] = None
     total_questions: Optional[int] = None
     duration: Optional[int] = None
-    generated: Optional[bool] = None
+    generated: bool = Field(default=False, description="True nếu metadata được tạo ra bởi LLM, False nếu được trích xuất trực tiếp từ đề thi. Nếu generated = True thì các trường có thể không chính xác và chỉ mang tính tham khảo.")
     
 
 class ParserAgent(ToolsRegistry, BaseAgent):
