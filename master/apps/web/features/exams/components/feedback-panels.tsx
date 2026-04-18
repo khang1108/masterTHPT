@@ -37,11 +37,13 @@ export function QuestionFeedbackPanels({
 			return [];
 		}
 
-		return [
+		const items: HintLevelItem[] = [
 			{ key: 'hint_1', label: 'Hint 1', content: hintLevels.hint_1 },
 			{ key: 'hint_2', label: 'Hint 2', content: hintLevels.hint_2 },
 			{ key: 'hint_3', label: 'Hint 3', content: hintLevels.hint_3 },
-		].filter((item) => item.content);
+		];
+
+		return items.filter((item) => item.content);
 	}, [hintLevels]);
 	const [expandedHints, setExpandedHints] = useState<Record<string, boolean>>({});
 
