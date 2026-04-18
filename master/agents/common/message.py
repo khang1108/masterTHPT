@@ -75,13 +75,13 @@ class MessageRequest(BaseModel):
     student_message: Optional[str] = None
     parser_output: Optional[list[dict]] = None
     image_bucket_url: Optional[str] = None
+    file_path: Optional[str] = None
 
 class MessageResponse(BaseModel):
     student_id: str
     exam_id: Optional[str] = None
     question_id: Optional[str] = None
     feedback: Optional[str] = None
-    preprocess_payload: Optional[PreprocessPayload] = None
 
 # --- Exam JSON Schema ---
 

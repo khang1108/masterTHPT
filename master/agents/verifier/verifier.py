@@ -20,7 +20,7 @@ import uuid
 import os
 
 load_dotenv(override=True)
-BATCH_SIZE = 5
+BATCH_SIZE = 3
 
 # ── Verifier Agent ──────────────────────────────────────────────────────────────
 
@@ -60,9 +60,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         if state["phase"] == "END":
             return "END"
         if state["phase"] == "teacher":
-            if state["round"] >= state["max_round"] or state["confidence"][0] >= 0.9 or state["is_agreed"][0]:
+            if state["round"] >= state["max_round"] or (state["confidence"] and state["is_agreed"] and (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value)):
                 return "END"
-        return "teacher" if state["confidence"][0] < 0.9 else "END"
+        return "teacher"
 
     def format_conversation(self, state: AgentState) -> str:
         conversation = "Conversation history:\n\n"
@@ -78,28 +78,109 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
     # Hàm này dùng để chấm điểm theo lô (batch) các câu hỏi, trả về feedback cho từng câu hỏi và confidence của Verifier về độ chính xác của Teacher
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
+        intent = request.intent
 
         is_agreed = []
         solutions = []
         confidence = []
         feedback = []
         item_list = request.parser_output
+        id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
+        state_confidence = state.get("confidence", []) or []
+        state_is_agreed = state.get("is_agreed", []) or []
+        state_discrimination_a = state.get("discrimination_a", []) or []
+        state_difficulty_b = state.get("difficulty_b", []) or []
+        state_solutions = state.get("solutions", []) or []
+        solution_by_id = {}
+        for solution in state_solutions:
+            if hasattr(solution, "question_id") and hasattr(solution, "solution"):
+                solution_by_id[solution.question_id] = solution.solution
+            elif isinstance(solution, dict):
+                question_id = solution.get("question_id")
+                if question_id:
+                    solution_by_id[question_id] = solution.get("solution")
+
         for i in range(0, len(item_list), BATCH_SIZE):
             batch = item_list[i:i + BATCH_SIZE]
             question_ids = [item["id"] for item in batch]
             
-            skip_verify = [question_id for question_id, confidence in zip(question_ids, state.get("confidence", [])) if confidence >= 0.9]
-            skip_verify.extend([question_id for question_id, is_agreed in zip(question_ids, state.get("is_agreed", [])) if is_agreed])
+            skip_verify = [
+                question_id
+                for question_id in question_ids
+                if (
+                    (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_confidence) and state_confidence[id_to_index[question_id]] >= 0.9)
+                    or (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_is_agreed) and state_is_agreed[id_to_index[question_id]])
+                )
+            ]
             
             # TODO: CASTING OUTPUT AND INSERT IT TO DATABASE
+            if intent == Intent.PREPROCESS.value and skip_verify:
+                batch_map = {item["id"]: item for item in batch}
+                for ids in skip_verify:
+                    item = batch_map.get(ids)
+                    if not item:
+                        continue
+
+                    item_index = id_to_index.get(ids)
+                    discrimination_a = (
+                        state_discrimination_a[item_index]
+                        if item_index is not None and item_index < len(state_discrimination_a)
+                        else None
+                    )
+                    difficulty_b = (
+                        state_difficulty_b[item_index]
+                        if item_index is not None and item_index < len(state_difficulty_b)
+                        else None
+                    )
+                    correct_answer = solution_by_id.get(ids)
+
+                    data = {
+                        "id": item["id"],
+                        "question_index": item["question_index"],
+                        "type": item.get("type"),
+                        "content": item.get("content"),
+                        "options": item.get("options"),
+                        "correct_answer": correct_answer,
+                        "has_image": item.get("has_image"),
+                        "image_url": item.get("image_url"),
+                        "discrimination_a": discrimination_a,
+                        "difficulty_b": difficulty_b,
+                    }
+
+                    await self.insert_data("masterthpt", "questions", [data])
+                    self.logger.agent_node(f"Skip verify preprocess payload: {data}")
             
-            
-            need_verify = [question_id for question_id in question_ids if question_id not in skip_verify]
+            need_verify = [item for item in batch if item["id"] not in skip_verify]
+            if not need_verify:
+                continue
+
             batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
             prompt = verifier_prompt(batch_input_json)
             # prompt += self.format_conversation(state)
             
             responses: EvaluateBatch = await self._llm_with_output.ainvoke(prompt)
+
+            if intent == Intent.PREPROCESS.value and state["round"] >= state["max_round"] and need_verify:
+                need_verify_by_id = {item["id"]: item for item in need_verify}
+                for response in responses.results:
+                    item = need_verify_by_id.get(response.question_id)
+                    if not item:
+                        continue
+
+                    data = {
+                        "id": item["id"],
+                        "question_index": item["question_index"],
+                        "type": item.get("type"),
+                        "content": item.get("content"),
+                        "options": item.get("options"),
+                        "correct_answer": response.correct_answer,
+                        "has_image": item.get("has_image"),
+                        "image_url": item.get("image_url"),
+                        "discrimination_a": response.discrimination_a,
+                        "difficulty_b": response.difficulty_b,
+                    }
+                    await self.insert_data("masterthpt", "questions", [data])
+                    self.logger.agent_node(f"Finalize by verifier payload: {data}")
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:
@@ -134,10 +215,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
     async def verifier(self, state: AgentState) -> AgentState:
         self.logger.agent_node("Verifier debate started")
-        request = state["request"]
-        await self._run_batch(state, request)
+        next_state = await self._run_batch(state)
         self.logger.agent_node("Verifier debate completed")
-        return state
+        return next_state
     
     async def run(self, input: str) -> str:
         return "Use run_draft() or run_debate() instead."

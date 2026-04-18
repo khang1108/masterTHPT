@@ -17,3 +17,5 @@ test.pdf
 logs/
 tmp/
 ping.js
+ocr_output.json
+ocr_output_tune.json

@@ -61,6 +61,12 @@ class AgentState(TypedDict, total=False):
     response: MessageResponse | None
     agent_trail: list[str] | None
     history_record: dict[str, Any] | None
+    
+    # Adaptive
+    selected_questions: Optional[list[ExamQuestion]]
+    profile_updates: Optional[dict]
+    discrimination_a: Optional[list[float]]
+    difficulty_b: Optional[list[float]]
 
     _verdicts: list[Any]
     _pipeline_verdict: str
@@ -71,5 +77,3 @@ class AgentState(TypedDict, total=False):
     _student_id: str
     _parser_batch_size: int | None
     _stop_pipeline: bool
-    # Response
-    response: Optional[List[MessageResponse]] = None
