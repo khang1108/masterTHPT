@@ -280,7 +280,7 @@ class ManagerOrchestrator:
         history_record = state.get("history_record")
 
         student_answers = []
-        for ans in (state.get("student_answers") or request.student_answers or []):
+        for ans in (state.get("student_answers") or request.student_answers or {}):
             if isinstance(ans, dict) and "_id" in ans:
                 ans["_id"] = str(ans["_id"]) # Ép kiểu phòng hờ
             student_answers.append(StudentAnswer.model_validate(ans))
@@ -473,6 +473,16 @@ class ManagerOrchestrator:
             if isinstance(pipeline_result, dict)
             else pipeline_result
         )
+        teacher_feedback = (
+            pipeline_result.get("teacher_feedback", [])
+            if isinstance(pipeline_result, dict)
+            else state.get("teacher_feedback", [])
+        )
+        verifier_feedback = (
+            pipeline_result.get("verifier_feedback", [])
+            if isinstance(pipeline_result, dict)
+            else state.get("verifier_feedback", [])
+        )
         debate_outputs = (
             pipeline_result.get("debate_outputs", [])
             if isinstance(pipeline_result, dict)
@@ -482,6 +492,8 @@ class ManagerOrchestrator:
         graded_state = {
             **state,
             "response": response,
+            "teacher_feedback": teacher_feedback,
+            "verifier_feedback": verifier_feedback,
             "debate_outputs": debate_outputs,
             "agent_trail": agent_trail,
         }
@@ -673,7 +685,61 @@ class ManagerOrchestrator:
                 if attempts_processed
                 else "Adaptive đã tải hồ sơ học tập hiện tại."
             )
+        if intent == Intent.ASK_HINT:
+            return "Đã tạo gợi ý cho câu hỏi hiện tại."
+        if intent == Intent.REVIEW_MISTAKE:
+            return "Đã tạo phần giải thích cho câu trả lời hiện tại."
         return "Manager đã điều phối xong workflow của các agent."
+
+    @staticmethod
+    def _ensure_dict(value: Any) -> dict[str, Any]:
+        """Normalize optional state payloads that are expected to be mappings."""
+
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _ensure_list(value: Any) -> list[Any]:
+        """Normalize optional state payloads that are expected to be lists."""
+
+        return value if isinstance(value, list) else []
+
+    @staticmethod
+    def _stringify_feedback_entry(entry: Any) -> str:
+        """Convert pipeline feedback entries into a plain string for API output."""
+
+        if entry is None:
+            return ""
+        if isinstance(entry, str):
+            return entry.strip()
+        if isinstance(entry, list):
+            flattened = [
+                ManagerOrchestrator._stringify_feedback_entry(item)
+                for item in entry
+            ]
+            return "\n".join(item for item in flattened if item)
+        content = getattr(entry, "content", None)
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    text_parts.append(item.strip())
+                elif isinstance(item, dict):
+                    text_value = item.get("text")
+                    if isinstance(text_value, str):
+                        text_parts.append(text_value.strip())
+            return "\n".join(part for part in text_parts if part)
+        if hasattr(entry, "feedback"):
+            feedback = getattr(entry, "feedback", None)
+            if isinstance(feedback, str):
+                return feedback.strip()
+        if isinstance(entry, dict):
+            for key in ("feedback", "content", "text"):
+                value = entry.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return str(entry).strip()
 
     async def _finalize_response_node(self, state: AgentState) -> AgentState:
         """Đóng gói state cuối cùng thành ``MessageResponse`` cho API trả ra."""
@@ -687,13 +753,14 @@ class ManagerOrchestrator:
             mode="agent_node",
         )
         response = state.get("response")
-        profile_updates = state.get("profile_updates") or {}
-        selected_questions = state.get("selected_questions") or []
+        profile_updates = self._ensure_dict(state.get("profile_updates"))
+        selected_questions = self._ensure_list(state.get("selected_questions"))
+        teacher_feedback_entries = self._ensure_list(state.get("teacher_feedback"))
         attempts_processed = int(profile_updates.get("attempts_processed") or 0)
 
         if isinstance(response, dict):
             payload = dict(response)
-        elif response is not None:
+        elif response is not None and hasattr(response, "model_dump"):
             payload = response.model_dump(mode="json")
         else:
             payload = {}
@@ -701,13 +768,17 @@ class ManagerOrchestrator:
         payload.setdefault("user_id", request.user_id if request else None)
         payload.setdefault("exam_id", state.get("exam_id") or (request.exam_id if request else None))
         payload.setdefault("question_id", request.question_id if request else None)
+        fallback_feedback = self._default_feedback(
+            state.get("intent"),
+            selected_count=len(selected_questions),
+            attempts_processed=attempts_processed,
+        )
+        teacher_feedback = ""
+        if teacher_feedback_entries:
+            teacher_feedback = self._stringify_feedback_entry(teacher_feedback_entries[-1])
         payload.setdefault(
             "feedback",
-            self._default_feedback(
-                state.get("intent"),
-                selected_count=len(selected_questions),
-                attempts_processed=attempts_processed,
-            ),
+            teacher_feedback or fallback_feedback,
         )
 
         payload["selected_questions"] = [

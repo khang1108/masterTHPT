@@ -100,17 +100,6 @@ class Pipeline:
         )
         result = await self.graph.ainvoke(state, config=config) 
 
-<<<<<<< HEAD
-        log_agent_event(
-            "pipeline",
-            "run_superstep:done",
-            state=result,
-            request=request,
-            extra={"thread_id": self.thread_id},
-            mode="completed",
-        )
-=======
->>>>>>> origin/debate
         return result
 
     async def cleanup(self):
@@ -124,8 +113,6 @@ async def run_superstep(request):
 
     pipeline = Pipeline()
     await pipeline.setup()
-<<<<<<< HEAD
-=======
 
     # request = MessageRequest(
     #     intent=Intent.PREPROCESS.value,
@@ -168,15 +155,6 @@ async def run_superstep(request):
     #         ],
     #     }]
     # )
-    request = MessageRequest(
-		intent=Intent.PREPROCESS.value,
-        student_id="69df0e1d0e91c4f3d1d6353f",
-		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
-        file_path="c:\\Users\\abcsd\\Downloads\\test.pdf"
-)
-
-    result = await pipeline.run_superstep(request)
->>>>>>> origin/debate
     try:
         return await pipeline.run_superstep(request)
     finally:

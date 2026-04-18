@@ -37,13 +37,13 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
     async def setup(self):
         self.logger.agent_node("Verifier setup started")
         llm = LLMClient.chat_model(
-            # provider="openai_compatible",
-            # base_url=os.getenv("FPT_BASE_URL"),
-            # api_key=os.getenv("FPT_API_KEY"),
-            # model="Qwen3-32B",
-            provider="google_genai",
-            model = "gemini-2.5-flash-lite",
-            max_tokens=8192,
+            provider="openai_compatible",
+            base_url=os.getenv("FPT_BASE_URL"),
+            api_key=os.getenv("FPT_API_KEY"),
+            model="Qwen3-32B",
+            # provider="google_genai",
+            # model = "gemini-2.5-flash-lite",
+            max_tokens=4096,
             temperature=0.7,
         )
         await self.setup_tools(llm)

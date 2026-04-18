@@ -108,13 +108,14 @@ def _fpt_base_url() -> str:
     FPT AI Marketplace (OpenAI-style chat completions).
 
     Docs: https://ai-docs.fptcloud.com/ — default host ``mkp-api.fptcloud.com``.
-    Set ``FPT_LLM_APPEND_OPENAI_V1=false`` if your deployment uses ``/chat/completions``
-    without a ``/v1`` prefix (LangChain/OpenAI client expect ``.../v1`` by default).
+    FPT endpoint chỉ cần raw host (vd: ``https://mkp-api.fptcloud.com``),
+    LangChain ChatOpenAI sẽ tự thêm ``/chat/completions``.
+    Set ``FPT_LLM_APPEND_OPENAI_V1=true`` chỉ khi deployment yêu cầu prefix ``/v1``.
     """
-    raw = (os.getenv("FPT_LLM_BASE_URL") or "https://mkp-api.fptcloud.com").strip().rstrip("/")
+    raw = (os.getenv("FPT_LLM_BASE_URL") or os.getenv("FPT_BASE_URL") or "https://mkp-api.fptcloud.com").strip().rstrip("/")
     if not raw.startswith(("http://", "https://")):
         raw = f"https://{raw}"
-    append = os.getenv("FPT_LLM_APPEND_OPENAI_V1", "true").lower() in ("1", "true", "yes")
+    append = os.getenv("FPT_LLM_APPEND_OPENAI_V1", "false").lower() in ("1", "true", "yes")
     if append and not raw.endswith("/v1"):
         return f"{raw}/v1"
     return raw
@@ -225,7 +226,7 @@ class LLMConfig:
             return LLMConfig(
                 provider="fpt_ai_cloud",
                 model=model,
-                api_key=api_key,
+                api_key=key,
                 base_url=_fpt_base_url(),
                 temperature=temp,
                 max_tokens=mx,

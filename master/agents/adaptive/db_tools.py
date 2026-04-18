@@ -54,12 +54,84 @@ class AdaptiveDBTools(MongoDBTools):
             or os.getenv("ADAPTIVE_HISTORY_COLLECTION")
             or "histories"
         )
+        self._profile_schema_ready = False
+
+    def _learner_profile_validator(self) -> dict[str, Any]:
+        return {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": [
+                    "student_id",
+                    "theta",
+                    "total_attempts",
+                    "total_correct",
+                    "topic_mastery",
+                    "topic_attempts",
+                    "topic_correct",
+                    "recent_question_ids",
+                    "recent_topics",
+                ],
+                "properties": {
+                    "student_id": {"bsonType": "string", "description": "Stable learner identifier"},
+                    "theta": {"bsonType": ["double", "int", "long", "decimal"], "description": "Global ability estimate"},
+                    "total_attempts": {"bsonType": ["int", "long"], "minimum": 0},
+                    "total_correct": {"bsonType": ["int", "long"], "minimum": 0},
+                    "topic_mastery": {"bsonType": "object"},
+                    "topic_attempts": {"bsonType": "object"},
+                    "topic_correct": {"bsonType": "object"},
+                    "recent_question_ids": {
+                        "bsonType": "array",
+                        "items": {"bsonType": "string"},
+                    },
+                    "recent_topics": {
+                        "bsonType": "array",
+                        "items": {"bsonType": "string"},
+                    },
+                    "last_updated_question_id": {
+                        "bsonType": ["string", "null"],
+                    },
+                },
+            }
+        }
+
+    async def ensure_learner_profile_schema(self) -> None:
+        if self._profile_schema_ready:
+            return
+
+        database = self.get_mongo_client()[self.database_name]
+        collection_names = await database.list_collection_names()
+        validator = self._learner_profile_validator()
+
+        if self.profile_collection not in collection_names:
+            await database.create_collection(
+                self.profile_collection,
+                validator=validator,
+                validationLevel="strict",
+            )
+        else:
+            try:
+                await database.command(
+                    {
+                        "collMod": self.profile_collection,
+                        "validator": validator,
+                        "validationLevel": "strict",
+                    }
+                )
+            except Exception:
+                # Some Mongo-compatible providers do not support collMod.
+                # In that case we still create the index below and continue.
+                pass
+
+        collection = database[self.profile_collection]
+        await collection.create_index("student_id", unique=True, name="student_id_unique")
+        self._profile_schema_ready = True
 
     @staticmethod
     def _clean_values(values: Iterable[str] | None) -> list[str]:
         if not values:
             return []
         unique: list[str] = []
+        
         seen: set[str] = set()
         for value in values:
             normalized = str(value).strip()
@@ -162,6 +234,7 @@ class AdaptiveDBTools(MongoDBTools):
         return self._clean_values(exam_document.get("questions"))
 
     async def get_learner_profile(self, student_id: str) -> LearnerProfile | None:
+        await self.ensure_learner_profile_schema()
         document = await self.get_one(
             self.database_name,
             self.profile_collection,
@@ -173,6 +246,7 @@ class AdaptiveDBTools(MongoDBTools):
         return LearnerProfile.model_validate(normalized)
 
     async def upsert_learner_profile(self, profile: LearnerProfile) -> int:
+        await self.ensure_learner_profile_schema()
         payload = profile.model_dump(mode="json")
         return await self.upsert_one(
             self.database_name,

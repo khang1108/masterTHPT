@@ -82,12 +82,12 @@ def teacher_hint_prompt(question: object, student_answer: str | None, student_me
         Trả về feedback cho học sinh
 	"""
 
-def teacher_review_mistake_prompt(question: object, student_answer: str | None, student_message: str | None,) -> str:
+def teacher_review_mistake_prompt(content: str, student_answer: str | None, student_message: str | None,) -> str:
 	return f"""Bạn là giáo viên chuyên phản biện bài làm của học sinh.
 		Nhiệm vụ: Phân tích và chỉ ra sai sót trong câu trả lời của học sinh, giúp họ hiểu lỗi và cách cải thiện.
 		Bắt buộc: phản hồi hoàn toàn bằng tiếng Việt tự nhiên, không dùng tiếng Anh.
 
-		Câu hỏi: {question}
+		Câu hỏi: {content}
 		Câu trả lời hiện tại của học sinh: {student_answer}
 		Tin nhắn học sinh: {student_message}
 

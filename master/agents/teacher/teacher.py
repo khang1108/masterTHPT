@@ -20,6 +20,7 @@ from master.logging.logger import logger
 import json
 import os
 import asyncio
+import re
 
 load_dotenv(override=True)
 BATCH_SIZE = 5
@@ -52,6 +53,48 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self._memory     = MemorySaver()
         self.graph       = None
 
+    def _extract_feedback_text(self, response: Any) -> str:
+        raw = getattr(response, "content", response)
+
+        if isinstance(raw, list):
+            parts: list[str] = []
+            for item in raw:
+                if isinstance(item, dict):
+                    parts.append(str(item.get("text", "")))
+                else:
+                    parts.append(str(item))
+            raw = "".join(parts)
+
+        text = str(raw).strip()
+        text = re.sub(r"^```json\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^```\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+        if isinstance(parsed, dict):
+            feedback = parsed.get("feedback")
+            if isinstance(feedback, str) and feedback.strip():
+                return feedback.strip()
+
+        return text
+
+    async def _resolve_question(self, state: AgentState, question_id: str) -> dict[str, Any] | None:
+        for question in state.get("questions", []) or []:
+            if getattr(question, "id", None) == question_id:
+                return {
+                    "content": getattr(question, "content", None),
+                    "options": getattr(question, "options", None),
+                }
+            if isinstance(question, dict) and question.get("id") == question_id:
+                return question
+
+        question_rows = await self.get_data("masterthpt", "questions", {"id": question_id})
+        return question_rows[0] if question_rows else None
+
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup(self):
@@ -60,9 +103,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
-            model="gemma-4-31B-it",
-            max_tokens=10000,
-            temperature=0.7,
+            model="gpt-oss-20b",
+            max_tokens=4096,
+            temperature=0.5,
         )
         logger.info(f"LLM client for Teacher initialized: {os.getenv("FPT_API_KEY")}, {os.getenv("FPT_BASE_URL")}, model={llm.model}")
 
@@ -84,7 +127,11 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             # PREPROCESS should always go through Verifier; Verifier decides when to stop.
             if intent == Intent.PREPROCESS.value:
                 return "verify"
-            if state["round"] >= state["max_round"] or (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value):
+            if intent == Intent.REVIEW_MISTAKE.value:
+                if state["round"] >= state["max_round"] or state["confidence"][0] >= 0.9:
+                    return "END"
+                return "verify"
+            if state["round"] >= state["max_round"] or state["confidence"][0] >= 0.9:
                 return "END"
         return "verify"
 
@@ -197,34 +244,56 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             }
 
         if intent == Intent.ASK_HINT.value:
-            question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
+            question = await self._resolve_question(state, request.question_id)
+            content = question.get("content") if question else "N/A"
+            options = question.get("options") if question else []
+            correct_answer = question.get("correct_answer") if question else None
+            content += "\nCác lựa chọn:\n" + "\n".join(options) + f"\nĐáp án đúng: {correct_answer}" if options else ""
+
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
             student_message = request.student_message if request.student_message else ""
 
-            prompt = teacher_hint_prompt(question, student_answer, student_message)
+            prompt = teacher_hint_prompt(content, student_answer, student_message)
             response = await self._llm.ainvoke(prompt)
             self.logger.agent_node(f"Hint response: {response}")
+            feedback = self._extract_feedback_text(response)
             return {
                 "request": request,
+                "questions": state.get("questions", []),
+                "student_answers": state.get("student_answers", []),
                 "phase": "END",
-                "teacher_feedback": [response]
+                "round": state.get("round", 0),
+                "confidence": state.get("confidence", []),
+                "is_agreed": state.get("is_agreed", []),
+                "teacher_feedback": [feedback]
             }
 
         if intent == Intent.REVIEW_MISTAKE.value:
-            question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
+            question = await self._resolve_question(state, request.question_id)
+            content = question.get("content") if question else "N/A"
+            options = question.get("options") if question else []
+            correct_answer = question.get("correct_answer") if question else None
+            content += "\nCác lựa chọn:\n" + "\n".join(options) + f"\nĐáp án đúng: {correct_answer}" if options else ""
+
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
             student_message = request.student_message if request.student_message else ""
 
-            prompt = teacher_review_mistake_prompt(question, student_answer, student_message)
+            prompt = teacher_review_mistake_prompt(content, student_answer, student_message)
             response = await self._llm_with_single_output.ainvoke(prompt)
             self.logger.agent_node(f"Review mistake response: {response}")
             return {
                 "request": request,
+                "questions": state.get("questions", []),
                 "phase": "verify",
-                "round": state["round"] + 1,
+                "round": state.get("round", 0) + 1,
                 "confidence": [response.confidence],
                 "is_agreed": [response.agree],
-                "student_answers": StudentAnswer(question_id=request.question_id, student_answer=student_answer),
+                "student_answers": [
+                    StudentAnswer(
+                        question_id=request.question_id,
+                        student_answer=student_answer,
+                    )
+                ],
                 "teacher_feedback": [response]
             }
 

@@ -1,4 +1,3 @@
-from accelerate.utils import transformer_engine
 from typing import Optional
 from langchain_core.messages import HumanMessage
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -327,17 +326,3 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
     async def run(self, input: str) -> str:
         pass
-
-
-if __name__ == "__main__":
-    agent = ParserAgent()
-    asyncio.run(agent.setup())
-
-    file = "c:\\Users\\abcsd\\Downloads\\test.pdf"
-    questions: list[dict] = asyncio.run(agent._ocr_file(file, batch_size=2))
-
-    output_path = "ocr_output_tune.json"
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(questions, f, ensure_ascii=False, indent=2)
-
-    print(f"Saved {len(questions)} questions to {output_path}")

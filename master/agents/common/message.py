@@ -14,7 +14,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Intent(str, Enum):
@@ -71,7 +71,7 @@ class MessageRequest(BaseModel):
     student_id: str
     exam_id: Optional[str] = None
     question_id: Optional[str] = None
-    student_answers: Optional[list[StudentAnswer]] = None
+    student_answers: Optional[StudentAnswer] = None
     student_message: Optional[str] = None
     parser_output: Optional[list[dict]] = None
     image_bucket_url: Optional[str] = None
@@ -190,6 +190,17 @@ class MessageRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     file_urls: list[str] = Field(default_factory=list)
     image_bucket_url: str | None = None
+
+    @field_validator("student_answers", mode="before")
+    @classmethod
+    def _coerce_student_answers(cls, value: Any) -> Any:
+        """Accept either a single student-answer object or a list of them."""
+
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return [value]
+        return value
 
     @model_validator(mode="after")
     def _sync_message_fields(self) -> "MessageRequest":

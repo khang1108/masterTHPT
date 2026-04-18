@@ -19,6 +19,27 @@ def _clean_env_value(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _looks_like_placeholder_mongo_uri(uri: str | None) -> bool:
+    """Detect obviously non-production Mongo URIs copied from templates/docs."""
+
+    candidate = _clean_env_value(uri)
+    if not candidate:
+        return False
+
+    lowered = candidate.lower()
+    return any(
+        token in lowered
+        for token in (
+            "cluster.mongodb.net",
+            "username:password",
+            "user:password",
+            "<username>",
+            "<password>",
+            "example.mongodb.net",
+        )
+    )
+
+
 class MongoDBTools:
     """Small async MongoDB toolkit shared by repositories and agents."""
 
@@ -34,6 +55,11 @@ class MongoDBTools:
             mongo_uri = cls._mongo_uri()
             if not mongo_uri:
                 raise RuntimeError("MONGO_URI is not configured.")
+            if _looks_like_placeholder_mongo_uri(mongo_uri):
+                raise RuntimeError(
+                    "MONGO_URI đang là giá trị mẫu/placeholder, chưa phải Mongo URI thật. "
+                    "Hãy cập nhật infra/.env.ai hoặc biến môi trường runtime bằng connection string Mongo hợp lệ."
+                )
             cls._mongo_client = AsyncIOMotorClient(mongo_uri)
         return cls._mongo_client
 

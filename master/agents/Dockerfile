@@ -66,6 +66,7 @@ RUN pip install --upgrade pip setuptools wheel && \
         "playwright>=1.40.0" \
         "typing_extensions>=4.0.0" \
         "Pillow>=10.0.0" \
+        "beautifulsoup4>=4.12.0" \
         "PyMuPDF>=1.24.0" && \
     python -m playwright install chromium
 

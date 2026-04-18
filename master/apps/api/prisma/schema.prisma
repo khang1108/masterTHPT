@@ -80,3 +80,19 @@ model History {
 
   @@map("histories")
 }
+
+model LearnerProfile {
+  mongo_id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  student_id               String   @unique
+  theta                    Float    @default(0)
+  total_attempts           Int      @default(0)
+  total_correct            Int      @default(0)
+  topic_mastery            Json?
+  topic_attempts           Json?
+  topic_correct            Json?
+  recent_question_ids      String[]
+  recent_topics            String[]
+  last_updated_question_id String?
+
+  @@map("learner_profiles")
+}

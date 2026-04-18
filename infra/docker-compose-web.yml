@@ -9,6 +9,8 @@ services:
       - ./.env.api
     expose:
       - "3001"
+    ports:
+      - "3001:3001"
   web:
     build:
       context: ../master/apps/web
@@ -28,5 +30,7 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.ai
+    expose:
+      - "8001"
     ports:
       - "8000:8001"
