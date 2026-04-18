@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any, Literal, TypedDict
 
 from typing import Literal, Optional, TypedDict, Annotated, Any, List
-from langgraph.graph.message import add_messages
 from master.agents.common.message import MessageRequest, MessageResponse
 from master.agents.common.message import ExamQuestion, StudentAnswer
 from master.common.message import GradeResult, Solution
@@ -49,8 +48,8 @@ class AgentState(TypedDict, total=False):
     phase: Literal["draft", "debate", "verify", "finalize"]
     reasoning: str
     confidence: List[float] # confidence per question                    
-    teacher_feedback: Annotated[List[Any], add_messages]
-    verifier_feedback: Annotated[List[Any], add_messages]
+    teacher_feedback: List[Any]
+    verifier_feedback: List[Any]
 
     # Grading result
     grade_result: Optional[GradeResult]

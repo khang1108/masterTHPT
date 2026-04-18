@@ -99,11 +99,11 @@ export async function postToAiService<TResponse>(
 			`AI response error: status=${response.status} url=${aiApiUrl} body=${truncateForLog(responseBody)}`,
 		);
 
-		if (htmlResponse && aiUrlLower.includes('mkp-api.fptcloud.com')) {
-			throw new Error(
-				'AI_API_BASE_URL đang trỏ nhầm sang FPT host. API layer phải gọi agent service /invoke, không gọi trực tiếp mkp-api.fptcloud.com.',
-			);
-		}
+		// if (htmlResponse && aiUrlLower.includes('mkp-api.fptcloud.com')) {
+		// 	throw new Error(
+		// 		`AI_API_BASE_URL=${aiApiUrl} đang trỏ nhầm sang FPT host. API layer phải gọi agent service /invoke, không gọi trực tiếp mkp-api.fptcloud.com.`,
+		// 	);
+		// }
 
 		if (htmlResponse) {
 			throw new Error(

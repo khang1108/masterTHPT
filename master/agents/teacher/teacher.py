@@ -82,19 +82,6 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
         return text
 
-    async def _resolve_question(self, state: AgentState, question_id: str) -> dict[str, Any] | None:
-        for question in state.get("questions", []) or []:
-            if getattr(question, "id", None) == question_id:
-                return {
-                    "content": getattr(question, "content", None),
-                    "options": getattr(question, "options", None),
-                }
-            if isinstance(question, dict) and question.get("id") == question_id:
-                return question
-
-        question_rows = await self.get_data("masterthpt", "questions", {"id": question_id})
-        return question_rows[0] if question_rows else None
-
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     async def setup(self):
@@ -248,7 +235,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             }
 
         if intent == Intent.ASK_HINT.value:
-            question = await self._resolve_question(state, request.question_id)
+            question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id}) if request.question_id else None
+            question = question[0] if question else None
+            
             content = question.get("content") if question else "N/A"
             options = question.get("options") if question else []
             correct_answer = question.get("correct_answer") if question else None
@@ -258,7 +247,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_hint_prompt(content, student_answer, student_message)
-            print(prompt)
+            # print(prompt)
             response = await self._llm.ainvoke(prompt)
             self.logger.agent_node(f"Hint response: {response}")
             feedback = self._extract_feedback_text(response)
@@ -274,7 +263,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             }
 
         if intent == Intent.REVIEW_MISTAKE.value:
-            question = await self._resolve_question(state, request.question_id)
+            question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id})
+            question = question[0] if question else None
+
             content = question.get("content") if question else "N/A"
             options = question.get("options") if question else []
             correct_answer = question.get("correct_answer") if question else None
@@ -284,7 +275,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_review_mistake_prompt(content, student_answer, student_message)
-            print(prompt)
+            # print(prompt)
             response = await self._llm_with_single_output.ainvoke(prompt)
             self.logger.agent_node(f"Review mistake response: {response}")
             return {
