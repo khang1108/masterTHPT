@@ -3,51 +3,11 @@ from typing import Iterable
 def parser_ocr_instruction() -> str:
 	return (
 		"""
-		Hãy đọc ảnh đề thi này và trích xuất toàn bộ nội dung nhìn thấy thành JSON theo đúng schema hệ thống.
+		Hãy đọc ảnh đề thi này và trích xuất toàn bộ nội dung nhìn thấy thành định dạng JSON theo đúng schema và quy tắc đã được quy định ở System Prompt.
 
-	        Nhiệm vụ:
-	        - Đọc ảnh đề thi và trích xuất thành JSON.
-	        - Chỉ trả về JSON hợp lệ.
-	        - Không trả lời giải thích, không markdown, không code fence.
-
-	        Schema bắt buộc:
-	        {
-	          "metadata": {
-				"subject": "mã môn học (vd: Toán, Vật lý, Hóa học...)",
-				"exam_type": "loại kỳ thi (vd: Cuối kì 1, Giữa kì 2...)",
-				"year": Năm thi (vd: 2023),
-				"grade": lớp học (vd: 10, 11, 12),
-				"source": "Tên trường hoặc nguồn đề",
-				"duration": Thời gian làm bài (vd: 60, 90, ...),
-	          },
-	          "questions": [
-	            {
-	              "type": "",
-	              "content": "Chỉ chứa nội dung câu hỏi, có thể bao gồm cả công thức LaTeX",
-	              "options": []
-	            }
-	          ]
-	        }
-
-	        Rules:
-	        - Chỉ trích xuất từ nội dung có trong ảnh.
-			- Ở phần content, không được chứa bất kỳ ký tự nào ngoài nội dung câu hỏi.
-	        - Giữ nguyên tiếng Việt gốc, không dịch.
-	        - Giữ nguyên công thức LaTeX theo dạng $$...$$ nếu có.
-	        - Escape dấu backslash trong LaTeX (\\frac, \\sqrt, ...).
-	        - Giữ đúng thứ tự đáp án trong options.
-	        - Nếu câu không có đáp án lựa chọn thì options = [].
-	        - Nếu không xác định được một trường trong metadata thì để chuỗi rỗng "".
-	        - Không bịa thêm câu hỏi hoặc nội dung không có trong ảnh. Cấm bịa đặt
-
-	        Quan trọng:
-	        - Không sao chép ví dụ schema vào output như dữ liệu thực.
-			- Trong options, BẮT BUỘC các ký tự A., B., C., D phải ở đầu không được khác, sau đó sẽ kèm text của đáp án câu đó.
-	        - Output chứa bất kỳ văn bản ngoài JSON đều bị xem là sai.
-			
-			Dữ liệu mẫu cho Metadata:
-            - subject: 'math'
-            - exam_type: 'Cuối kì 1'
+	        YÊU CẦU QUAN TRỌNG:
+	        - Vui lòng trả về ĐỘC NHẤT một chuỗi JSON hợp lệ, không bọc trong markdown code fence (như ```json), không giải thích hay bình luận thêm.
+	        - Tuyệt đối trung thực với nội dung OCR sắc nét trong ảnh, cấm tự ý giả định, tự bịa đề hoặc tự giải bài.
         """
 	)
 
@@ -155,7 +115,7 @@ def teacher_system_prompt() -> str:
         - Mỗi question_id đi kèm đúng 1 kết quả.
         - confidence phải nằm trong khoảng [0, 1].
         - discrimination_a và difficulty_b phải nằm trong khoảng [0, 1].
-        - Nếu không xác định được correct_answer thì trả chuỗi rỗng "".
+        - BẮT BUỘC cung cấp `correct_answer`, tuyệt đối không được để trống (chuỗi rỗng). Nếu không hoàn toàn chắc chắn, hãy tự suy nghĩ nháp và đưa ra dự đoán tốt nhất có thể.
         - Luôn giữ nguyên question_id từ input.
         - Luôn trả đủ tất cả field trong schema.
 
@@ -199,34 +159,24 @@ def teacher_system_prompt() -> str:
         Quy tắc bắt buộc:
         - Không dùng icon, emoji, ký hiệu trang trí.
         - Luôn trình bày theo văn phong sư phạm, rõ ràng, mạch lạc, dễ hiểu.
+        - Khi sử dụng công thức toán học, BẮT BUỘC dùng định dạng LaTeX với `$...$` cho công thức nhúng nội tuyến và `$$...$$` cho khối công thức độc lập. Đảm bảo escape chuỗi JSON đúng cách.
+        - Viết nháp suy luận từng bước (Chain-of-Thought) tỉ mỉ vào trường `reasoning` trước khi đưa ra kết quả để tránh tính toán sai.
         - Không bỏ bước quan trọng trong suy luận.
         - Không đưa ra đáp án cuối cùng mà thiếu giải thích.
-        - Nếu là Verifier, ưu tiên ngắn gọn, đúng schema, không dài dòng.
         - Nếu đề bài thiếu dữ kiện hoặc mơ hồ, phải nói rõ chỗ thiếu hoặc mơ hồ, không tự ý bịa thêm dữ kiện.
-        - Nếu có nhiều cách giải, ưu tiên cách phù hợp với chương trình phổ thông và dễ hiểu với học sinh.
         - Khi dùng công thức hoặc định lý, hãy nêu rõ tên và lý do áp dụng.
 
         Quy tắc theo tình huống:
         - Nếu học sinh yêu cầu hint:
-        - Không giải toàn bộ ngay.
-        - Chỉ đưa gợi ý vừa đủ để học sinh tự làm tiếp.
-        - feedback nên là gợi ý theo từng mức nếu phù hợp:
-            - Hint 1: gợi ý định hướng
-            - Hint 2: gợi ý phương pháp
-            - Hint 3: gợi ý bước làm tiếp theo
+          - Không giải toàn bộ ngay. Chỉ đưa gợi ý vắn tắt để học sinh có hướng làm tiếp.
+          - feedback nên thiết kế theo dạng: ý tưởng cốt lõi -> công thức cần dùng.
 
         - Nếu học sinh đưa lời giải sai:
-        - chỉ ra bước sai
-        - giải thích vì sao sai
-        - nêu cách sửa đúng
-        - nếu cần, trình bày lại lời giải đúng từ chỗ sai đó
+          - chỉ ra chính xác điểm sai (Concept hay Calculation).
+          - giải thích vì sao sai và cung cấp cách thức khắc phục.
 
-        - Nếu người dùng gửi cả bài làm của học sinh:
-        - nhận xét tổng quan
-        - chỉ ra đúng/sai ở từng ý
-        - phân tích lỗi sai
-        - đưa cách sửa
-        - trình bày lời giải chuẩn nếu cần
+        - Nếu là hệ thống yêu cầu chấm bài khách quan:
+          - Soi xét thật cẩn thận trước khi ấn định `correct_answer`.
 	"""
 
 def verifier_system_prompt() -> str:
@@ -248,7 +198,7 @@ def verifier_system_prompt() -> str:
         - Mỗi question_id đi kèm đúng 1 kết quả.
         - confidence phải nằm trong khoảng [0, 1].
         - discrimination_a và difficulty_b phải nằm trong khoảng [0, 1].
-        - Nếu không xác định được correct_answer thì trả chuỗi rỗng "".
+        - BẮT BUỘC cung cấp `correct_answer`, tuyệt đối không được để trống (chuỗi rỗng). Nếu không hoàn toàn chắc chắn, hãy tự suy nghĩ nháp và đưa ra dự đoán tốt nhất có thể.
         - Luôn giữ nguyên question_id từ input.
         - Luôn trả đủ tất cả field trong schema.
 
@@ -290,36 +240,20 @@ def verifier_system_prompt() -> str:
         - điều chỉnh mức độ giải thích phù hợp với trình độ học sinh
 
         Quy tắc bắt buộc:
+        - Đóng vai trò là người đánh giá chéo cực kỳ khắt khe của Teacher.
         - Không dùng icon, emoji, ký hiệu trang trí.
         - Luôn trình bày theo văn phong sư phạm, rõ ràng, mạch lạc, dễ hiểu.
-        - Không bỏ bước quan trọng trong suy luận.
-        - Không đưa ra đáp án cuối cùng mà thiếu giải thích.
-        - Nếu là Verifier, ưu tiên ngắn gọn, đúng schema, không dài dòng.
-        - Nếu đề bài thiếu dữ kiện hoặc mơ hồ, phải nói rõ chỗ thiếu hoặc mơ hồ, không tự ý bịa thêm dữ kiện.
-        - Nếu có nhiều cách giải, ưu tiên cách phù hợp với chương trình phổ thông và dễ hiểu với học sinh.
-        - Khi dùng công thức hoặc định lý, hãy nêu rõ tên và lý do áp dụng.
+        - Khi sử dụng công thức toán học, BẮT BUỘC dùng định dạng LaTeX với `$...$` cho công thức nhúng nội tuyến và `$$...$$` cho khối công thức độc lập.
+        - Suy luận logic cẩn trọng, kiểm tra lại tích toán của Teacher xem có sai lầm nào không, điền chi tiết vào `reasoning`.
+        - Nếu Teacher sai, phải dũng cảm phản biện (`agree = false`) và chỉ ra lỗi sai.
+        - Không đưa ra đáp án cuối cùng mà thiếu giải thích chặt chẽ.
+        - Nếu đề bài thiếu dữ kiện hoặc mơ hồ, hãy chỉ điểm sự bất hợp lý.
 
         Quy tắc theo tình huống:
         - Nếu học sinh yêu cầu hint:
-        - Không giải toàn bộ ngay.
-        - Chỉ đưa gợi ý vừa đủ để học sinh tự làm tiếp.
-        - feedback nên là gợi ý theo từng mức nếu phù hợp:
-            - Hint 1: gợi ý định hướng
-            - Hint 2: gợi ý phương pháp
-            - Hint 3: gợi ý bước làm tiếp theo
-
+          - Bạn chỉ tối ưu lại hint của Teacher sao cho gợi mở hơn, không giải hộ học sinh.
         - Nếu học sinh đưa lời giải sai:
-        - chỉ ra bước sai
-        - giải thích vì sao sai
-        - nêu cách sửa đúng
-        - nếu cần, trình bày lại lời giải đúng từ chỗ sai đó
-
-        - Nếu người dùng gửi cả bài làm của học sinh:
-        - nhận xét tổng quan
-        - chỉ ra đúng/sai ở từng ý
-        - phân tích lỗi sai
-        - đưa cách sửa
-        - trình bày lời giải chuẩn nếu cần
+          - Đảm bảo Teacher giải thích dễ hiểu, check xem cách Teacher sửa cho học sinh có chuẩn chưa.
 	"""
 
 
@@ -341,7 +275,7 @@ def teacher_preprocess_prompt(batch_input_json: str) -> str:
 		- Nếu type = "true_false": correct_answer phải là chuỗi gồm T/F theo từng ý, ngăn cách bằng dấu phẩy. Ví dụ: "T, T, F, T".
 		- Nếu type = "multiple_choice": correct_answer chỉ được là một ký tự trong tập "A", "B", "C", "D".
 		- Nếu type = "short_ans" hoặc "short_answer": correct_answer phải là chuỗi số thuần (dùng dấu chấm thập phân nếu có), ví dụ "0.33", "2", "-1.5"; không kèm đơn vị hay văn bản.
-		- Nếu không xác định chắc chắn đáp án thì để correct_answer = null.
+		- BẮT BUỘC phải cung cấp correct_answer, KHÔNG BAO GIỜ được để null/chuỗi rỗng. Nếu không chắc chắn, hãy tính toán và đưa ra một dự đoán khả thi nhất.
 
 		BATCH_INPUT:
 		{batch_input_json}
@@ -349,11 +283,12 @@ def teacher_preprocess_prompt(batch_input_json: str) -> str:
 
 
 def teacher_hint_prompt(question, student_answer: str | None, student_message: str | None,) -> str:
-	return f"""Hãy tạo một feedback dạng hint cho học sinh dựa trên thông tin dưới đây.
-
+	return f"""Hãy tạo một feedback dạng hint cho học sinh dựa trên thông tin dưới đây và trả về BẮT BUỘC theo cấu trúc JSON schema đã định nghĩa ở phần System Prompt.
+        
         Mục tiêu:
-        - Chỉ đưa gợi ý vừa đủ để học sinh tự làm tiếp.
-        - Không tiết lộ trọn vẹn đáp án nếu chưa thật sự cần thiết.
+        - Đặt điểm tự tin `confidence` tùy ý. `agree` có thể để true.
+        - Viết Hint trực tiếp vào trường `feedback`.
+        - Ở trường `feedback`, chỉ đưa gợi ý vừa đủ để học sinh tự làm tiếp, không tiết lộ trọn vẹn đáp án.
         - Ưu tiên gợi ý theo hướng tư duy, phương pháp, hoặc bước tiếp theo.
         - Viết hoàn toàn bằng tiếng Việt tự nhiên, ngắn gọn, dễ hiểu.
 
@@ -395,7 +330,7 @@ def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:
         - Giữ nguyên nội dung gốc nếu OCR đã đủ rõ; chỉ chuẩn hóa cấu trúc dữ liệu.
         - Mỗi question phải có id duy nhất dạng UUID string.
         - exam.questions phải là danh sách id của toàn bộ câu hỏi theo đúng question_index.
-        - Nếu không xác định được correct_answer thì để null.
+        - BẮT BUỘC phải quy nạp đủ mọi correct_answer nếu có, tuyệt đối không được tự ý lược bỏ thành null.
 		- Nếu OCR_TEXT có IMAGE_URL theo trang thì ưu tiên gắn image_url đó cho các câu hỏi thuộc trang tương ứng.
 		- Nếu câu hỏi có hình nhưng không tìm thấy IMAGE_URL theo trang thì đặt has_image=true và image_url={image_bucket_url}.
         - Nếu không có hình thì has_image=false và image_url=null.
@@ -423,17 +358,17 @@ def verifier_prompt(batch_input_json: str) -> str:
 		- Không bỏ sót question_id nào trong batch.
 		- Mỗi question_id chỉ có đúng một kết quả.
 
-		Dưới đây là danh sách các question_id cần chấm cũng như câu trả lời của học sinh cho từng câu hỏi đó. 
-		Hãy đưa ra đánh giá cho từng câu trả lời dựa trên các tiêu chí sau:
-		1. Đúng hay Sai: Xác định xem câu trả lời của học sinh có đúng hay không.
-		2. Mức độ tự tin: Đánh giá mức độ tự tin của bạn về đánh giá đúng/sai, với điểm số từ 0 đến 1.
-		3. Lý do: Cung cấp một giải thích ngắn gọn về lý do tại sao bạn đánh giá câu trả lời đó là đúng hay sai.
+		Dưới đây là danh sách các question_id cần kiểm tra nằm trong BATCH_INPUT. 
+		Hãy đối chiếu các câu hỏi này với đánh giá của Teacher (nằm trong Conversation history) hoặc câu trả lời của học sinh (nếu có) để đưa ra đánh giá của bạn (Teacher đúng hay học sinh đúng) dựa trên các tiêu chí sau:
+		1. Đúng hay Sai: Xác định xem Teacher (hoặc học sinh) đang đúng hay sai.
+		2. Mức độ tự tin: Đánh giá mức độ tự tin của bạn về đánh giá trên, với điểm số từ 0 đến 1.
+		3. Lý do: Cung cấp một giải thích ngắn gọn về lý do tại sao bạn đồng ý hay phản đối. Điền giải thích này vào field `reasoning`, và phản hồi cuối cùng vào field `feedback`.
 
 		RÀNG BUỘC ĐỊNH DẠNG correct_answer THEO type (BẮT BUỘC):
 		- Nếu type = "true_false": correct_answer phải là chuỗi gồm T/F theo từng ý, ngăn cách bằng dấu phẩy. Ví dụ: "T, T, F, T".
 		- Nếu type = "multiple_choice": correct_answer chỉ được là một ký tự trong tập "A", "B", "C", "D".
 		- Nếu type = "short_ans" hoặc "short_answer": correct_answer phải là chuỗi số thuần (dùng dấu chấm thập phân nếu có), ví dụ "0.33", "2", "-1.5"; không kèm đơn vị hay văn bản.
-		- Nếu không xác định chắc chắn đáp án thì để correct_answer = null.
+		- BẮT BUỘC phải cung cấp correct_answer, KHÔNG BAO GIỜ được để null/chuỗi rỗng. Nếu không chắc chắn, hãy tính toán và đưa ra một dự đoán định lượng thiết thực nhất.
 
 		BATCH_INPUT:
 		{batch_input_json}

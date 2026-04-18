@@ -1,6 +1,6 @@
 from typing import Optional, Annotated, Any, List
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -215,7 +215,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
                 batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
                 prompt = teacher_preprocess_prompt(batch_input_json)
-                responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(prompt)
+                responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
+                    self.build_messages(prompt)
+                )
 
                 response_by_id = {r.question_id: r for r in responses.results}
                 missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
@@ -225,7 +227,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     self.logger.agent_node(f"Teacher retry {retry_count}: {len(missing)} missing items")
                     retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
                     retry_prompt = teacher_preprocess_prompt(retry_json)
-                    retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(retry_prompt)
+                    retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
+                        self.build_messages(retry_prompt)
+                    )
                     for r in retry_responses.results:
                         response_by_id[r.question_id] = r
                     missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
@@ -291,12 +295,17 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
             prompt = teacher_hint_prompt(content, student_answer, student_message)
             print(prompt)
-            response = await self._llm.ainvoke(prompt)
+            response = await self._llm_with_single_output.ainvoke(
+                self.build_messages(prompt)
+            )
             self.logger.agent_node(f"Hint response: {response}")
+            hint_feedback_message = AIMessage(
+                content=json.dumps(response.model_dump(), ensure_ascii=False)
+            )
             return {
                 "request": request,
                 "phase": "END",
-                "teacher_feedback": [response]
+                "teacher_feedback": [hint_feedback_message]
             }
 
         if intent == Intent.REVIEW_MISTAKE.value:
@@ -311,7 +320,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
             prompt = teacher_review_mistake_prompt(content, student_answer, student_message)
             print(prompt)
-            response = await self._llm_with_single_output.ainvoke(prompt)
+            response = await self._llm_with_single_output.ainvoke(
+                self.build_messages(prompt)
+            )
             self.logger.agent_node(f"Review mistake response: {response}")
             review_feedback_message = AIMessage(
                 content=json.dumps(response.model_dump(), ensure_ascii=False)

@@ -1,6 +1,6 @@
 from accelerate.utils import transformer_engine
 from typing import Optional
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageDraw, ImageFont, ImageStat
@@ -47,7 +47,7 @@ class QuestionOutput(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     question_index: int = Field(description="Số thứ tự câu hỏi trong đề, bắt đầu từ 1")
     type: Type = Field(description="Loại câu hỏi, là 1 trong 3 loại sau 'multiple_choice' hoặc 'true_false' hoặc 'short_ans'")
-    content: str = Field(description="Nội dung câu hỏi, có thể bao gồm cả text và LaTeX")
+    content: str = Field(description="Nội dung câu hỏi, có thể bao gồm cả text và LaTeX, bỏ phần đầu như 'Câu 1: ' hoặc '1.")
     options: Optional[list[str]] = Field(default=None, description="Danh sách lựa chọn nếu là câu hỏi trắc nghiệm, để trống nếu là câu hỏi tự luận")
     has_image: bool = Field(description="Câu hỏi có chứa hình ảnh hay không")
     image_url: Optional[str] = Field(default=None, description="URL của hình ảnh nếu có")
@@ -77,18 +77,36 @@ class QuestionOutput(BaseModel):
                 raise ValueError("multiple_choice must have exactly 4 options")
 
             expected_prefixes = ("A.", "B.", "C.", "D.")
-            for option, prefix in zip(self.options, expected_prefixes):
-                if not option.startswith(prefix):
-                    raise ValueError("multiple_choice options must preserve prefixes A., B., C., D.")
+            all_correct = all(
+                option.startswith(prefix)
+                for option, prefix in zip(self.options, expected_prefixes)
+            )
+
+            if not all_correct:
+                # Normalize: strip existing wrong prefixes and add correct ones
+                normalized = []
+                for option, prefix in zip(self.options, expected_prefixes):
+                    text = option.strip()
+                    # Remove existing prefix patterns like "a.", "a)", "A)", "1.", etc.
+                    text = re.sub(r"^[A-Da-d1-4][.\)]\s*", "", text).strip()
+                    normalized.append(f"{prefix} {text}")
+                self.options = normalized
 
         elif self.type == Type.TRUE_FALSE:
             if not self.options:
                 raise ValueError("true_false must have options")
 
-            for option in self.options:
-                normalized = option.strip().lower()
-                if not re.match(r"^[a-d][\)\.]", normalized):
-                    raise ValueError("true_false options must preserve clause prefixes a), b), c), d) or a., b., c., d.")
+            expected_prefixes = list("abcd")[:len(self.options)]
+            normalized = []
+            for option, letter in zip(self.options, expected_prefixes):
+                text = option.strip()
+                if re.match(r"^[a-d][.\)]", text):
+                    normalized.append(text)
+                else:
+                    # Remove wrong prefix and add correct one
+                    text = re.sub(r"^[A-Da-d1-4][.\)]\s*", "", text).strip()
+                    normalized.append(f"{letter}) {text}")
+            self.options = normalized
 
         elif self.type == Type.SHORT_ANSWER:
             if self.options is not None:
@@ -130,38 +148,93 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         self._llm = llm
         self.logger.agent_node("Parser setup completed")
 
+    def _extract_options_from_content(self, content: str, options: list | None) -> tuple[str, list[str]]:
+        """
+        Normalize true_false questions where options (a), b), c), d)) are
+        embedded in the content field instead of in the options array.
+        
+        Returns (cleaned_content, extracted_options).
+        """
+        # If options already exist and are non-empty, no extraction needed
+        if options:
+            return content, options
+
+        # Pattern to match lines starting with a), b), c), d) or a., b., c., d.
+        # These are typical true_false sub-option prefixes
+        option_pattern = re.compile(
+            r"^[ \t]*([a-d][\.\)])\s*(.+)",
+            re.IGNORECASE | re.MULTILINE
+        )
+
+        matches = list(option_pattern.finditer(content))
+        if len(matches) < 2:
+            # Need at least 2 sub-options to consider them as embedded options
+            return content, options or []
+
+        # Verify the prefixes are sequential (a, b, c, d order)
+        found_prefixes = [m.group(1)[0].lower() for m in matches]
+        expected = list("abcd")[:len(found_prefixes)]
+        if found_prefixes != expected:
+            return content, options or []
+
+        # Extract full option text for each match (from prefix to next match or end)
+        extracted_options: list[str] = []
+        for idx, match in enumerate(matches):
+            start = match.start()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(content)
+            option_text = content[start:end].strip()
+            extracted_options.append(option_text)
+
+        # Clean content: remove the options portion
+        first_option_start = matches[0].start()
+        cleaned_content = content[:first_option_start].strip()
+
+        self.logger.agent_node(
+            f"Parser extracted {len(extracted_options)} options from content for true_false question"
+        )
+        return cleaned_content, extracted_options
+
     def _normalize_question_type(self, raw_type: str | None, options: list | None) -> Type:
+        """
+        Determine question type. Options prefix casing takes priority over raw_type
+        because OCR can mislabel types:
+        - Uppercase A., B., C., D. -> multiple_choice
+        - Lowercase a., b., c., d. or a), b), c), d) -> true_false
+        """
+        # Check options prefix casing first to detect the actual type
+        if options and len(options) >= 2:
+            has_uppercase = all(
+                isinstance(opt, str) and re.match(r'^[A-D]\.', opt.strip())
+                for opt in options
+            )
+            has_lowercase = all(
+                isinstance(opt, str) and re.match(r'^[a-d][.)]', opt.strip())
+                for opt in options
+            )
+            if has_uppercase and len(options) == 4:
+                return Type.MULTIPLE_CHOICE
+            if has_lowercase:
+                return Type.TRUE_FALSE
+
+        # Fall back to raw_type from OCR
         if raw_type:
             raw = str(raw_type).strip().lower()
-            
             if raw in {"short_ans", "short_answer", "tự luận", "tu luan"}:
                 return Type.SHORT_ANSWER
             if raw in {"multiple_choice", "multiple choice", "trắc nghiệm", "trac nghiem"}:
                 return Type.MULTIPLE_CHOICE
             if raw in {"true_false", "true false", "đúng sai", "đúng/sai", "dung sai"}:
                 return Type.TRUE_FALSE
+            try:
+                return Type(raw)
+            except ValueError:
+                pass
 
-        try:
-            return Type(raw)
-        except ValueError:
-            pass
-
-        if not options and len(options) == 0:
+        # Last resort heuristics
+        if not options or len(options) == 0:
             return Type.SHORT_ANSWER
-        
-        if len(options) == 4:
-            is_multiple = all(
-                isinstance(opt, str) and re.match(r"^[a-d][\.\)]", opt.strip(), re.IGNORECASE) 
-                for opt in options
-            )
-            if is_multiple:
-                return Type.MULTIPLE_CHOICE
-            
-        if options and all(isinstance(opt, str) and re.match(r"^[a-d][\.\)]", opt.strip(), re.IGNORECASE) for opt in options):
-             return Type.TRUE_FALSE
 
         return Type.MULTIPLE_CHOICE
-                
 
 
     def _load_file(self, file_path: str) -> tuple[str, list[tuple[int, bytes, str]]]:
@@ -243,7 +316,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             ]
         )
 
-        result = self._llm.invoke([message])
+        result = self._llm.invoke(self.build_messages(message))
         content = result.content if hasattr(result, "content") else result
 
         if isinstance(content, list):
@@ -323,9 +396,9 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         ocr_pages = [all_results[page_num] for page_num in sorted(all_results.keys())]
 
         # Save ocr_pages to JSON for debugging
-        debug_output_path = f"ocr_output.json"
-        with open(debug_output_path, "w", encoding="utf-8") as f:
-            json.dump(ocr_pages, f, ensure_ascii=False, indent=2)
+        # debug_output_path = f"ocr_output.json"
+        # with open(debug_output_path, "w", encoding="utf-8") as f:
+        #     json.dump(ocr_pages, f, ensure_ascii=False, indent=2)
             
         raw_metadata = ocr_pages[0].get("metadata", {}) if ocr_pages else {}
         try:
@@ -337,7 +410,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             metadata = OCRMetadataOutput()
 
         questions: list[QuestionOutput] = []
-        question_index = 1
+        question_index = 0
 
         for page in ocr_pages:
             page_questions: list[dict] = []
@@ -350,10 +423,11 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 page_questions = [{"content": page.get("raw_text", "")}]
 
             for item in page_questions:
-                question_index = 1
+                question_index += 1
 
-                # Get question content and check if it's valid
+                # Get question content and normalize it to remove text like 'Câu 1:'
                 content = str(item.get("content", "")).strip()
+                content = re.sub(r"^Câu\s*\d+\s*[:.\-]?\s*", "", content, flags=re.IGNORECASE).strip()
                 if not content:
                     question_index -= 1
                     continue
@@ -368,6 +442,12 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 # Extract options if it's a multiple choice question
                 options = item.get("options", [])
                 
+                # Normalize: extract options embedded in content for true_false questions
+                raw_type = item.get("type", "")
+                raw_type_lower = str(raw_type).strip().lower() if raw_type else ""
+                if raw_type_lower in {"true_false", "true false", "đúng sai", "đúng/sai", "dung sai"} or not options:
+                    content, options = self._extract_options_from_content(content, options)
+
                 # Get the type of the question
                 question_type = self._normalize_question_type(item.get("type"), options)
 
@@ -404,10 +484,17 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "questions": [q.id for q in questions],
         })
 
+        parser_output = {"questions": [q.model_dump() for q in questions]}
+
+        # output_path = "ocr_output.json"
+        # with open(output_path, "w", encoding="utf-8") as file:
+        #     json.dump(parser_output, file, ensure_ascii=False, indent=2)
+        # self.logger.agent_node(f"Parser saved parsed OCR output to {output_path}")
+        
         await self.insert_data("masterthpt", "exams", [exam.model_dump(mode="json")])
         self.logger.agent_node(f"Parser saved exam with {len(questions)} questions to database")
         
-        return {"questions": [q.model_dump() for q in questions]}
+        return parser_output
     
     async def parser(self, state: AgentState) -> AgentState:
         request = state["request"]
@@ -439,17 +526,3 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
     async def run(self, input: str) -> str:
         pass
-
-
-if __name__ == "__main__":
-    agent = ParserAgent()
-    asyncio.run(agent.setup())
-
-    file = "c:\\Users\\abcsd\\Downloads\\test.pdf"
-    questions: list[dict] = asyncio.run(agent._ocr_file(file, batch_size=2))
-
-    output_path = "ocr_output_tune.json"
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(questions, f, ensure_ascii=False, indent=2)
-
-    print(f"Saved {len(questions)} questions to {output_path}")

@@ -68,6 +68,30 @@ class ToolsRegistry:
         collection = ToolsRegistry._mongo_client[database_name][collection_name]
         await collection.insert_many(documents)
 
+        # Trích xuất và lưu riêng data questions ra file JSON để debug
+        if collection_name == "questions":
+            import json
+            import os
+            debug_file = "preprocess_output.json"
+            
+            existing_docs = []
+            if os.path.exists(debug_file):
+                try:
+                    with open(debug_file, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content:
+                            existing_docs = json.loads(content)
+                except Exception:
+                    pass
+                    
+            for doc in documents:
+                # Loại bỏ objectid do mongo tự sinh
+                doc_copy = {k: v for k, v in doc.items() if k != "_id"}
+                existing_docs.append(doc_copy)
+                
+            with open(debug_file, "w", encoding="utf-8") as f:
+                json.dump(existing_docs, f, ensure_ascii=False, indent=2)
+
 
     def get_tool_node(self) -> ToolNode:
         return self._tool_node

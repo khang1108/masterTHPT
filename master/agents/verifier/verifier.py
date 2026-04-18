@@ -1,7 +1,7 @@
 from typing import Optional, Annotated, Any, List
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -67,8 +67,18 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         if state["phase"] == "END":
             return "END"
         if state["phase"] == "teacher":
-            if round_now >= max_round or (confidence and is_agreed and (confidence[0] >= 0.9 or is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value)):
+            if round_now >= max_round:
                 return "END"
+            
+            if not request.parser_output:
+                return "END"
+
+            if confidence and is_agreed:
+                # Debate ends early only if ALL remaining items are highly confident or agreed
+                all_confident = all(c >= 0.9 for c in confidence)
+                all_agreed = all(a for a in is_agreed)
+                if all_confident or (all_agreed and intent == Intent.REVIEW_MISTAKE.value):
+                    return "END"
         return "teacher"
 
     def format_conversation(self, state: AgentState) -> str:
@@ -173,14 +183,23 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         if tokens and all(token in {"T", "F"} for token in tokens):
                             if expected_count == 0 or len(tokens) == expected_count:
                                 normalized_correct_answer = ", ".join(tokens)
+                            else:
+                                normalized_correct_answer = correct_answer
+                        else:
+                            normalized_correct_answer = correct_answer
                     elif question_type == "multiple_choice":
                         answer_text = str(correct_answer or "").strip().upper()
                         if answer_text in {"A", "B", "C", "D"}:
                             normalized_correct_answer = answer_text
+                        else:
+                            m = re.search(r"[A-D]", answer_text)
+                            normalized_correct_answer = m.group(0) if m else correct_answer
                     elif question_type in {"short_ans", "short_answer"}:
                         answer_text = str(correct_answer or "").strip()
                         if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)", answer_text):
                             normalized_correct_answer = answer_text
+                        else:
+                            normalized_correct_answer = correct_answer
                     else:
                         normalized_correct_answer = correct_answer
 
@@ -213,7 +232,9 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             prompt = verifier_prompt(batch_input_json)
             prompt += self.format_conversation(state)
             
-            responses: EvaluateBatch = await self._llm_with_output.ainvoke(prompt)
+            responses: EvaluateBatch = await self._llm_with_output.ainvoke(
+                self.build_messages(prompt)
+            )
 
             response_by_id = {r.question_id: r for r in responses.results}
             missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
@@ -224,15 +245,36 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
                 retry_prompt = verifier_prompt(retry_json)
                 retry_prompt += self.format_conversation(state)
-                retry_responses: EvaluateBatch = await self._llm_with_output.ainvoke(retry_prompt)
+                retry_responses: EvaluateBatch = await self._llm_with_output.ainvoke(
+                    self.build_messages(retry_prompt)
+                )
                 for r in retry_responses.results:
                     response_by_id[r.question_id] = r
                 missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
 
-            if intent == Intent.PREPROCESS.value and round_now >= max_round and need_verify:
+            # Save need_verify items to DB if they are "done" (agreed/high confidence) or if this is the last round
+            if intent == Intent.PREPROCESS.value and need_verify:
+                done_items = []
+                still_remaining = []
                 for item in need_verify:
                     item_id = item.get("id") or item.get("question_id")
                     response = response_by_id.get(item_id)
+                    # Item is "done" if: last round (force-save all), or response shows agreed/high confidence
+                    is_last_round = round_now + 1 >= max_round
+                    is_done = is_last_round or (
+                        response and (response.agree or response.confidence >= 0.9)
+                    )
+                    if is_done:
+                        done_items.append((item, response))
+                    else:
+                        still_remaining.append(item)
+
+                # Remove done items from remaining_items (they were added at line 208)
+                done_ids = {(item.get("id") or item.get("question_id")) for item, _ in done_items}
+                remaining_items = [item for item in remaining_items if (item.get("id") or item.get("question_id")) not in done_ids]
+
+                for item, response in done_items:
+                    item_id = item.get("id") or item.get("question_id")
                     item_index = id_to_index.get(item_id)
 
                     raw_correct_answer = response.correct_answer if response else solution_by_id.get(item_id)
@@ -247,14 +289,23 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                         if tokens and all(token in {"T", "F"} for token in tokens):
                             if expected_count == 0 or len(tokens) == expected_count:
                                 normalized_correct_answer = ", ".join(tokens)
+                            else:
+                                normalized_correct_answer = raw_correct_answer
+                        else:
+                            normalized_correct_answer = raw_correct_answer
                     elif question_type == "multiple_choice":
                         answer_text = str(raw_correct_answer or "").strip().upper()
                         if answer_text in {"A", "B", "C", "D"}:
                             normalized_correct_answer = answer_text
+                        else:
+                            m = re.search(r"[A-D]", answer_text)
+                            normalized_correct_answer = m.group(0) if m else raw_correct_answer
                     elif question_type in {"short_ans", "short_answer"}:
                         answer_text = str(raw_correct_answer or "").strip()
                         if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)", answer_text):
                             normalized_correct_answer = answer_text
+                        else:
+                            normalized_correct_answer = raw_correct_answer
                     else:
                         normalized_correct_answer = raw_correct_answer
 
@@ -280,9 +331,10 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     await self.insert_data("masterthpt", "questions", [data])
                     db_inserted += 1
                     batch_saved += 1
-                self.logger.agent_node(
-                    f"Verifier batch {i//BATCH_SIZE + 1}: force-saved {batch_saved} questions to database"
-                )
+                if done_items:
+                    self.logger.agent_node(
+                        f"Verifier batch {i//BATCH_SIZE + 1}: saved {len(done_items)} verified questions to database"
+                    )
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:

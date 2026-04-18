@@ -64,6 +64,11 @@ class Pipeline:
 
     async def run_superstep(self, request):
         config = {"configurable": {"thread_id": self.thread_id}}
+        
+        # Clean up existing debug output
+        import os
+        if request.intent == Intent.PREPROCESS.value and os.path.exists("preprocess_output.json"):
+            os.remove("preprocess_output.json")
 
         state = AgentState(
             request=request,
