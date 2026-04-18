@@ -13,6 +13,8 @@ from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
     teacher_system_prompt,
     teacher_preprocess_prompt,
+    teacher_counter_evidence_prompt,
+    teacher_tool_research_prompt,
     teacher_hint_prompt,
     teacher_review_mistake_prompt,
 )
@@ -72,7 +74,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
             model="gpt-oss-120b",
-            max_tokens=6000,
+            max_tokens=8000,
             temperature=0.7,
         )
         await self.setup_tools(llm)
@@ -81,27 +83,22 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self.logger.agent_node("Teacher setup completed")
 
     def teacher_router(self, state: AgentState) -> str:
-        teacher_feedback = state.get("teacher_feedback") or []
-        last_feedback = teacher_feedback[-1] if teacher_feedback else None
         request = state["request"]
         intent = request.intent
+        current_phase = state.get("phase", "draft")
         round_now = state.get("round", 0)
         max_round = state.get("max_round", 3)
-        confidence = state.get("confidence") or []
         is_agreed = state.get("is_agreed") or []
 
-        if hasattr(last_feedback, "tool_calls") and last_feedback.tool_calls:
-            return "tools"
-        if state["phase"] == "END":
+        if current_phase == "END":
             return "END"
-        if state["phase"] == "verify":
+        if current_phase == "verify":
             # PREPROCESS should always go through Verifier; Verifier decides when to stop.
             if intent == Intent.PREPROCESS.value:
                 return "verify"
-            if round_now >= max_round or (confidence and (confidence[0] >= 0.9 or (is_agreed and is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value))):
+            if round_now >= max_round or (is_agreed and is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value):
                 return "END"
         return "verify"
-
 
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
@@ -121,7 +118,6 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             remaining_items = []  # Collect items that still need verification
             db_inserted = 0  # Track total DB inserts this round
             db_saved_total_before = state.get("db_saved_total", 0) or 0
-            state_confidence = state.get("confidence", []) or []
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
             state_difficulty_b = state.get("difficulty_b", []) or []
@@ -142,8 +138,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     question_id
                     for question_id in [(item.get("id") or item.get("question_id")) for item in batch]
                     if (
-                        (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_confidence) and state_confidence[id_to_index[question_id]] >= 0.9)
-                        or (id_to_index.get(question_id) is not None and id_to_index[question_id] < len(state_is_agreed) and state_is_agreed[id_to_index[question_id]])
+                        id_to_index.get(question_id) is not None
+                        and id_to_index[question_id] < len(state_is_agreed)
+                        and state_is_agreed[id_to_index[question_id]]
                     )
                 ]
 
@@ -215,6 +212,25 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
                 batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
                 prompt = teacher_preprocess_prompt(batch_input_json)
+                try:
+                    research_evidence, _, research_source = await self.run_counter_evidence_then_tool(
+                        counter_prompt=teacher_counter_evidence_prompt(batch_input_json),
+                        tool_prompt=teacher_tool_research_prompt(batch_input_json),
+                        messages_key="Teacher_feedback",
+                    )
+                except Exception as error:
+                    research_evidence = ""
+                    research_source = "none"
+                    self.logger.warning(
+                        f"Teacher research failed for batch {i//BATCH_SIZE + 1}: {error}"
+                    )
+
+                if research_evidence:
+                    prompt += (
+                        f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n"
+                        f"{research_evidence}\n"
+                        "Nếu có bằng chứng từ tool thì phải nhắc ngắn gọn bằng chứng đó trong reasoning hoặc feedback."
+                    )
                 responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
                     self.build_messages(prompt)
                 )
@@ -227,6 +243,11 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     self.logger.agent_node(f"Teacher retry {retry_count}: {len(missing)} missing items")
                     retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
                     retry_prompt = teacher_preprocess_prompt(retry_json)
+                    if research_evidence:
+                        retry_prompt += (
+                            f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n"
+                            f"{research_evidence}\n"
+                        )
                     retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
                         self.build_messages(retry_prompt)
                     )
@@ -347,41 +368,3 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
     
     async def run(self, input: str) -> str:
         return "Use run_draft() or run_debate() instead."
-
-
-# if __name__ == "__main__":
-#     agent = TeacherAgent()
-#     request = MessageRequest(
-#         intent=Intent.REVIEW_MISTAKE.value,
-#         student_id="student_123",
-#         student_answers=[StudentAnswer(question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748', student_answer="B")],
-#         question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748',
-#         # parser_output=[{
-#         #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-#         #     "type": 'multiple_choice',
-#         #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-#         #     "options": [
-#         #         'A.$\\frac{h}{3}$',
-#         #         'B.$\\frac{h\\sqrt{2}}{2}.$',
-#         #         'C.$\\frac{h}{2}.$',
-#         #         'D.$\\frac{h\\sqrt{3}}{2}.$'
-#         #     ],
-#         # }]
-#     )
-
-#     state= {
-#         "request": request,
-#         "phase": "draft",
-#         "round": 0,
-#         "max_round": 3,
-#     }
-
-#     asyncio.run(agent.setup())
-#     result = asyncio.run(agent._run_batch(state))
-#     try:
-#         print(json.dumps(result, ensure_ascii=True, default=str))
-#     except (BrokenPipeError, ValueError):
-#         pass
-
-
-    

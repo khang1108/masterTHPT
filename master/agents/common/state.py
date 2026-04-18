@@ -9,7 +9,7 @@ from master.common.message import GradeResult, Solution
 class AgentState(TypedDict):
     # Request
     request: MessageRequest
-    phase: Literal["tools", "draft", "verify", "END"]
+    phase: Literal["draft", "verify", "teacher", "END"]
 
     # Learner context
     learner_profile: LearnerProfile # BKT mastery per KC, IRT theta, history
@@ -23,7 +23,6 @@ class AgentState(TypedDict):
     round: int
     max_round: int
     is_agreed: List[bool]
-    phase: Literal["draft", "debate", "verify", "finalize"]
     reasoning: str
     confidence: List[float] # confidence per question                    
     teacher_feedback: Annotated[List[Any], add_messages]
