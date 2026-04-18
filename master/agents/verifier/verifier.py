@@ -37,12 +37,12 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
     async def setup(self):
         self.logger.agent_node("Verifier setup started")
         llm = LLMClient.chat_model(
-            # provider="openai_compatible",
-            # base_url=os.getenv("FPT_BASE_URL"),
-            # api_key=os.getenv("FPT_API_KEY"),
-            # model="Qwen3-32B",
-            provider="google_genai",
-            model = "gemini-2.5-flash-lite",
+            provider="openai_compatible",
+            base_url=os.getenv("FPT_BASE_URL"),
+            api_key=os.getenv("FPT_API_KEY"),
+            model="Qwen3-32B",
+            # provider="google_genai",
+            # model = "gemini-2.5-flash-lite",
             max_tokens=8192,
             temperature=0.7,
         )
@@ -51,28 +51,42 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         self.logger.agent_node("Verifier setup completed")
 
     def verifier_router(self, state: AgentState) -> str:
-        last_feedback = state["verifier_feedback"][-1] if state["verifier_feedback"] else None
+        verifier_feedback = state.get("verifier_feedback") or []
+        last_feedback = verifier_feedback[-1] if verifier_feedback else None
         request = state["request"]
         intent = request.intent
+        round_now = state.get("round", 0)
+        max_round = state.get("max_round", 3)
+        confidence = state.get("confidence") or []
+        is_agreed = state.get("is_agreed") or []
 
         if hasattr(last_feedback, "tool_calls") and last_feedback.tool_calls:
             return "tools"
         if state["phase"] == "END":
             return "END"
         if state["phase"] == "teacher":
-            if state["round"] >= state["max_round"] or (state["confidence"] and state["is_agreed"] and (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value)):
+            if round_now >= max_round or (confidence and is_agreed and (confidence[0] >= 0.9 or is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value)):
                 return "END"
         return "teacher"
 
     def format_conversation(self, state: AgentState) -> str:
-        conversation = "Conversation history:\n\n"
-        for i, feedback in enumerate(state["teacher_feedback"]):
-            conversation += f"Round {i+1}:\n"
-            conversation += f"Teacher feedback: {feedback}\n"
-            if i < len(state["verifier_feedback"]):
-                conversation += f"Verifier feedback: {state['verifier_feedback'][i]}\n"
-            conversation += "\n"
-        return conversation
+        teacher_feedback = state.get("teacher_feedback") or []
+        verifier_feedback = state.get("verifier_feedback") or []
+
+        if not isinstance(teacher_feedback, list):
+            teacher_feedback = [teacher_feedback]
+        if not isinstance(verifier_feedback, list):
+            verifier_feedback = [verifier_feedback]
+
+        conversation_lines = ["Conversation history:", ""]
+        for i, t_feedback in enumerate(teacher_feedback):
+            conversation_lines.append(f"Round {i + 1}:")
+            conversation_lines.append(f"Teacher feedback: {t_feedback}")
+            if i < len(verifier_feedback):
+                conversation_lines.append(f"Verifier feedback: {verifier_feedback[i]}")
+            conversation_lines.append("")
+
+        return "\n".join(conversation_lines)
 
 
     # Hàm này dùng để chấm điểm theo lô (batch) các câu hỏi, trả về feedback cho từng câu hỏi và confidence của Verifier về độ chính xác của Teacher
@@ -156,7 +170,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
             batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
             prompt = verifier_prompt(batch_input_json)
-            # prompt += self.format_conversation(state)
+            prompt += self.format_conversation(state)
             
             responses: EvaluateBatch = await self._llm_with_output.ainvoke(prompt)
 
@@ -222,51 +236,51 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
     async def run(self, input: str) -> str:
         return "Use run_draft() or run_debate() instead."
     
-if __name__ == "__main__":
-    from master.agents.teacher.teacher import TeacherAgent
-    teacher = TeacherAgent()
-    verifier = VerifierAgent()
+# if __name__ == "__main__":
+#     from master.agents.teacher.teacher import TeacherAgent
+#     teacher = TeacherAgent()
+#     verifier = VerifierAgent()
 
-    request = MessageRequest(
-        intent=Intent.PREPROCESS.value,
-        student_id="student_123",
-        student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
-        question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
-        parser_output=[{
-            "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-            "type": 'multiple_choice',
-            "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-            "options": [
-                'A.$\\frac{h}{3}$',
-                'B.$\\frac{h\\sqrt{2}}{2}.$',
-                'C.$\\frac{h}{2}.$',
-                'D.$\\frac{h\\sqrt{3}}{2}.$'
-            ],
-        }]
-    )
+#     request = MessageRequest(
+#         intent=Intent.PREPROCESS.value,
+#         student_id="student_123",
+#         student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
+#         question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
+#         parser_output=[{
+#             "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
+#             "type": 'multiple_choice',
+#             "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
+#             "options": [
+#                 'A.$\\frac{h}{3}$',
+#                 'B.$\\frac{h\\sqrt{2}}{2}.$',
+#                 'C.$\\frac{h}{2}.$',
+#                 'D.$\\frac{h\\sqrt{3}}{2}.$'
+#             ],
+#         }]
+#     )
 
-    state= {
-        "request": request,
-        "phase": "draft",
-        "round": 0,
-        "max_round": 3,
-    }
+#     state= {
+#         "request": request,
+#         "phase": "draft",
+#         "round": 0,
+#         "max_round": 3,
+#     }
 
-    asyncio.run(teacher.setup())
-    asyncio.run(verifier.setup())
+#     asyncio.run(teacher.setup())
+#     asyncio.run(verifier.setup())
 
-    result = asyncio.run(teacher._run_batch(state))
-    try:
-        print(json.dumps(result, ensure_ascii=True, default=str))
-    except (BrokenPipeError, ValueError):
-        pass
+#     result = asyncio.run(teacher._run_batch(state))
+#     try:
+#         print(json.dumps(result, ensure_ascii=True, default=str))
+#     except (BrokenPipeError, ValueError):
+#         pass
 
-    verifier.logger.agent_node("Starting verifier with teacher's output")
-    result = asyncio.run(verifier._run_batch(result))
-    try:
-        print(json.dumps(result, ensure_ascii=True, default=str))
-    except (BrokenPipeError, ValueError):
-        pass
+#     verifier.logger.agent_node("Starting verifier with teacher's output")
+#     result = asyncio.run(verifier._run_batch(result))
+#     try:
+#         print(json.dumps(result, ensure_ascii=True, default=str))
+#     except (BrokenPipeError, ValueError):
+#         pass
 
 
     

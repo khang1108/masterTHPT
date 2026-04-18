@@ -92,6 +92,7 @@ def teacher_review_mistake_prompt(question: object, student_answer: str | None, 
 		Tin nhắn học sinh: {student_message}
 
 		Trả về với trường feedback là phân tích chi tiết về sai sót, giải thích rõ ràng và gợi ý cách cải thiện.
+		Trả lời ngắn gọn, đi thẳng vào vấn đề, tránh lan man
 	"""
 
 def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:

@@ -58,8 +58,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
-            model="gemma-4-31B-it",
-            max_tokens=10000,
+            model="gpt-oss-120b",
+            max_tokens=5000,
             temperature=0.7,
         )
         await self.setup_tools(llm)
@@ -68,9 +68,14 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         self.logger.agent_node("Teacher setup completed")
 
     def teacher_router(self, state: AgentState) -> str:
-        last_feedback = state["teacher_feedback"][-1] if state["teacher_feedback"] else None
+        teacher_feedback = state.get("teacher_feedback") or []
+        last_feedback = teacher_feedback[-1] if teacher_feedback else None
         request = state["request"]
         intent = request.intent
+        round_now = state.get("round", 0)
+        max_round = state.get("max_round", 3)
+        confidence = state.get("confidence") or []
+        is_agreed = state.get("is_agreed") or []
 
         if hasattr(last_feedback, "tool_calls") and last_feedback.tool_calls:
             return "tools"
@@ -80,7 +85,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             # PREPROCESS should always go through Verifier; Verifier decides when to stop.
             if intent == Intent.PREPROCESS.value:
                 return "verify"
-            if state["round"] >= state["max_round"] or (state["confidence"][0] >= 0.9 or state["is_agreed"][0] and intent == Intent.REVIEW_MISTAKE.value):
+            if round_now >= max_round or (confidence and (confidence[0] >= 0.9 or (is_agreed and is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value))):
                 return "END"
         return "verify"
 
@@ -88,6 +93,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
         intent = request.intent
+        round_now = state.get("round", 0)
+        max_round = state.get("max_round", 3)
         if intent == Intent.PREPROCESS.value:
             is_agreed= []
             solutions = []
@@ -96,7 +103,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             discrimination_a = []
             difficulty_b = []
             
-            item_list = request.parser_output
+            item_list = request.parser_output or []
             id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
             state_confidence = state.get("confidence", []) or []
             state_is_agreed = state.get("is_agreed", []) or []
@@ -184,7 +191,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "request": request,
                 "phase": "verify",
                 "is_agreed": is_agreed,
-                "round": state["round"] + 1,
+                "round": round_now + 1,
+                "max_round": max_round,
                 "confidence": confidence,
                 "solutions": solutions,
                 "teacher_feedback": feedback,
@@ -194,10 +202,16 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
         if intent == Intent.ASK_HINT.value:
             question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
+            question = question[0] if question else None
+            content = question.get("content") if question else ""
+            options = question.get("options") if question else []
+            content += "\nOptions:\n" + "\n".join(options) if options else ""
+
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
             student_message = request.student_message if request.student_message else ""
 
-            prompt = teacher_hint_prompt(question, student_answer, student_message)
+            prompt = teacher_hint_prompt(content, student_answer, student_message)
+            print(prompt)
             response = await self._llm.ainvoke(prompt)
             self.logger.agent_node(f"Hint response: {response}")
             return {
@@ -208,16 +222,23 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
 
         if intent == Intent.REVIEW_MISTAKE.value:
             question = await self.get_data("masterthpt", "questions", {"id": request.question_id})
+            question = question[0] if question else None
+            content = question.get("content") if question else ""
+            options = question.get("options") if question else []
+            content += "\nOptions:\n" + "\n".join(options) if options else ""
+                
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
             student_message = request.student_message if request.student_message else ""
 
-            prompt = teacher_review_mistake_prompt(question, student_answer, student_message)
+            prompt = teacher_review_mistake_prompt(content, student_answer, student_message)
+            print(prompt)
             response = await self._llm_with_single_output.ainvoke(prompt)
             self.logger.agent_node(f"Review mistake response: {response}")
             return {
                 "request": request,
                 "phase": "verify",
-                "round": state["round"] + 1,
+                "round": round_now + 1,
+                "max_round": max_round,
                 "confidence": [response.confidence],
                 "is_agreed": [response.agree],
                 "student_answers": StudentAnswer(question_id=request.question_id, student_answer=student_answer),
@@ -235,39 +256,39 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         return "Use run_draft() or run_debate() instead."
 
 
-if __name__ == "__main__":
-    agent = TeacherAgent()
-    request = MessageRequest(
-        intent=Intent.ASK_HINT.value,
-        student_id="student_123",
-        student_answers=[StudentAnswer(question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd', student_answer="B")],
-        question_id='07931d51-d61b-5a58-bb3b-351a8edccbcd',
-        # parser_output=[{
-        #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
-        #     "type": 'multiple_choice',
-        #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
-        #     "options": [
-        #         'A.$\\frac{h}{3}$',
-        #         'B.$\\frac{h\\sqrt{2}}{2}.$',
-        #         'C.$\\frac{h}{2}.$',
-        #         'D.$\\frac{h\\sqrt{3}}{2}.$'
-        #     ],
-        # }]
-    )
+# if __name__ == "__main__":
+#     agent = TeacherAgent()
+#     request = MessageRequest(
+#         intent=Intent.REVIEW_MISTAKE.value,
+#         student_id="student_123",
+#         student_answers=[StudentAnswer(question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748', student_answer="B")],
+#         question_id='c7b9433a-e22e-5f91-9a8e-6e682612f748',
+#         # parser_output=[{
+#         #     "id": '07931d51-d61b-5a58-bb3b-351a8edccbcd',
+#         #     "type": 'multiple_choice',
+#         #     "content": 'Cho hình nón (N) có đường cao $SO = h$ và bán kính đáy bằng $r$, gọi M là điểm trên đoạn SO, đặt $OM = x,\\;0 < x < h$. Gọi (C) là thiết diện của mặt phẳng $(\\alpha)$ vuông góc với SO tại M, với hình nón (N). Tìm $x$ để thể tích khối nón đỉnh O đáy là (C) lớn nhất.',
+#         #     "options": [
+#         #         'A.$\\frac{h}{3}$',
+#         #         'B.$\\frac{h\\sqrt{2}}{2}.$',
+#         #         'C.$\\frac{h}{2}.$',
+#         #         'D.$\\frac{h\\sqrt{3}}{2}.$'
+#         #     ],
+#         # }]
+#     )
 
-    state= {
-        "request": request,
-        "phase": "draft",
-        "round": 0,
-        "max_round": 3,
-    }
+#     state= {
+#         "request": request,
+#         "phase": "draft",
+#         "round": 0,
+#         "max_round": 3,
+#     }
 
-    asyncio.run(agent.setup())
-    result = asyncio.run(agent._run_batch(state))
-    try:
-        print(json.dumps(result, ensure_ascii=True, default=str))
-    except (BrokenPipeError, ValueError):
-        pass
+#     asyncio.run(agent.setup())
+#     result = asyncio.run(agent._run_batch(state))
+#     try:
+#         print(json.dumps(result, ensure_ascii=True, default=str))
+#     except (BrokenPipeError, ValueError):
+#         pass
 
 
     
