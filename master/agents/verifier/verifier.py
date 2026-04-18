@@ -297,6 +297,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
                     data = {
                         "question_id": item.get("id") or item.get("question_id"),
+                        "exam_id": request.exam_id,
                         "question_index": item["question_index"],
                         "type": item.get("type"),
                         "content": item.get("content"),
@@ -475,6 +476,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
                     data = {
                         "question_id": item_id,
+                        "exam_id": request.exam_id,
                         "question_index": item.get("question_index"),
                         "type": item.get("type"),
                         "content": item.get("content"),

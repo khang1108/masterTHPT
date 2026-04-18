@@ -21,6 +21,7 @@ from master.agents.common.prompt import (
 
 import asyncio
 import base64
+import datetime
 import uuid
 import json
 import fitz
@@ -124,7 +125,7 @@ class OCRMetadataOutput(BaseModel):
     source: Optional[str] = None
     total_questions: Optional[int] = None
     duration: Optional[int] = None
-    generated: bool = Field(default=False, description="True nÃ¡ÂºÂ¿u metadata Ã„â€˜Ã†Â°Ã¡Â»Â£c tÃ¡ÂºÂ¡o ra bÃ¡Â»Å¸i LLM, False nÃ¡ÂºÂ¿u Ã„â€˜Ã†Â°Ã¡Â»Â£c trÃƒÂ­ch xuÃ¡ÂºÂ¥t trÃ¡Â»Â±c tiÃ¡ÂºÂ¿p tÃ¡Â»Â« Ã„â€˜Ã¡Â»Â thi. NÃ¡ÂºÂ¿u generated = True thÃƒÂ¬ cÃƒÂ¡c trÃ†Â°Ã¡Â»Âng cÃƒÂ³ thÃ¡Â»Æ’ khÃƒÂ´ng chÃƒÂ­nh xÃƒÂ¡c vÃƒÂ  chÃ¡Â»â€° mang tÃƒÂ­nh tham khÃ¡ÂºÂ£o.")
+    generated: bool = Field(default=False, description="True nếu metadata được tạo ra bởi LLM, False nếu được trích xuất trực tiếp từ đề thi. Nếu generated = True thì các trường có thể không chính xác và chỉ mang tính tham khảo.")
     
 
 class OCRQuestionReviewOutput(BaseModel):
@@ -441,8 +442,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                     return embedded_questions
 
         return []
-
-    import re
 
     def _normalize_question_content(self, content: str | None) -> str:
         normalized = self._decode_escaped_text(content)
@@ -996,13 +995,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             f"total_seen={question_index}"
         )
 
-        parser_output = {"questions": [q.model_dump() for q in questions]}
-
-        # output_path = "ocr_output.json"
-        # with open(output_path, "w", encoding="utf-8") as file:
-        #     json.dump(parser_output, file, ensure_ascii=False, indent=2)
-        # self.logger.agent_node(f"Parser saved parsed OCR output to {output_path}")
-        return parser_output
+        return {
+            "metadata": document_output.get("metadata", {}),
+            "questions": [q.model_dump() for q in questions],
+        }
     
     async def parser(self, state: AgentState) -> AgentState:
         request = state["request"]
@@ -1012,13 +1008,41 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             
             return AgentState(request=request)
 
-        questions = await self._ocr_file(file_path, batch_size=2)
-        self.logger.agent_node(f"Parser extracted {len(questions.get('questions', []))} questions from file")
+        ocr_result = await self._ocr_file(file_path, batch_size=2)
+        questions_data = ocr_result.get("questions", [])
+        metadata = ocr_result.get("metadata", {})
+        
+        self.logger.agent_node(f"Parser extracted {len(questions_data)} questions from file")
+        
+        exam_id = request.exam_id or str(uuid.uuid4())
+        
+        # Link questions to exam_id
+        for q in questions_data:
+            q["exam_id"] = exam_id
+            
+        # Create exam record
+        exam = {
+            "id": exam_id,
+            "subject": metadata.get("subject"),
+            "exam_type": metadata.get("exam_type"),
+            "year": metadata.get("year"),
+            "grade": metadata.get("grade"),
+            "source": metadata.get("source"),
+            "total_questions": len(questions_data),
+            "duration": metadata.get("duration"),
+            "created_at": datetime.datetime.now().isoformat(),
+            "questions": [q.get("id") for q in questions_data],
+        }
+
+        await self.insert_data("masterthpt", "exams", [exam])
+        self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")
+
         request = MessageRequest(
             intent=request.intent,
             student_id=request.student_id,
+            exam_id=exam_id,
             question_id=request.question_id,
-            parser_output=questions.get("questions", []),
+            parser_output=questions_data,
         )
 
         return AgentState(request=request)
