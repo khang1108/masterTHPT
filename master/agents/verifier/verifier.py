@@ -12,7 +12,7 @@ from master.agents.common.message import MessageRequest, MessageResponse, Studen
 from master.agents.common.tools import ToolsRegistry
 from master.agents.teacher.teacher import Evaluate, EvaluateBatch
 from master.agents.common.llm_client import LLMClient
-from master.agents.common.prompt import verifier_prompt
+from master.agents.common.prompt import verifier_prompt, verifier_system_prompt
 
 import asyncio
 import json
@@ -28,6 +28,7 @@ BATCH_SIZE = 3
 class VerifierAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="Verifier")
+        self.system_prompt = verifier_system_prompt()
         self._llm               = None
         self._llm_with_output   = None
         self._memory            = MemorySaver()
@@ -110,6 +111,8 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         item_list = request.parser_output or []
         teacher_feedback = state.get("teacher_feedback") or []
         id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
+        remaining_items = []  # Collect items that still need verification
+        db_inserted = 0  # Track total DB inserts this round
         state_confidence = state.get("confidence", []) or []
         state_is_agreed = state.get("is_agreed", []) or []
         state_discrimination_a = state.get("discrimination_a", []) or []
@@ -192,9 +195,11 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     }
 
                     await self.insert_data("masterthpt", "questions", [data])
-                    self.logger.agent_node(f"Skip verify preprocess payload: {data}")
+                    db_inserted += 1
+                self.logger.agent_node(f"Verifier skip verify: {len(skip_verify)} items inserted")
             
             need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
+            remaining_items.extend(need_verify)
             if not need_verify:
                 continue
 
@@ -204,16 +209,29 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             
             responses: EvaluateBatch = await self._llm_with_output.ainvoke(prompt)
 
-            if intent == Intent.PREPROCESS.value and round_now >= max_round and need_verify:
-                need_verify_by_id = {item["id"]: item for item in need_verify}
-                for response in responses.results:
-                    item = need_verify_by_id.get(response.question_id)
-                    if not item:
-                        continue
+            response_by_id = {r.question_id: r for r in responses.results}
+            missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+            retry_count = 0
+            while missing and retry_count < 2:
+                retry_count += 1
+                self.logger.agent_node(f"Verifier retry {retry_count}: {len(missing)} missing items")
+                retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
+                retry_prompt = verifier_prompt(retry_json)
+                retry_prompt += self.format_conversation(state)
+                retry_responses: EvaluateBatch = await self._llm_with_output.ainvoke(retry_prompt)
+                for r in retry_responses.results:
+                    response_by_id[r.question_id] = r
+                missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
 
+            if intent == Intent.PREPROCESS.value and round_now >= max_round and need_verify:
+                for item in need_verify:
+                    item_id = item.get("id") or item.get("question_id")
+                    response = response_by_id.get(item_id)
+                    item_index = id_to_index.get(item_id)
+
+                    raw_correct_answer = response.correct_answer if response else solution_by_id.get(item_id)
                     question_type = (item.get("type") or "").strip().lower()
                     normalized_correct_answer = None
-                    raw_correct_answer = response.correct_answer
 
                     if question_type == "true_false":
                         expected_count = len(item.get("options") or [])
@@ -233,20 +251,28 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     else:
                         normalized_correct_answer = raw_correct_answer
 
+                    disc_a = response.discrimination_a if response else (
+                        state_discrimination_a[item_index] if item_index is not None and item_index < len(state_discrimination_a) else None
+                    )
+                    diff_b = response.difficulty_b if response else (
+                        state_difficulty_b[item_index] if item_index is not None and item_index < len(state_difficulty_b) else None
+                    )
+
                     data = {
-                        "id": item["id"],
-                        "question_index": item["question_index"],
+                        "question_id": item_id,
+                        "question_index": item.get("question_index"),
                         "type": item.get("type"),
                         "content": item.get("content"),
                         "options": item.get("options"),
                         "correct_answer": normalized_correct_answer,
                         "has_image": item.get("has_image"),
                         "image_url": item.get("image_url"),
-                        "discrimination_a": response.discrimination_a,
-                        "difficulty_b": response.difficulty_b,
+                        "discrimination_a": disc_a,
+                        "difficulty_b": diff_b,
                     }
                     await self.insert_data("masterthpt", "questions", [data])
-                    self.logger.agent_node(f"Finalize by verifier payload: {data}")
+                    db_inserted += 1
+                self.logger.agent_node(f"Verifier finalize: {len(need_verify)} items force-inserted")
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:
@@ -261,18 +287,30 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 ))
 
             # Cần thảo luận thêm các câu chưa chắc chắn để đưa ra quyết định cuối cùng
-            is_agreed.extend([response.agree for response in responses.results])
-            for response in responses.results:
-                if response.correct_answer is not None and str(response.correct_answer).strip() != "":
-                    solutions.append(
-                        Solution(question_id=response.question_id, solution=str(response.correct_answer).strip())
+            for item in need_verify:
+                item_id = item.get("id") or item.get("question_id")
+                r = response_by_id.get(item_id)
+                if r:
+                    is_agreed.append(r.agree)
+                    confidence.append(r.confidence)
+                    if r.correct_answer is not None and str(r.correct_answer).strip() != "":
+                        solutions.append(
+                            Solution(question_id=r.question_id, solution=str(r.correct_answer).strip())
+                        )
+                    feedback.append(
+                        AIMessage(content=f"Ở câu {r.question_id}: {r.feedback} vì {r.reasoning}")
                     )
-            confidence.extend([response.confidence for response in responses.results])
-            feedback.extend([
-                AIMessage(content=f"Ở câu {response.question_id}: {response.feedback} vì {response.reasoning}")
-                for response in responses.results
-            ])
-            self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {responses}")
+                else:
+                    self.logger.agent_node(f"Verifier: no response for {item_id} after retries")
+                    is_agreed.append(False)
+                    confidence.append(0.0)
+                    feedback.append(
+                        AIMessage(content=f"Ở câu {item_id}: Không có phản hồi từ Verifier LLM")
+                    )
+            self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {len(response_by_id)}/{len(need_verify)} responses")
+        # Overwrite parser_output with only remaining items that need further verification
+        request.parser_output = remaining_items
+        self.logger.agent_node(f"Verifier round {round_now} summary: {db_inserted} saved to DB, {len(remaining_items)} remaining")
         return {
             "request": request,
             "phase": "teacher",

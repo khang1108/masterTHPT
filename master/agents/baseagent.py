@@ -22,6 +22,7 @@ class BaseAgent(ABC):
         self._tools: list = []
         self._trial: list[str] = []
         self.logger = Logger(agent_role)
+        self.system_prompt: str = None
 
     @abstractmethod
     async def run(self, input: str) -> str:

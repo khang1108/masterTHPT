@@ -11,6 +11,7 @@ from master.agents.common.message import MessageRequest, StudentAnswer, Intent
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
+    teacher_system_prompt,
     teacher_preprocess_prompt,
     teacher_hint_prompt,
     teacher_review_mistake_prompt,
@@ -55,6 +56,7 @@ class EvaluateBatch(BaseModel):
 class TeacherAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="Teacher")
+        self.system_prompt = teacher_system_prompt()
         self._llm        = None
         self._llm_with_single_output = None
         self._llm_with_batch_output = None
@@ -116,6 +118,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             
             item_list = request.parser_output or []
             id_to_index = {(item.get("id") or item.get("question_id")): idx for idx, item in enumerate(item_list)} if item_list else {}
+            remaining_items = []  # Collect items that still need verification
+            db_inserted = 0  # Track total DB inserts this round
             state_confidence = state.get("confidence", []) or []
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
@@ -182,7 +186,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             normalized_correct_answer = correct_answer_value
 
                         data = {
-                            "id": item.get("id") or item.get("question_id"),
+                            "question_id": item.get("id") or item.get("question_id"),
                             "question_index": item["question_index"],
                             "type": item.get("type"),
                             "content": item.get("content"),
@@ -195,9 +199,11 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         }
 
                         await self.insert_data("masterthpt", "questions", [data])
-                        self.logger.agent_node(f"Teacher skip verify preprocess payload: {data}")
+                        db_inserted += 1
+                    self.logger.agent_node(f"Teacher skip verify: {len(skip_verify)} items inserted")
 
                 need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
+                remaining_items.extend(need_verify)
                 if not need_verify:
                     continue
 
@@ -205,20 +211,43 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 prompt = teacher_preprocess_prompt(batch_input_json)
                 responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(prompt)
 
-                is_agreed.extend([response.agree for response in responses.results])
-                for response in responses.results:
-                    if response.correct_answer is not None and str(response.correct_answer).strip() != "":
-                        solutions.append(
-                            Solution(question_id=response.question_id, solution=str(response.correct_answer).strip())
-                        )
-                confidence.extend([response.confidence for response in responses.results])
-                discrimination_a.extend([response.discrimination_a for response in responses.results])
-                difficulty_b.extend([response.difficulty_b for response in responses.results])
-                feedback.extend([
-                    f"Ở câu {response.question_id}: {response.feedback} vì {response.reasoning}"
-                    for response in responses.results
-                ])
-                self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {responses}")
+                response_by_id = {r.question_id: r for r in responses.results}
+                missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+                retry_count = 0
+                while missing and retry_count < 2:
+                    retry_count += 1
+                    self.logger.agent_node(f"Teacher retry {retry_count}: {len(missing)} missing items")
+                    retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
+                    retry_prompt = teacher_preprocess_prompt(retry_json)
+                    retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(retry_prompt)
+                    for r in retry_responses.results:
+                        response_by_id[r.question_id] = r
+                    missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+
+                for item in need_verify:
+                    item_id = item.get("id") or item.get("question_id")
+                    r = response_by_id.get(item_id)
+                    if r:
+                        is_agreed.append(r.agree)
+                        confidence.append(r.confidence)
+                        discrimination_a.append(r.discrimination_a)
+                        difficulty_b.append(r.difficulty_b)
+                        if r.correct_answer is not None and str(r.correct_answer).strip() != "":
+                            solutions.append(
+                                Solution(question_id=r.question_id, solution=str(r.correct_answer).strip())
+                            )
+                        feedback.append(f"Ở câu {r.question_id}: {r.feedback} vì {r.reasoning}")
+                    else:
+                        self.logger.agent_node(f"Teacher: no response for {item_id} after retries")
+                        is_agreed.append(False)
+                        confidence.append(0.0)
+                        discrimination_a.append(0.5)
+                        difficulty_b.append(0.5)
+                        feedback.append(f"Ở câu {item_id}: Không có phản hồi từ Teacher LLM")
+                self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {len(response_by_id)}/{len(need_verify)} responses")
+            # Overwrite parser_output with only remaining items that need further verification
+            request.parser_output = remaining_items
+            self.logger.agent_node(f"Teacher round {round_now} summary: {db_inserted} saved to DB, {len(remaining_items)} remaining")
             return {
                 "request": request,
                 "phase": "verify",

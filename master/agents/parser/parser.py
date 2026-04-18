@@ -11,7 +11,7 @@ from master.agents.common.tools import ToolsRegistry
 from master.agents.common.message import Intent, MessageRequest
 from master.agents.common.state import AgentState
 from master.agents.common.llm_client import LLMClient
-from master.agents.common.prompt import parser_ocr_instruction
+from master.agents.common.prompt import parser_ocr_instruction, parser_system_prompt
 
 import datetime
 import requests
@@ -62,6 +62,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
     def __init__(self):
         super().__init__(agent_role="Parser")
+        self.system_prompt = parser_system_prompt()
         self._llm = None
         self._llm_with_output = None
 
