@@ -62,7 +62,7 @@ export type UpdatePracticeBody = {
 };
 
 export type ExamQuestion = {
-	id: string;
+	question_id: string;
 	question_index: number;
 	type: 'multiple_choice' | 'true_false' | 'short_ans';
 	content: string;
@@ -100,6 +100,11 @@ export type SubmitExamBody = {
 	student_id: string;
 	exam_id: string;
 	time_taken_seconds: number;
+	student_ans?: Array<{
+		question_id: string;
+		student_answer: string;
+		time_spent_seconds?: number;
+	}>;
 	full_exam: {
 		exam_id: string;
 		subject: string;
@@ -110,7 +115,7 @@ export type SubmitExamBody = {
 			type: 'multiple_choice' | 'true_false' | 'short_ans';
 			section_name: string;
 			questions: Array<{
-				id: string;
+				question_id: string;
 				question_index: number;
 				type: 'multiple_choice' | 'true_false' | 'short_ans';
 				content: string;

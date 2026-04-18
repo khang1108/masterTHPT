@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 
-class HistoryStudentAnswerDto {
+export class HistoryStudentAnswerDto {
 	@IsString()
 	@IsNotEmpty()
 	question_id: string;

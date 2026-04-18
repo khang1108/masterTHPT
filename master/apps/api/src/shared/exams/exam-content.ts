@@ -19,12 +19,13 @@ export const ASCII_SECTION_NAME_BY_TYPE: SectionNameMap = {
 	short_ans: 'Phan III: Tra loi ngan',
 };
 
-type QuestionWithOrder = {
-	id: string;
+type ItemWithReferenceId = {
+	question_id?: string;
+	id?: string;
 	question_index?: number;
 };
 
-type RenderableQuestion = QuestionWithOrder & {
+type RenderableQuestion = ItemWithReferenceId & {
 	type: string;
 	content: string;
 	content_latex?: string | null;
@@ -34,7 +35,11 @@ type RenderableQuestion = QuestionWithOrder & {
 	image_url?: string | null;
 };
 
-export function sortItemsByReferenceOrder<T extends QuestionWithOrder>(
+function getReferenceId(item: ItemWithReferenceId) {
+	return item.question_id ?? item.id;
+}
+
+export function sortItemsByReferenceOrder<T extends ItemWithReferenceId>(
 	referenceIds: string[],
 	items: T[],
 ) {
@@ -43,8 +48,8 @@ export function sortItemsByReferenceOrder<T extends QuestionWithOrder>(
 	const itemOrder = new Map(referenceIds.map((itemId, index) => [itemId, index]));
 
 	return [...items].sort((a, b) => {
-		const aOrder = itemOrder.get(a.id);
-		const bOrder = itemOrder.get(b.id);
+		const aOrder = itemOrder.get(getReferenceId(a));
+		const bOrder = itemOrder.get(getReferenceId(b));
 
 		if (aOrder !== undefined && bOrder !== undefined) {
 			return aOrder - bOrder;
@@ -69,7 +74,7 @@ export function buildExamSections(
 	// Build response sections from a flat DB result so documents, onboarding,
 	// and history review can share the same shaping logic.
 	const sectionBuckets = new Map<SectionType, Array<{
-		id: string;
+		question_id: string;
 		question_index: number;
 		type: SectionType;
 		content: string;
@@ -95,7 +100,7 @@ export function buildExamSections(
 		const statements = Array.isArray(question.statements) ? question.statements : [];
 
 		current.push({
-			id: question.id,
+			question_id: question.question_id,
 			question_index: question.question_index ?? 0,
 			type: normalizedType,
 			content: question.content_latex ?? question.content,

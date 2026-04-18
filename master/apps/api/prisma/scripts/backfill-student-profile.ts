@@ -8,7 +8,7 @@ async function main() {
 
 	for (const student of students) {
 		await prisma.student.update({
-			where: { id: student.id },
+			where: { mongo_id: student.mongo_id },
 			data: {
 				profile_completed: hasCompletedProfile(student),
 			},

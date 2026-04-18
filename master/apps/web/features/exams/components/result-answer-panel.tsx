@@ -25,7 +25,7 @@ export function ResultAnswerPanel({ question, evaluation }: ResultAnswerPanelPro
 
 					return (
 						<div
-							key={`${question.id}-${parsed.label}`}
+							key={`${question.question_id}-${parsed.label}`}
 							className={`exam-mc-option exam-result-option ${isCorrectOption ? 'is-correct' : ''} ${isWrongSelected ? 'is-wrong' : ''}`}
 						>
 							<div className="exam-mc-option-main">
@@ -63,7 +63,7 @@ export function ResultAnswerPanel({ question, evaluation }: ResultAnswerPanelPro
 					const isCorrect = studentToken === correctToken;
 
 					return (
-						<div key={`${question.id}-${index}`} className={`exam-tf-item exam-tf-result-item ${isCorrect ? 'is-correct' : 'is-wrong'}`}>
+						<div key={`${question.question_id}-${index}`} className={`exam-tf-item exam-tf-result-item ${isCorrect ? 'is-correct' : 'is-wrong'}`}>
 							<div className="exam-tf-statement">
 								<span className="exam-tf-label">{getAlphabetLabel(index)}</span>
 								<p><MathText text={statement} /></p>

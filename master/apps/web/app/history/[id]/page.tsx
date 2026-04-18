@@ -81,9 +81,9 @@ export default function HistoryDetailPage() {
 	}, [history]);
 
 	const activeQuestion = flatQuestions[activeQuestionIndex];
-	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.id) : null;
-	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
-	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
+	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.question_id) : null;
+	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.question_id] : '';
+	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.question_id] : '';
 	const scoreSummaryValue = history?.score !== null && history?.score !== undefined
 		? formatScore(history.score)
 		: `${history?.correct_count ?? 0}/${history?.evaluation.total_questions ?? 0}`;
@@ -95,7 +95,7 @@ export default function HistoryDetailPage() {
 		: 'Câu đúng trên tổng số câu';
 
 	const handleAskHint = useCallback(async () => {
-		if (!activeQuestion || !history || loadingHintQuestionId || hintFeedbacks[activeQuestion.id]) {
+		if (!activeQuestion || !history || loadingHintQuestionId || hintFeedbacks[activeQuestion.question_id]) {
 			return;
 		}
 
@@ -106,15 +106,15 @@ export default function HistoryDetailPage() {
 		}
 
 		setHintError('');
-		setLoadingHintQuestionId(activeQuestion.id);
+		setLoadingHintQuestionId(activeQuestion.question_id);
 		try {
 			const data = await askHint(token, {
 				exam_id: history.exam_id,
-				question_id: activeQuestion.id,
+				question_id: activeQuestion.question_id,
 			});
 			setHintFeedbacks((prev) => ({
 				...prev,
-				[activeQuestion.id]: data.feedback,
+				[activeQuestion.question_id]: data.feedback,
 			}));
 		} catch (error) {
 			setHintError(getApiErrorMessage(error, 'Không thể lấy gợi ý lúc này. Vui lòng thử lại.'));
@@ -124,7 +124,7 @@ export default function HistoryDetailPage() {
 	}, [activeQuestion, hintFeedbacks, history, loadingHintQuestionId, router]);
 
 	const handleReviewMistake = useCallback(async () => {
-		if (!activeQuestion || !activeEvaluation || loadingReviewQuestionId || reviewFeedbacks[activeQuestion.id]) {
+		if (!activeQuestion || !activeEvaluation || loadingReviewQuestionId || reviewFeedbacks[activeQuestion.question_id]) {
 			return;
 		}
 
@@ -135,15 +135,15 @@ export default function HistoryDetailPage() {
 		}
 
 		setReviewError('');
-		setLoadingReviewQuestionId(activeQuestion.id);
+		setLoadingReviewQuestionId(activeQuestion.question_id);
 		try {
 			const data = await reviewMistake(token, {
-				question_id: activeQuestion.id,
+				question_id: activeQuestion.question_id,
 				student_ans: activeEvaluation.student_answer,
 			});
 			setReviewFeedbacks((prev) => ({
 				...prev,
-				[activeQuestion.id]: data.feedback,
+				[activeQuestion.question_id]: data.feedback,
 			}));
 		} catch (error) {
 			setReviewError(getApiErrorMessage(error, 'Không thể lấy giải thích lúc này. Vui lòng thử lại.'));
@@ -197,11 +197,11 @@ export default function HistoryDetailPage() {
 							questionIndex={activeQuestion.index}
 							showHintButton
 							onAskHint={handleAskHint}
-							isHintLoading={loadingHintQuestionId === activeQuestion.id}
+							isHintLoading={loadingHintQuestionId === activeQuestion.question_id}
 							hasHint={Boolean(activeHint)}
 							showReviewButton
 							onReviewMistake={handleReviewMistake}
-							isReviewLoading={loadingReviewQuestionId === activeQuestion.id}
+							isReviewLoading={loadingReviewQuestionId === activeQuestion.question_id}
 							hasReview={Boolean(activeReview)}
 							statusText={activeEvaluation.is_correct ? 'Trả lời đúng' : 'Trả lời sai'}
 							statusTone={activeEvaluation.is_correct ? 'is-correct' : 'is-wrong'}
@@ -250,7 +250,7 @@ export default function HistoryDetailPage() {
 					<div className="exam-index-grid">
 						{flatQuestions.map((item, idx) => {
 							const isActive = idx === activeQuestionIndex;
-							const evaluation = evaluationMap.get(item.id);
+							const evaluation = evaluationMap.get(item.question_id);
 							const stateClass = !evaluation?.student_answer
 								? 'is-unanswered'
 								: evaluation.is_correct
@@ -259,7 +259,7 @@ export default function HistoryDetailPage() {
 
 							return (
 								<button
-									key={item.id}
+									key={item.question_id}
 									type="button"
 									className={`exam-index-btn ${stateClass} ${isActive ? 'is-active' : ''}`}
 									onClick={() => setActiveQuestionIndex(idx)}

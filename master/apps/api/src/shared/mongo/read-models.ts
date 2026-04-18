@@ -32,7 +32,7 @@ export type ExamReadModel = {
 
 export type QuestionReadModel = {
 	mongo_id: string;
-	id: string;
+	question_id: string;
 	question_index: number;
 	type: string;
 	content: string;
@@ -74,6 +74,7 @@ const EXAM_PROJECTION = {
 const QUESTION_PROJECTION = {
 	_id: 1,
 	id: 1,
+	question_id: 1,
 	question_index: 1,
 	type: 1,
 	content: 1,
@@ -222,7 +223,7 @@ function extractDocuments(result: unknown) {
 	return maybeResult.cursor.firstBatch.filter(isPlainObject);
 }
 
-function buildAnyIdFilter(ids: string[]) {
+function buildAnyIdFilter(ids: string[], primaryField = 'id', legacyFields: string[] = []) {
 	const uniqueIds = [...new Set(ids.map((item) => item.trim()).filter((item) => item.length > 0))];
 	if (uniqueIds.length === 0) {
 		return null;
@@ -233,28 +234,30 @@ function buildAnyIdFilter(ids: string[]) {
 		.map((item) => ({ $oid: item }));
 
 	if (uniqueIds.length === 1) {
+		const fieldFilters = [primaryField, ...legacyFields].map((field) => ({ [field]: uniqueIds[0] }));
 		if (objectIds.length === 1) {
 			return {
 				$or: [
-					{ id: uniqueIds[0] },
+					...fieldFilters,
 					{ _id: objectIds[0] },
 				],
 			};
 		}
 
-		return { id: uniqueIds[0] };
+		return fieldFilters.length === 1 ? fieldFilters[0] : { $or: fieldFilters };
 	}
 
+	const fieldFilters = [primaryField, ...legacyFields].map((field) => ({ [field]: { $in: uniqueIds } }));
 	if (objectIds.length > 0) {
 		return {
 			$or: [
-				{ id: { $in: uniqueIds } },
+				...fieldFilters,
 				{ _id: { $in: objectIds } },
 			],
 		};
 	}
 
-	return { id: { $in: uniqueIds } };
+	return fieldFilters.length === 1 ? fieldFilters[0] : { $or: fieldFilters };
 }
 
 async function runFindCommand(
@@ -313,15 +316,18 @@ function normalizeExamDocument(document: RawMongoDocument): ExamReadModel | null
 
 function normalizeQuestionDocument(document: RawMongoDocument): QuestionReadModel | null {
 	const mongoId = toMongoId(document._id);
-	const id = toStringOrNull(document.id) ?? mongoId;
+	const question_id =
+		toStringOrNull(document.question_id) ??
+		toStringOrNull(document.id) ??
+		mongoId;
 
-	if (!mongoId || !id) {
+	if (!mongoId || !question_id) {
 		return null;
 	}
 
 	return {
 		mongo_id: mongoId,
-		id,
+		question_id,
 		question_index: toNumberOrNull(document.question_index) ?? 0,
 		type: toStringOrNull(document.type) ?? '',
 		content: toStringOrNull(document.content) ?? '',
@@ -404,7 +410,7 @@ export async function findExamDocumentsByAnyIds(prisma: PrismaService, ids: stri
 }
 
 export async function findQuestionDocumentsByAnyIds(prisma: PrismaService, ids: string[]) {
-	const filter = buildAnyIdFilter(ids);
+	const filter = buildAnyIdFilter(ids, 'question_id', ['id']);
 	if (!filter) {
 		return [];
 	}
@@ -422,7 +428,7 @@ export async function findQuestionDocumentsByAnyIds(prisma: PrismaService, ids: 
 }
 
 export async function findQuestionDocumentByAnyId(prisma: PrismaService, id: string) {
-	const filter = buildAnyIdFilter([id]);
+	const filter = buildAnyIdFilter([id], 'question_id', ['id']);
 	if (!filter) {
 		return null;
 	}
