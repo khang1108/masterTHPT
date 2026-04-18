@@ -142,12 +142,12 @@ async def main():
 		intent=Intent.PREPROCESS.value,
         student_id="69df0e1d0e91c4f3d1d6353f",
 		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
-        file_path="c:\\Users\\abcsd\\Downloads\\test.pdf"
+        file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 11 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
     )
 
-    result = await pipeline.run_superstep(request)
     try:
-        print(json.dumps(result, ensure_ascii=True, default=str))
+        result = await pipeline.run_superstep(request)
+        # print(json.dumps(result, ensure_ascii=True, default=str))
     except (BrokenPipeError, ValueError):
         pass
     finally:

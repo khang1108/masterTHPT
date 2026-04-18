@@ -113,6 +113,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
         remaining_items = []  # Collect items that still need verification
         db_inserted = 0  # Track total DB inserts this round
+        db_saved_total_before = state.get("db_saved_total", 0) or 0
         state_confidence = state.get("confidence", []) or []
         state_is_agreed = state.get("is_agreed", []) or []
         state_discrimination_a = state.get("discrimination_a", []) or []
@@ -129,6 +130,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
         for i in range(0, len(item_list), BATCH_SIZE):
             batch = item_list[i:i + BATCH_SIZE]
+            batch_saved = 0
             question_ids = [item["id"] for item in batch]
             
             skip_verify = [
@@ -163,6 +165,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     question_type = (item.get("type") or "").strip().lower()
                     normalized_correct_answer = None
 
+                    # Normalize correct answer based on question type 
                     if question_type == "true_false":
                         expected_count = len(item.get("options") or [])
                         answer_text = str(correct_answer or "").strip().upper()
@@ -196,7 +199,10 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
                     await self.insert_data("masterthpt", "questions", [data])
                     db_inserted += 1
-                self.logger.agent_node(f"Verifier skip verify: {len(skip_verify)} items inserted")
+                    batch_saved += 1
+                self.logger.agent_node(
+                    f"Verifier batch {i//BATCH_SIZE + 1}: saved {batch_saved} skipped-verify questions to database"
+                )
             
             need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
             remaining_items.extend(need_verify)
@@ -233,6 +239,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     question_type = (item.get("type") or "").strip().lower()
                     normalized_correct_answer = None
 
+                    # Normalize correct answer based on question type 
                     if question_type == "true_false":
                         expected_count = len(item.get("options") or [])
                         answer_text = str(raw_correct_answer or "").strip().upper()
@@ -272,7 +279,10 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     }
                     await self.insert_data("masterthpt", "questions", [data])
                     db_inserted += 1
-                self.logger.agent_node(f"Verifier finalize: {len(need_verify)} items force-inserted")
+                    batch_saved += 1
+                self.logger.agent_node(
+                    f"Verifier batch {i//BATCH_SIZE + 1}: force-saved {batch_saved} questions to database"
+                )
             
             # Gửi feedback cho từng câu hỏi trong batch để phản hồi cho học sinh (có thể dùng trong intent "REVIEW_MISTAKE" hoặc PREPROCESS đều được)
             for ids in skip_verify:
@@ -307,10 +317,21 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     feedback.append(
                         AIMessage(content=f"Ở câu {item_id}: Không có phản hồi từ Verifier LLM")
                     )
-            self.logger.agent_node(f"Preprocess batch {i//BATCH_SIZE + 1} result: {len(response_by_id)}/{len(need_verify)} responses")
+            self.logger.agent_node(
+                f"Verifier batch {i//BATCH_SIZE + 1} summary: "
+                f"{len(response_by_id)}/{len(need_verify)} responses, "
+                f"{batch_saved} questions saved this batch, "
+                f"{db_inserted} saved this round so far"
+            )
         # Overwrite parser_output with only remaining items that need further verification
         request.parser_output = remaining_items
-        self.logger.agent_node(f"Verifier round {round_now} summary: {db_inserted} saved to DB, {len(remaining_items)} remaining")
+        db_saved_total = db_saved_total_before + db_inserted
+        self.logger.agent_node(
+            f"Verifier round {round_now} summary: "
+            f"{db_inserted} questions saved this round, "
+            f"{db_saved_total} total questions saved to database so far, "
+            f"{len(remaining_items)} remaining"
+        )
         return {
             "request": request,
             "phase": "teacher",
@@ -319,7 +340,8 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             "max_round": max_round,
             "confidence": confidence,
             "solutions": solutions,
-            "verifier_feedback": feedback
+            "verifier_feedback": feedback,
+            "db_saved_total": db_saved_total,
         }
 
     async def verifier(self, state: AgentState) -> AgentState:

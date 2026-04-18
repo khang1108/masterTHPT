@@ -130,16 +130,38 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         self._llm = llm
         self.logger.agent_node("Parser setup completed")
 
-    def _normalize_question_type(self, raw_type: str | None) -> Type:
-        normalized_type = str(raw_type or Type.MULTIPLE_CHOICE.value).strip().lower()
-        if normalized_type in {"short_ans", "short_answer"}:
-            normalized_type = Type.SHORT_ANSWER.value
+    def _normalize_question_type(self, raw_type: str | None, options: list | None) -> Type:
+        if raw_type:
+            raw = str(raw_type).strip().lower()
+            
+            if raw in {"short_ans", "short_answer", "tự luận", "tu luan"}:
+                return Type.SHORT_ANSWER
+            if raw in {"multiple_choice", "multiple choice", "trắc nghiệm", "trac nghiem"}:
+                return Type.MULTIPLE_CHOICE
+            if raw in {"true_false", "true false", "đúng sai", "đúng/sai", "dung sai"}:
+                return Type.TRUE_FALSE
 
         try:
-            return Type(normalized_type)
+            return Type(raw)
         except ValueError:
-            self.logger.warning(f"Parser unsupported question type '{raw_type}', fallback to multiple_choice")
-            return Type.MULTIPLE_CHOICE
+            pass
+
+        if not options and len(options) == 0:
+            return Type.SHORT_ANSWER
+        
+        if len(options) == 4:
+            is_multiple = all(
+                isinstance(opt, str) and re.match(r"^[a-d][\.\)]", opt.strip(), re.IGNORECASE) 
+                for opt in options
+            )
+            if is_multiple:
+                return Type.MULTIPLE_CHOICE
+            
+        if options and all(isinstance(opt, str) and re.match(r"^[a-d][\.\)]", opt.strip(), re.IGNORECASE) for opt in options):
+             return Type.TRUE_FALSE
+
+        return Type.MULTIPLE_CHOICE
+                
 
 
     def _load_file(self, file_path: str) -> tuple[str, list[tuple[int, bytes, str]]]:
@@ -300,10 +322,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         # Sort results by page number to ensure correct order
         ocr_pages = [all_results[page_num] for page_num in sorted(all_results.keys())]
 
-        # # Save ocr_pages to JSON for debugging
-        # debug_output_path = f"ocr_output.json"
-        # with open(debug_output_path, "w", encoding="utf-8") as f:
-        #     json.dump(ocr_pages, f, ensure_ascii=False, indent=2)
+        # Save ocr_pages to JSON for debugging
+        debug_output_path = f"ocr_output.json"
+        with open(debug_output_path, "w", encoding="utf-8") as f:
+            json.dump(ocr_pages, f, ensure_ascii=False, indent=2)
             
         raw_metadata = ocr_pages[0].get("metadata", {}) if ocr_pages else {}
         try:
@@ -328,9 +350,12 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 page_questions = [{"content": page.get("raw_text", "")}]
 
             for item in page_questions:
+                question_index = 1
+
                 # Get question content and check if it's valid
                 content = str(item.get("content", "")).strip()
                 if not content:
+                    question_index -= 1
                     continue
 
                 # Check if question has image and get image URL if available
@@ -344,7 +369,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                 options = item.get("options", [])
                 
                 # Get the type of the question
-                question_type = self._normalize_question_type(item.get("type"))
+                question_type = self._normalize_question_type(item.get("type"), options)
 
                 # Create question output object
                 try:
@@ -364,7 +389,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
                 # Add question object to the list
                 questions.append(question_obj)
-                question_index += 1
 
         exam = ExamDocument.model_validate({
             "id": str(uuid.uuid4()),
