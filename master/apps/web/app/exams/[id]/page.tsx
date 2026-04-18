@@ -198,8 +198,8 @@ export default function ExamRoomPage() {
 				cacheExamDetail(data);
 				setExam(data);
 				examStartAtRef.current = Date.now();
-			} catch {
-				setError('Không tải được đề thi. Vui lòng thử lại.');
+			} catch (error) {
+				setError(getApiErrorMessage(error, 'Không tải được đề thi. Vui lòng thử lại.'));
 			} finally {
 				setLoading(false);
 			}
@@ -686,12 +686,12 @@ export default function ExamRoomPage() {
 									{checkingQuestionId === activeQuestion.question_id ? (
 										<>
 											<span className="exam-submit-spinner" aria-hidden="true" />
-											Đang check...
+											Đang kiểm tra...
 										</>
 									) : isCurrentQuestionLocked ? (
-										'Đã check câu này'
+										'Đã kiểm tra câu này'
 									) : (
-										'Check câu này'
+										'Kiểm tra câu này'
 									)}
 								</button>
 								<button

@@ -2,29 +2,11 @@
 
 import { GoogleLoginButton } from '@/features/auth/components/google-login-button';
 import { loginWithGoogle, register } from '@/shared/api/client';
+import { getApiErrorMessage } from '@/shared/api/error-message';
 import { getToken, saveAuth } from '@/shared/auth/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
-
-function getErrorMessage(error: unknown) {
-	if (typeof error === 'object' && error !== null && 'response' in error) {
-		const maybeResponse = error as {
-			response?: { data?: { message?: string | string[] } };
-		};
-
-		const message = maybeResponse.response?.data?.message;
-		if (Array.isArray(message)) {
-			return message[0] ?? 'Register failed';
-		}
-
-		if (typeof message === 'string') {
-			return message;
-		}
-	}
-
-	return 'Register failed. Please try again.';
-}
 
 export default function RegisterPage() {
 	const router = useRouter();
@@ -54,7 +36,7 @@ export default function RegisterPage() {
 			});
 			router.replace('/login');
 		} catch (err: unknown) {
-			setError(getErrorMessage(err));
+			setError(getApiErrorMessage(err, 'Không thể tạo tài khoản lúc này. Vui lòng thử lại.'));
 		} finally {
 			setLoading(false);
 		}
@@ -69,7 +51,7 @@ export default function RegisterPage() {
 			saveAuth(data.access_token, data.student);
 			router.replace('/dashboard');
 		} catch (err: unknown) {
-			setError(getErrorMessage(err));
+			setError(getApiErrorMessage(err, 'Không thể tiếp tục với Google lúc này. Vui lòng thử lại.'));
 		} finally {
 			setGoogleLoading(false);
 		}

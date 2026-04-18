@@ -3,39 +3,13 @@
 import { DashboardTopbar } from '@/features/dashboard/components/dashboard-topbar';
 import { StudentProfileFields } from '@/features/students/components/student-profile-fields';
 import { getCurrentStudent, updateCurrentStudent } from '@/shared/api/client';
+import { getApiErrorMessage, isInvalidSessionError } from '@/shared/api/error-message';
 import { clearAuth, getToken, saveStudent } from '@/shared/auth/storage';
 import { Student } from '@/shared/models/student';
 import { createStudentProfileDraft, StudentProfileFormValue } from '@/features/students/lib/student-profile';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
-
-function getErrorMessage(error: unknown, fallback: string) {
-	if (typeof error === 'object' && error !== null && 'response' in error) {
-		const maybeResponse = error as {
-			response?: { data?: { message?: string | string[] }; status?: number };
-		};
-		const message = maybeResponse.response?.data?.message;
-		if (Array.isArray(message)) {
-			return message[0] ?? fallback;
-		}
-
-		if (typeof message === 'string') {
-			return message;
-		}
-	}
-
-	return fallback;
-}
-
-function isUnauthorizedError(error: unknown) {
-	if (typeof error !== 'object' || error === null || !('response' in error)) {
-		return false;
-	}
-
-	const maybeResponse = error as { response?: { status?: number } };
-	return maybeResponse.response?.status === 401;
-}
 
 export default function ProfilePage() {
 	const router = useRouter();
@@ -70,13 +44,13 @@ export default function ProfilePage() {
 				setDraft(createStudentProfileDraft(currentStudent));
 				saveStudent(currentStudent);
 			} catch (requestError: unknown) {
-				if (isUnauthorizedError(requestError)) {
+				if (isInvalidSessionError(requestError)) {
 					clearAuth();
 					router.replace('/login');
 					return;
 				}
 
-				setError(getErrorMessage(requestError, 'Không thể tải hồ sơ lúc này.'));
+				setError(getApiErrorMessage(requestError, 'Không thể tải hồ sơ lúc này.'));
 			} finally {
 				if (!cancelled) {
 					setLoading(false);
@@ -115,7 +89,7 @@ export default function ProfilePage() {
 			saveStudent(updatedStudent);
 			setSuccessMessage('Hồ sơ đã được cập nhật.');
 		} catch (requestError: unknown) {
-			setError(getErrorMessage(requestError, 'Không thể lưu hồ sơ lúc này.'));
+			setError(getApiErrorMessage(requestError, 'Không thể lưu hồ sơ lúc này.'));
 		} finally {
 			setSaving(false);
 		}

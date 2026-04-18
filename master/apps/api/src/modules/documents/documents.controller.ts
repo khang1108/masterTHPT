@@ -1,4 +1,6 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
+import { JwtPayload } from 'src/shared/auth/jwt-payload.type';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { DocumentsService } from './documents.service';
 
@@ -9,8 +11,8 @@ export class DocumentsController {
 
 	@Get()
 	// MOCKTEST
-	getDocuments() {
-		return this.documentsService.listDocuments();
+	getDocuments(@CurrentUser() user: JwtPayload) {
+		return this.documentsService.listDocuments(user.sub);
 	}
 
 	@Get(':id')

@@ -42,7 +42,7 @@ export function DashboardTopbar({ student, onLogout }: DashboardTopbarProps) {
 				<strong>MASTER THPT</strong>
 			</div>
 
-			<nav className="dash-nav" aria-label="Main navigation">
+			<nav className="dash-nav" aria-label="Điều hướng chính">
 				<Link href="/dashboard" className={`dash-nav-link ${pathname === '/dashboard' ? 'is-active' : ''}`}>
 					Tổng quan
 				</Link>

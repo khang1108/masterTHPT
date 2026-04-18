@@ -115,13 +115,13 @@ export function GoogleLoginButton({
 			<div className="auth-google-header">
 				<strong>{label}</strong>
 				<span>
-					Google sẽ tạo tài khoản nếu email này chưa tồn tại.
+					Bạn có thể đăng nhập nhanh, hoặc tạo tài khoản mới nếu email chưa tồn tại.
 				</span>
 			</div>
 
 			{renderState === 'missing' ? (
 				<p className="error-text">
-					Google login chưa được cấu hình. Hãy thêm `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+					Tính năng đăng nhập với Google hiện chưa sẵn sàng. Vui lòng thử lại sau.
 				</p>
 			) : (
 				<div

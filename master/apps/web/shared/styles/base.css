@@ -257,3 +257,32 @@ img {
 	font-size: 0.9rem;
 	line-height: 1.45;
 }
+
+.ui-skeleton {
+	display: block;
+	position: relative;
+	overflow: hidden;
+	border-radius: 9999px;
+	background: linear-gradient(180deg, rgba(236, 234, 231, 0.92), rgba(245, 243, 240, 0.98));
+}
+
+.ui-skeleton::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	transform: translateX(-100%);
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+	animation: ui-skeleton-shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes ui-skeleton-shimmer {
+	to {
+		transform: translateX(100%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ui-skeleton::after {
+		animation: none;
+	}
+}
