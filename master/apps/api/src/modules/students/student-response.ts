@@ -14,7 +14,7 @@ export type StudentResponse = {
 
 export function toStudentResponse(student: Student): StudentResponse {
 	return {
-		id: student.id,
+		id: student.user_id,
 		name: student.name,
 		email: student.email,
 		grade: student.grade,

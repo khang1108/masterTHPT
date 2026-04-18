@@ -6,7 +6,7 @@ type StudentAnswerRecord = {
 };
 
 type QuestionAnswer = {
-	id: string;
+	question_id: string;
 	type?: string | null;
 	correct_answer?: string | null;
 };
@@ -112,11 +112,11 @@ export function buildEvaluationFromAnswerMap(
 ) {
 	// Reuse the same comparison rules everywhere so exam submit, review, and practice stay consistent.
 	const per_question = questions.map((question) => {
-		const studentAnswer = (answerMap.get(question.id) ?? '').trim();
+		const studentAnswer = (answerMap.get(question.question_id) ?? '').trim();
 		const correctAnswer = (question.correct_answer ?? '').trim();
 
 		return {
-			question_id: question.id,
+			question_id: question.question_id,
 			student_answer: studentAnswer,
 			correct_answer: correctAnswer,
 			is_correct: isAnswerCorrect(studentAnswer, correctAnswer),
@@ -127,7 +127,7 @@ export function buildEvaluationFromAnswerMap(
 
 	const score = roundScore(
 		questions.reduce((sum, question) => (
-			sum + getQuestionScore(question, answerMap.get(question.id) ?? '')
+			sum + getQuestionScore(question, answerMap.get(question.question_id) ?? '')
 		), 0),
 	);
 

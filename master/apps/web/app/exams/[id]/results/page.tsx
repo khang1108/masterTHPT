@@ -6,13 +6,12 @@ import { MathText } from '@/features/exams/components/math-text';
 import { ExamQuestionHeader } from '@/features/exams/components/question-header';
 import { ResultAnswerPanel } from '@/features/exams/components/result-answer-panel';
 import { FlatQuestion, flattenExamSections } from '@/features/exams/lib/types';
-import { DocumentDetailResponse, ExamEvaluationItem, askHint, createHistory, getDocumentDetail, reviewMistake } from '@/shared/api/client';
+import { DocumentDetailResponse, ExamEvaluationItem, askHint, getDocumentDetail, reviewMistake } from '@/shared/api/client';
 import { getApiErrorMessage } from '@/shared/api/error-message';
 import { getToken } from '@/shared/auth/storage';
 import {
 	clearExamRuntimeCache,
 	getCachedExamDetail,
-	getCachedExamQuestionTimings,
 	getCachedExamResult,
 } from '@/features/exams/lib/exam-runtime-store';
 import Link from 'next/link';
@@ -103,9 +102,9 @@ export default function ExamResultPage() {
 	}, [result]);
 
 	const activeQuestion = flatQuestions[activeQuestionIndex];
-	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.id) : null;
-	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.id] : '';
-	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.id] : '';
+	const activeEvaluation = activeQuestion ? evaluationMap.get(activeQuestion.question_id) : null;
+	const activeHint = activeQuestion ? hintFeedbacks[activeQuestion.question_id] : '';
+	const activeReview = activeQuestion ? reviewFeedbacks[activeQuestion.question_id] : '';
 	const scoreSummaryValue = result?.score !== null && result?.score !== undefined
 		? formatScore(result.score)
 		: `${result?.correct_count ?? 0}/${result?.total_questions ?? 0}`;
@@ -117,41 +116,15 @@ export default function ExamResultPage() {
 		: 'Câu đúng trên tổng số câu';
 
 	const handleExitResults = useCallback(async () => {
-		const token = getToken();
-		if (!token || !examId) {
-			if (examId) {
-				clearExamRuntimeCache(examId);
-			}
-
-			router.push('/documents');
-			return;
-		}
-
-		const questionTimings = getCachedExamQuestionTimings(examId);
-		const studentAnswers = result?.per_question.map((item) => ({
-			question_id: item.question_id,
-			student_answer: item.student_answer,
-			time_spent_seconds: questionTimings[item.question_id] ?? 0,
-		})) ?? [];
-
-		try {
-			await createHistory(token, {
-				intent: 'VIEW_ANALYSIS',
-				exam_id: examId,
-				student_ans: studentAnswers,
-				correct_count: result?.correct_count ?? 0,
-				score: result?.score ?? undefined,
-			});
-		} catch {
-			// Keep exit smooth even if history write fails.
-		} finally {
+		if (examId) {
 			clearExamRuntimeCache(examId);
-			router.push('/documents');
 		}
-	}, [examId, result, router]);
+
+		router.push('/documents');
+	}, [examId, router]);
 
 	const handleAskHint = useCallback(async () => {
-		if (!activeQuestion || !examId || loadingHintQuestionId || hintFeedbacks[activeQuestion.id]) {
+		if (!activeQuestion || !examId || loadingHintQuestionId || hintFeedbacks[activeQuestion.question_id]) {
 			return;
 		}
 
@@ -162,15 +135,15 @@ export default function ExamResultPage() {
 		}
 
 		setHintError('');
-		setLoadingHintQuestionId(activeQuestion.id);
+		setLoadingHintQuestionId(activeQuestion.question_id);
 		try {
 			const data = await askHint(token, {
 				exam_id: examId,
-				question_id: activeQuestion.id,
+				question_id: activeQuestion.question_id,
 			});
 			setHintFeedbacks((prev) => ({
 				...prev,
-				[activeQuestion.id]: data.feedback,
+				[activeQuestion.question_id]: data.feedback,
 			}));
 		} catch (error) {
 			setHintError(getApiErrorMessage(error, 'Không thể lấy gợi ý lúc này. Vui lòng thử lại.'));
@@ -180,7 +153,7 @@ export default function ExamResultPage() {
 	}, [activeQuestion, examId, hintFeedbacks, loadingHintQuestionId, router]);
 
 	const handleReviewMistake = useCallback(async () => {
-		if (!activeQuestion || !activeEvaluation || loadingReviewQuestionId || reviewFeedbacks[activeQuestion.id]) {
+		if (!activeQuestion || !activeEvaluation || loadingReviewQuestionId || reviewFeedbacks[activeQuestion.question_id]) {
 			return;
 		}
 
@@ -191,15 +164,15 @@ export default function ExamResultPage() {
 		}
 
 		setReviewError('');
-		setLoadingReviewQuestionId(activeQuestion.id);
+		setLoadingReviewQuestionId(activeQuestion.question_id);
 		try {
 			const data = await reviewMistake(token, {
-				question_id: activeQuestion.id,
+				question_id: activeQuestion.question_id,
 				student_ans: activeEvaluation.student_answer,
 			});
 			setReviewFeedbacks((prev) => ({
 				...prev,
-				[activeQuestion.id]: data.feedback,
+				[activeQuestion.question_id]: data.feedback,
 			}));
 		} catch (error) {
 			setReviewError(getApiErrorMessage(error, 'Không thể lấy giải thích lúc này. Vui lòng thử lại.'));
@@ -255,11 +228,11 @@ export default function ExamResultPage() {
 							questionIndex={activeQuestion.index}
 							showHintButton
 							onAskHint={handleAskHint}
-							isHintLoading={loadingHintQuestionId === activeQuestion.id}
+							isHintLoading={loadingHintQuestionId === activeQuestion.question_id}
 							hasHint={Boolean(activeHint)}
 							showReviewButton
 							onReviewMistake={handleReviewMistake}
-							isReviewLoading={loadingReviewQuestionId === activeQuestion.id}
+							isReviewLoading={loadingReviewQuestionId === activeQuestion.question_id}
 							hasReview={Boolean(activeReview)}
 							statusText={activeEvaluation.is_correct ? 'Trả lời đúng' : 'Trả lời sai'}
 							statusTone={activeEvaluation.is_correct ? 'is-correct' : 'is-wrong'}
@@ -308,7 +281,7 @@ export default function ExamResultPage() {
 					<div className="exam-index-grid">
 						{flatQuestions.map((item, idx) => {
 							const isActive = idx === activeQuestionIndex;
-							const evaluation = evaluationMap.get(item.id);
+							const evaluation = evaluationMap.get(item.question_id);
 							const stateClass = !evaluation?.student_answer
 								? 'is-unanswered'
 								: evaluation.is_correct
@@ -317,7 +290,7 @@ export default function ExamResultPage() {
 
 							return (
 								<button
-									key={item.id}
+									key={item.question_id}
 									type="button"
 									className={`exam-index-btn ${stateClass} ${isActive ? 'is-active' : ''}`}
 									onClick={() => setActiveQuestionIndex(idx)}

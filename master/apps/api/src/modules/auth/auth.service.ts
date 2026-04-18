@@ -31,7 +31,7 @@ export class AuthService {
 
 	private async issueAuthResponse(student: Student) {
 		const payload: JwtPayload = {
-			sub: student.id,
+			sub: student.user_id,
 			email: student.email,
 		};
 
@@ -143,7 +143,7 @@ export class AuthService {
 		});
 		const student = linkedByEmail
 			? await this.prisma.student.update({
-				where: { id: linkedByEmail.id },
+				where: { mongo_id: linkedByEmail.mongo_id },
 				data: {
 					google_sub: googleProfile.sub,
 					name: linkedByEmail.name ?? googleProfile.name,

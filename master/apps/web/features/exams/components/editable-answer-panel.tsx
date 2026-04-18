@@ -28,7 +28,7 @@ export function EditableAnswerPanel({
 
 					return (
 						<button
-							key={`${question.id}-${parsed.label}`}
+							key={`${question.question_id}-${parsed.label}`}
 							type="button"
 							className={`exam-mc-option ${isSelected ? 'is-selected' : ''}`}
 							onClick={() => onChange(parsed.label)}
@@ -69,7 +69,7 @@ export function EditableAnswerPanel({
 					}
 
 					return (
-						<div key={`${question.id}-${index}`} className="exam-tf-item">
+						<div key={`${question.question_id}-${index}`} className="exam-tf-item">
 							<div className="exam-tf-statement">
 								<span className="exam-tf-label">{getAlphabetLabel(index)}</span>
 								<p><MathText text={statement} /></p>

@@ -3,115 +3,94 @@ from typing import Iterable
 def parser_ocr_instruction() -> str:
 	return (
 		"""
-	        Bạn là một hệ thống OCR trích xuất đề thi tiếng Việt.
+		Hãy đọc ảnh đề thi này và trích xuất toàn bộ nội dung nhìn thấy thành JSON theo đúng schema hệ thống.
 
-	        Nhiệm vụ:
-	        - Đọc ảnh đề thi và trích xuất thành JSON.
-	        - Chỉ trả về JSON hợp lệ.
-	        - Không trả lời giải thích, không markdown, không code fence.
-
-	        Schema bắt buộc:
-	        {
-	          "metadata": {
-				"subject": "mã môn học (vd: math, physics, chemistry...)",
-				"exam_type": "loại kỳ thi (vd: Cuối kì 1, Giữa kì 2...)",
-				"year": "Sử dụng định dạng NumberInt('YYYY')",
-				"grade": "Sử dụng định dạng NumberInt('số lớp')",
-				"source": "Tên trường hoặc nguồn đề",
-				"duration": "Sử dụng định dạng NumberInt('thời gian làm bài')",
-	          },
-	          "questions": [
-	            {
-	              "type": "",
-	              "content": "nội dung câu hỏi, có thể bao gồm cả công thức LaTeX",
-	              "options": []
-	            }
-	          ]
-	        }
-
-	        Rules:
-	        - Chỉ trích xuất từ nội dung có trong ảnh.
-	        - Giữ nguyên tiếng Việt gốc, không dịch.
-	        - Giữ nguyên công thức LaTeX theo dạng $$...$$ nếu có.
-	        - Escape dấu backslash trong LaTeX (\\frac, \\sqrt, ...).
-	        - Giữ đúng thứ tự đáp án trong options.
-	        - Nếu câu không có đáp án lựa chọn thì options = [].
-	        - Nếu không xác định được một trường trong metadata thì để chuỗi rỗng "".
-	        - Không bịa thêm câu hỏi hoặc nội dung không có trong ảnh.
-
-	        Quan trọng:
-	        - Không sao chép ví dụ schema vào output như dữ liệu thực.
-			- Trong options, BẮT BUỘC các ký tự A., B., C., D phải ở đầu không được khác, sau đó sẽ kèm text của đáp án câu đó.
-	        - Output chứa bất kỳ văn bản ngoài JSON đều bị xem là sai.
-			
-			Dữ liệu mẫu cho Metadata:
-            - subject: 'math'
-            - exam_type: 'Cuối kì 1'
-        """
+		Yêu cầu:
+		- Trích xuất metadata nếu nhìn thấy rõ.
+		- Trích xuất đầy đủ các câu hỏi theo đúng thứ tự xuất hiện trong ảnh.
+		- Giữ nguyên tiếng Việt gốc, công thức toán học, và ký hiệu xuất hiện trong đề.
+		- Với câu trắc nghiệm, giữ nguyên nhãn A., B., C., D. ở đầu từng đáp án trong options.
+		- Nếu câu không có đáp án lựa chọn thì options = [].
+		- Nếu một thông tin không nhìn rõ thì không suy diễn thêm.
+		"""
 	)
 
 
 def teacher_preprocess_prompt(batch_input_json: str) -> str:
     return f"""
-		Bạn là Trợ lý Giáo viên chuyên chấm bài theo lô (batch).
-		NHIỆM VỤ: Phân tích và đánh giá toàn bộ câu hỏi trong BATCH_INPUT.
+		Hãy phân tích toàn bộ các câu hỏi trong BATCH_INPUT và trả về kết quả chấm cho từng question_id.
 
-		YÊU CẦU ĐẦU RA:
-		1. Đầy đủ: Trả về kết quả cho mọi 'question_id', không bỏ sót.
-		2. Định mức: Mỗi 'question_id' đi kèm chính xác 1 kết quả chấm.
-		3. Chỉ số: 'confidence' nằm trong khoảng [0, 1].
-		4. Diễn giải: 'reasoning' phải súc tích, đi thẳng vào vấn đề.
-
-		RÀNG BUỘC NGÔN NGỮ (BẮT BUỘC):
-		- Sử dụng TIẾNG VIỆT cho toàn bộ nội dung (reasoning, feedback).
+		Yêu cầu cho mỗi kết quả:
+		- Xác định đáp án đúng nếu có thể.
+		- Đánh giá agree, confidence, correct_answer, reasoning, feedback, discrimination_a, difficulty_b.
+		- reasoning phải ngắn gọn, đúng bản chất toán học, không lan man.
+		- feedback phải viết bằng tiếng Việt, rõ ràng, có ích cho học sinh.
+		- confidence phải nằm trong khoảng [0, 1].
+		- discrimination_a và difficulty_b phải nằm trong khoảng [0, 1].
+		- Không bỏ sót question_id nào trong batch.
+		- Mỗi question_id chỉ có đúng một kết quả.
 
 		BATCH_INPUT:
 		{batch_input_json}
 	"""
 
 def teacher_hint_prompt(question, student_answer: str | None, student_message: str | None,) -> str:
-	return f"""Bạn là giáo viên hỗ trợ học sinh.
-        Nhiệm vụ: đưa ra gợi ý ngắn gọn để học sinh tự giải, KHÔNG tiết lộ đáp án trực tiếp.
-        Nếu thông tin chưa đủ, hãy hỏi lại tối đa 1 câu để làm rõ.
-        Bắt buộc: phản hồi hoàn toàn bằng tiếng Việt tự nhiên, không dùng tiếng Anh.
+	return f"""Hãy tạo một feedback dạng hint cho học sinh dựa trên thông tin dưới đây.
 
-        Câu hỏi: {question}
-        Câu trả lời hiện tại của học sinh: {student_answer}
-        Tin nhắn học sinh: {student_message}
+        Mục tiêu:
+        - Chỉ đưa gợi ý vừa đủ để học sinh tự làm tiếp.
+        - Không tiết lộ trọn vẹn đáp án nếu chưa thật sự cần thiết.
+        - Ưu tiên gợi ý theo hướng tư duy, phương pháp, hoặc bước tiếp theo.
+        - Viết hoàn toàn bằng tiếng Việt tự nhiên, ngắn gọn, dễ hiểu.
 
-        Trả về feedback cho học sinh
+        Thông tin bài toán:
+        {question}
+
+        Câu trả lời hiện tại của học sinh:
+        {student_answer}
+
+        Tin nhắn học sinh:
+        {student_message}
 	"""
 
 def teacher_review_mistake_prompt(content: str, student_answer: str | None, student_message: str | None,) -> str:
-	return f"""Bạn là giáo viên chuyên phản biện bài làm của học sinh.
-		Nhiệm vụ: Phân tích và chỉ ra sai sót trong câu trả lời của học sinh, giúp họ hiểu lỗi và cách cải thiện.
-		Bắt buộc: phản hồi hoàn toàn bằng tiếng Việt tự nhiên, không dùng tiếng Anh.
+	return f"""Hãy phân tích bài làm của học sinh và tạo kết quả review cho đúng schema hệ thống.
 
-		Câu hỏi: {content}
-		Câu trả lời hiện tại của học sinh: {student_answer}
-		Tin nhắn học sinh: {student_message}
+		Yêu cầu nội dung:
+		- Xác định học sinh đúng hay sai.
+		- Nếu sai, chỉ ra bước sai hoặc ý sai quan trọng nhất.
+		- Giải thích ngắn gọn vì sao sai.
+		- Nêu cách sửa đúng hoặc hướng làm đúng.
+		- reasoning phải súc tích, đúng trọng tâm.
+		- feedback phải là lời giải thích rõ ràng, dễ hiểu, viết bằng tiếng Việt tự nhiên.
 
-		Trả về với trường feedback là phân tích chi tiết về sai sót, giải thích rõ ràng và gợi ý cách cải thiện.
-		Trả lời ngắn gọn, đi thẳng vào vấn đề, tránh lan man
+		Câu hỏi:
+		{content}
+
+		Câu trả lời hiện tại của học sinh:
+		{student_answer}
+
+		Tin nhắn học sinh:
+		{student_message}
 	"""
 
 def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:
-	return f"""Bạn là bộ chuẩn hóa dữ liệu đề thi.
+	return f"""Hãy chuẩn hóa OCR_TEXT dưới đây thành JSON theo đúng schema exam/questions của hệ thống.
 
-        Nhiệm vụ:
-        - Đọc OCR text bên dưới và trích xuất dữ liệu theo đúng schema exam/questions.
-        - Trả về đúng cấu trúc JSON của model Pydantic (exam + questions).
+        Yêu cầu:
+        - Giữ nguyên nội dung gốc nếu OCR đã đủ rõ; chỉ chuẩn hóa cấu trúc dữ liệu.
         - Mỗi question phải có id duy nhất dạng UUID string.
-        - Nếu OCR không rõ đáp án đúng thì để correct_answer = null.
-		- Nếu OCR_TEXT có dòng IMAGE_URL theo trang thì ưu tiên dùng URL đó cho các câu hỏi thuộc trang tương ứng.
-		- Nếu câu hỏi có hình nhưng không tìm được IMAGE_URL theo trang thì has_image=true và image_url dùng link này: {image_bucket_url}.
+        - exam.questions phải là danh sách id của toàn bộ câu hỏi theo đúng question_index.
+        - Nếu không xác định được correct_answer thì để null.
+		- Nếu OCR_TEXT có IMAGE_URL theo trang thì ưu tiên gắn image_url đó cho các câu hỏi thuộc trang tương ứng.
+		- Nếu câu hỏi có hình nhưng không tìm thấy IMAGE_URL theo trang thì đặt has_image=true và image_url={image_bucket_url}.
         - Nếu không có hình thì has_image=false và image_url=null.
-        - topic_tags dùng danh sách rỗng nếu chưa suy ra được.
+        - topic_tags dùng danh sách rỗng nếu chưa xác định được.
         - difficulty_a mặc định 1.0, difficulty_b mặc định 0.0.
-        - exam.id ưu tiên dùng exam_id đã có (nếu có), nếu không thì tự tạo UUID.
-        - exam.questions phải là danh sách id của toàn bộ questions theo thứ tự question_index.
-        - Các trường văn bản (subject, content, content_latex nếu có mô tả chữ, metadata mô tả) ưu tiên tiếng Việt; không tự dịch sai nghĩa.
-        - Quy ước tên topic_tags: Dùng format subject.grade.chapter_code.topic_code (ví dụ: math.12.ch2.integrals).
+        - exam.id ưu tiên dùng exam_id sẵn có; nếu không có thì tự tạo UUID.
+        - Các trường văn bản phải giữ tiếng Việt tự nhiên, không dịch sang ngôn ngữ khác.
+        - Không bịa thêm câu hỏi, đáp án, hoặc metadata không có trong OCR_TEXT.
+
         OCR_TEXT:
         {parser_output}
 	"""
@@ -119,14 +98,17 @@ def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:
 
 def verifier_prompt(batch_input_json: str) -> str:
 	return f"""
-		Bạn là Trợ lý Giáo viên chuyên chấm bài theo lô (batch).
-		NHIỆM VỤ: Phân tích và đánh giá toàn bộ câu hỏi trong BATCH_INPUT.
+		Hãy kiểm tra lại đánh giá của Teacher cho toàn bộ các câu hỏi trong BATCH_INPUT và trả về kết quả cuối cùng theo đúng schema hệ thống.
 
-		Dưới đây là danh sách các question_id cần chấm cũng như câu trả lời của học sinh cho từng câu hỏi đó. 
-		Hãy đưa ra đánh giá cho từng câu trả lời dựa trên các tiêu chí sau:
-		1. Đúng hay Sai: Xác định xem câu trả lời của học sinh có đúng hay không.
-		2. Mức độ tự tin: Đánh giá mức độ tự tin của bạn về đánh giá đúng/sai, với điểm số từ 0 đến 1.
-		3. Lý do: Cung cấp một giải thích ngắn gọn về lý do tại sao bạn đánh giá câu trả lời đó là đúng hay sai.
+		Yêu cầu:
+		- Xác nhận hoặc phản biện kết luận của Teacher cho từng question_id.
+		- agree = true nếu bạn đồng ý với đánh giá của Teacher; false nếu không đồng ý hoặc thấy chưa đủ chắc chắn.
+		- reasoning phải ngắn gọn, nêu rõ điểm đúng hoặc sai trong đánh giá của Teacher.
+		- feedback phải là phiên bản cuối cùng, rõ ràng, có thể gửi trực tiếp cho học sinh.
+		- confidence phải nằm trong khoảng [0, 1].
+		- Không bỏ sót question_id nào trong batch.
+		- Mỗi question_id chỉ có đúng một kết quả.
+
 		BATCH_INPUT:
 		{batch_input_json}
 	"""

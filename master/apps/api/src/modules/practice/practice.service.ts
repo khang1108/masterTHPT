@@ -4,6 +4,7 @@ import { postToAiService } from 'src/shared/ai/ai-client';
 import { isAnswerCorrect } from 'src/shared/exams/evaluation';
 import { sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { requireStudentByIdentity } from 'src/modules/students/student-identity';
 import {
 	findExamDocumentByAnyId,
 	findExamDocumentsByAnyIds,
@@ -22,7 +23,8 @@ export class PracticeService {
 	) { }
 
 	async listUserPracticeExams(userId: string) {
-		const examIds = await this.getUserPracticeExamIds(userId);
+		const student = await requireStudentByIdentity(this.prisma, userId);
+		const examIds = await this.getUserPracticeExamIds(student.user_id);
 		if (examIds.length === 0) {
 			return [];
 		}
@@ -41,9 +43,11 @@ export class PracticeService {
 	}
 
 	async checkQuestion(userId: string, dto: CheckPracticeQuestionDto) {
+		const student = await requireStudentByIdentity(this.prisma, userId);
+		const canonicalUserId = student.user_id;
 		// Practice checking only works for exams explicitly assigned to the student.
 		// Keep this authorization check close to the entry point so future mutations reuse it.
-		const examIds = await this.getUserPracticeExamIds(userId);
+		const examIds = await this.getUserPracticeExamIds(canonicalUserId);
 		if (!examIds.includes(dto.exam_id)) {
 			throw new ForbiddenException('Bạn không có quyền luyện đề này');
 		}
@@ -76,6 +80,8 @@ export class PracticeService {
 	}
 
 	async updatePractice(userId: string, dto: UpdatePracticeDto) {
+		const student = await requireStudentByIdentity(this.prisma, userId);
+		const canonicalUserId = student.user_id;
 		// The AI service is responsible for updating the practice assignment out of band.
 		// This endpoint only triggers that workflow and lets the frontend refresh afterwards.
 		if (!this.configService.get<string>('AI_API_BASE_URL')?.trim()) {
@@ -88,7 +94,7 @@ export class PracticeService {
 				this.configService,
 				{
 					intent: 'UPDATE_PRACTICE',
-					user_id: userId,
+					user_id: canonicalUserId,
 					user_message: dto.request,
 				},
 			);

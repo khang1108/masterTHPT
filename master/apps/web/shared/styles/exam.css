@@ -618,6 +618,10 @@
 	transform: none;
 }
 
+.exam-submit-side-btn {
+	width: 100%;
+}
+
 .exam-submit-spinner {
 	width: 16px;
 	height: 16px;

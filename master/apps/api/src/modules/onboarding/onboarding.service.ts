@@ -3,6 +3,7 @@ import { ACCENTED_SECTION_NAME_BY_TYPE, buildExamSections, ExamMetadataShape, so
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { findQuestionDocumentsByAnyIds } from 'src/shared/mongo/read-models';
 import { hasCompletedProfile } from 'src/modules/students/student-profile-state';
+import { requireStudentByIdentity } from 'src/modules/students/student-identity';
 import { GenerateOnboardingExamDto } from './dto/generate-onboarding-exam.dto';
 
 @Injectable()
@@ -12,13 +13,7 @@ export class OnboardingService {
 	) { }
 
 	async generateOnboardingExam(studentId: string, dto: GenerateOnboardingExamDto) {
-		const student = await this.prisma.student.findUnique({
-			where: { id: studentId },
-		});
-
-		if (!student) {
-			throw new BadRequestException('Không tìm thấy tài khoản học sinh');
-		}
+		const student = await requireStudentByIdentity(this.prisma, studentId, 'Không tìm thấy tài khoản học sinh');
 
 		if (!(Boolean(student.profile_completed) || hasCompletedProfile(student))) {
 			throw new BadRequestException('Vui lòng điền thông tin cá nhân trước');

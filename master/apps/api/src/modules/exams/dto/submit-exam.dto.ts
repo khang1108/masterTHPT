@@ -10,11 +10,12 @@ import {
 	IsString,
 	ValidateNested,
 } from 'class-validator';
+import { HistoryStudentAnswerDto } from 'src/modules/history/dto/create-history.dto';
 
 class SubmittedExamQuestionSnapshotDto {
 	@IsString()
 	@IsNotEmpty()
-	id: string;
+	question_id: string;
 
 	@IsInt()
 	question_index: number;
@@ -125,6 +126,13 @@ export class SubmitExamDto {
 
 	@IsInt()
 	time_taken_seconds: number;
+
+	@IsOptional()
+	@IsArray()
+	@ArrayNotEmpty()
+	@ValidateNested({ each: true })
+	@Type(() => HistoryStudentAnswerDto)
+	student_ans?: HistoryStudentAnswerDto[];
 
 	@ValidateNested()
 	@Type(() => SubmittedExamSnapshotDto)

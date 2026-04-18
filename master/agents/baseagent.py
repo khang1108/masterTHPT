@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from master.logging.logger import Logger
 
@@ -23,6 +24,17 @@ class BaseAgent(ABC):
         self._trial: list[str] = []
         self.logger = Logger(agent_role)
         self.system_prompt : str = None
+
+    def build_messages(self, content: str | BaseMessage) -> list[BaseMessage]:
+        messages: list[BaseMessage] = []
+        if self.system_prompt:
+            messages.append(SystemMessage(content=self.system_prompt.strip()))
+        if isinstance(content, BaseMessage):
+            messages.append(content)
+        else:
+            messages.append(HumanMessage(content=content))
+        return messages
+
     @abstractmethod
     async def run(self, input: str) -> str:
         """Run the agent.

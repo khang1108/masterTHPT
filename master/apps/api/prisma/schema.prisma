@@ -9,7 +9,8 @@ datasource db {
 }
 
 model Student {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  mongo_id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id           String   @unique @default(uuid())
   name              String?
   email             String   @unique
   password_hash     String?
@@ -42,7 +43,8 @@ model Exam {
 }
 
 model Question {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  mongo_id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  question_id    String   @unique
   question_index Int
   type           String
   content        String
