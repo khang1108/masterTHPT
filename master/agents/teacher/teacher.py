@@ -115,9 +115,14 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         logger.agent_node("Teacher setup completed")
 
     def teacher_router(self, state: AgentState) -> str:
-        last_feedback = state["teacher_feedback"][-1] if state["teacher_feedback"] else None
+        teacher_feedback = state.get("teacher_feedback") or []
+        last_feedback = teacher_feedback[-1] if teacher_feedback else None
         request = state["request"]
         intent = request.intent
+        round_now = state.get("round", 0)
+        max_round = state.get("max_round", 3)
+        confidence = state.get("confidence") or []
+        is_agreed = state.get("is_agreed") or []
 
         if hasattr(last_feedback, "tool_calls") and last_feedback.tool_calls:
             return "tools"
@@ -127,11 +132,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             # PREPROCESS should always go through Verifier; Verifier decides when to stop.
             if intent == Intent.PREPROCESS.value:
                 return "verify"
-            if intent == Intent.REVIEW_MISTAKE.value:
-                if state["round"] >= state["max_round"] or state["confidence"][0] >= 0.9:
-                    return "END"
-                return "verify"
-            if state["round"] >= state["max_round"] or state["confidence"][0] >= 0.9:
+            if round_now >= max_round or (confidence and (confidence[0] >= 0.9 or (is_agreed and is_agreed[0] and intent == Intent.REVIEW_MISTAKE.value))):
                 return "END"
         return "verify"
 
@@ -139,6 +140,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
         intent = request.intent
+        round_now = state.get("round", 0)
+        max_round = state.get("max_round", 3)
         if intent == Intent.PREPROCESS.value:
             is_agreed= []
             solutions = []
@@ -147,7 +150,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             discrimination_a = []
             difficulty_b = []
             
-            item_list = request.parser_output
+            item_list = request.parser_output or []
             id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
             state_confidence = state.get("confidence", []) or []
             state_is_agreed = state.get("is_agreed", []) or []
@@ -182,12 +185,12 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             continue
 
                         item_index = id_to_index.get(ids)
-                        discrimination_a = (
+                        discrimination_a_value = (
                             state_discrimination_a[item_index]
                             if item_index is not None and item_index < len(state_discrimination_a)
                             else None
                         )
-                        difficulty_b = (
+                        difficulty_b_value = (
                             state_difficulty_b[item_index]
                             if item_index is not None and item_index < len(state_difficulty_b)
                             else None
@@ -203,8 +206,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             "correct_answer": correct_answer_value,
                             "has_image": item.get("has_image"),
                             "image_url": item.get("image_url"),
-                            "discrimination_a": discrimination_a,
-                            "difficulty_b": difficulty_b,
+                            "discrimination_a": discrimination_a_value,
+                            "difficulty_b": difficulty_b_value,
                         }
 
                         await self.insert_data("masterthpt", "questions", [data])
@@ -235,7 +238,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "request": request,
                 "phase": "verify",
                 "is_agreed": is_agreed,
-                "round": state["round"] + 1,
+                "round": round_now + 1,
+                "max_round": max_round,
                 "confidence": confidence,
                 "solutions": solutions,
                 "teacher_feedback": feedback,
@@ -254,6 +258,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_hint_prompt(content, student_answer, student_message)
+            print(prompt)
             response = await self._llm.ainvoke(prompt)
             self.logger.agent_node(f"Hint response: {response}")
             feedback = self._extract_feedback_text(response)
@@ -279,13 +284,15 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_review_mistake_prompt(content, student_answer, student_message)
+            print(prompt)
             response = await self._llm_with_single_output.ainvoke(prompt)
             self.logger.agent_node(f"Review mistake response: {response}")
             return {
                 "request": request,
                 "questions": state.get("questions", []),
                 "phase": "verify",
-                "round": state.get("round", 0) + 1,
+                "round": round_now + 1,
+                "max_round": max_round,
                 "confidence": [response.confidence],
                 "is_agreed": [response.agree],
                 "student_answers": [

@@ -69,7 +69,7 @@ def teacher_preprocess_prompt(batch_input_json: str) -> str:
 		{batch_input_json}
 	"""
 
-def teacher_hint_prompt(question: object, student_answer: str | None, student_message: str | None,) -> str:
+def teacher_hint_prompt(question, student_answer: str | None, student_message: str | None,) -> str:
 	return f"""Bạn là giáo viên hỗ trợ học sinh.
         Nhiệm vụ: đưa ra gợi ý ngắn gọn để học sinh tự giải, KHÔNG tiết lộ đáp án trực tiếp.
         Nếu thông tin chưa đủ, hãy hỏi lại tối đa 1 câu để làm rõ.
@@ -92,6 +92,7 @@ def teacher_review_mistake_prompt(content: str, student_answer: str | None, stud
 		Tin nhắn học sinh: {student_message}
 
 		Trả về với trường feedback là phân tích chi tiết về sai sót, giải thích rõ ràng và gợi ý cách cải thiện.
+		Trả lời ngắn gọn, đi thẳng vào vấn đề, tránh lan man
 	"""
 
 def teacher_parse_prompt(image_bucket_url: str, parser_output: str) -> str:
