@@ -47,7 +47,6 @@ export type DocumentItem = {
 	duration?: number;
 	is_completed?: boolean;
 	created_at?: string;
-	metadata?: unknown;
 };
 
 export type PracticeExamItem = {

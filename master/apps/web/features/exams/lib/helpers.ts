@@ -17,6 +17,21 @@ export function getAlphabetLabel(index: number) {
 	return String.fromCharCode(65 + index);
 }
 
+export function getTrueFalseStatements(question: {
+	statements?: string[];
+	options?: string[];
+}) {
+	if (Array.isArray(question.statements) && question.statements.length > 0) {
+		return question.statements;
+	}
+
+	if (Array.isArray(question.options) && question.options.length > 0) {
+		return question.options;
+	}
+
+	return [];
+}
+
 export function tokenToLabel(value: string) {
 	return value === 'T' ? 'Đúng' : 'Sai';
 }

@@ -26,22 +26,25 @@ export type ExamReadModel = {
 	questions: string[];
 	total_questions: number | null;
 	duration: number | null;
-	metadata: Prisma.JsonObject | null;
 	created_at: string | null;
 };
 
 export type QuestionReadModel = {
 	mongo_id: string;
 	question_id: string;
+	exam_id: string | null;
 	question_index: number;
 	type: string;
 	content: string;
 	content_latex: string | null;
 	options: string[];
-	statements: string[];
 	correct_answer: string | null;
 	has_image: boolean;
 	image_url: string | null;
+	discrimination_a: number | null;
+	difficulty_b: number | null;
+	topic_tags: string[];
+	max_score: number | null;
 };
 
 export type HistoryReadModel = {
@@ -67,7 +70,6 @@ const EXAM_PROJECTION = {
 	questions: 1,
 	total_questions: 1,
 	duration: 1,
-	metadata: 1,
 	created_at: 1,
 } as const;
 
@@ -75,15 +77,19 @@ const QUESTION_PROJECTION = {
 	_id: 1,
 	id: 1,
 	question_id: 1,
+	exam_id: 1,
 	question_index: 1,
 	type: 1,
 	content: 1,
 	content_latex: 1,
 	options: 1,
-	statements: 1,
 	correct_answer: 1,
 	has_image: 1,
 	image_url: 1,
+	discrimination_a: 1,
+	difficulty_b: 1,
+	topic_tags: 1,
+	max_score: 1,
 } as const;
 
 const HISTORY_PROJECTION = {
@@ -293,10 +299,6 @@ function normalizeExamDocument(document: RawMongoDocument): ExamReadModel | null
 		return null;
 	}
 
-	const metadata = isPlainObject(document.metadata)
-		? sanitizeJsonValue(document.metadata) as Prisma.JsonObject
-		: null;
-
 	return {
 		mongo_id: mongoId,
 		id,
@@ -309,7 +311,6 @@ function normalizeExamDocument(document: RawMongoDocument): ExamReadModel | null
 		questions: toStringArray(document.questions),
 		total_questions: toNumberOrNull(document.total_questions),
 		duration: toNumberOrNull(document.duration),
-		metadata,
 		created_at: toIsoDateString(document.created_at),
 	};
 }
@@ -325,18 +326,25 @@ function normalizeQuestionDocument(document: RawMongoDocument): QuestionReadMode
 		return null;
 	}
 
+	const type = toStringOrNull(document.type) ?? '';
+	const options = toStringArray(document.options);
+
 	return {
 		mongo_id: mongoId,
 		question_id,
+		exam_id: toStringOrNull(document.exam_id),
 		question_index: toNumberOrNull(document.question_index) ?? 0,
-		type: toStringOrNull(document.type) ?? '',
+		type,
 		content: toStringOrNull(document.content) ?? '',
 		content_latex: toStringOrNull(document.content_latex),
-		options: toStringArray(document.options),
-		statements: toStringArray(document.statements),
+		options,
 		correct_answer: toStringOrNull(document.correct_answer),
 		has_image: toBooleanOrNull(document.has_image) ?? false,
 		image_url: toStringOrNull(document.image_url),
+		discrimination_a: toNumberOrNull(document.discrimination_a),
+		difficulty_b: toNumberOrNull(document.difficulty_b),
+		topic_tags: toStringArray(document.topic_tags),
+		max_score: toNumberOrNull(document.max_score),
 	};
 }
 

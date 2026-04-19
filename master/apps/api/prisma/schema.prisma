@@ -36,7 +36,6 @@ model Exam {
   questions     String[]
   total_questions  Int
   duration         Int
-  metadata         Json?
   created_at       String?
 
   @@map("exams")
@@ -45,16 +44,16 @@ model Exam {
 model Question {
   mongo_id       String   @id @default(auto()) @map("_id") @db.ObjectId
   question_id    String   @unique
+  exam_id        String?
   question_index Int
   type           String
   content        String
   content_latex  String?
   options        String[]
-  statements     String[]
   correct_answer String?
   has_image      Boolean  @default(false)
   image_url      String?
-  discrimination_a   Float?
+  discrimination_a Float?
   difficulty_b   Float?
   topic_tags     String[]
   max_score      Float?

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ACCENTED_SECTION_NAME_BY_TYPE, buildExamSections, ExamMetadataShape, sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
+import { ACCENTED_SECTION_NAME_BY_TYPE, buildExamSections, sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { findQuestionDocumentsByAnyIds } from 'src/shared/mongo/read-models';
 import { hasCompletedProfile } from 'src/modules/students/student-profile-state';
@@ -50,7 +50,6 @@ export class OnboardingService {
 				questions: true,
 				total_questions: true,
 				duration: true,
-				metadata: true,
 			},
 		});
 
@@ -66,16 +65,15 @@ export class OnboardingService {
 			: await findQuestionDocumentsByAnyIds(this.prisma, questionIds);
 		const sortedQuestions = sortItemsByReferenceOrder(questionIds, questions);
 
-		const metadata = (exam.metadata ?? {}) as ExamMetadataShape;
 		const sections = buildExamSections(sortedQuestions, ACCENTED_SECTION_NAME_BY_TYPE);
 
 		return {
 			exam_id: exam.id,
-			source_type: metadata.source_type ?? 'onboarding_existing_exam',
+			source_type: 'onboarding_existing_exam',
 			subject: exam.subject,
 			exam_type: exam.exam_type,
 			total_questions: sortedQuestions.length > 0 ? sortedQuestions.length : exam.total_questions,
-			duration_minutes: metadata.duration_minutes ?? exam.duration,
+			duration_minutes: exam.duration,
 			sections,
 		};
 	}

@@ -1,5 +1,5 @@
 import { MathText } from '@/features/exams/components/math-text';
-import { getAlphabetLabel, parseOption, tokenToLabel } from '@/features/exams/lib/helpers';
+import { getAlphabetLabel, getTrueFalseStatements, parseOption, tokenToLabel } from '@/features/exams/lib/helpers';
 import { FlatQuestion } from '@/features/exams/lib/types';
 import { ExamEvaluationItem } from '@/shared/api/client';
 
@@ -45,7 +45,7 @@ export function ResultAnswerPanel({ question, evaluation }: ResultAnswerPanelPro
 	if (question.sectionType === 'true_false') {
 		// True/false answers are still stored as comma-separated tokens,
 		// so result rendering decodes them the same way as the input panel.
-		const statements = question.question.statements ?? [];
+		const statements = getTrueFalseStatements(question.question);
 		const studentTokens = evaluation.student_answer.split(',').map((item) => item.trim());
 		const correctTokens = evaluation.correct_answer.split(',').map((item) => item.trim());
 
