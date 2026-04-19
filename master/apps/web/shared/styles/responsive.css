@@ -25,7 +25,8 @@
 
 	.dash-progress-layout,
 	.profile-layout,
-	.exam-layout {
+	.exam-layout,
+	.info-layout {
 		grid-template-columns: 1fr;
 	}
 
@@ -78,6 +79,13 @@
 	.exam-tf-head,
 	.exam-tf-item {
 		grid-template-columns: minmax(0, 1fr) 64px 64px;
+	}
+
+	.info-room-grid,
+	.price-grid,
+	.contact-channel-grid,
+	.contact-form-grid {
+		grid-template-columns: 1fr;
 	}
 }
 
@@ -158,9 +166,16 @@
 	.exam-main-actions,
 	.onboarding-actions,
 	.profile-form-footer,
-	.exam-submit-confirm-actions {
+	.exam-submit-confirm-actions,
+	.info-form-actions,
+	.contact-form-footer,
+	.info-header-actions {
 		flex-direction: column;
 		align-items: stretch;
+	}
+
+	.info-stat-strip {
+		grid-template-columns: 1fr;
 	}
 
 	.onboarding-overlay {

@@ -33,6 +33,20 @@ type HistoryGroup = {
 	items: HistoryListItem[];
 };
 
+type MathPerformanceEntry = {
+	label: string;
+	average: number;
+	count: number;
+	width: number;
+};
+
+type MathPerformanceSnapshot = {
+	entries: MathPerformanceEntry[];
+	strongest: MathPerformanceEntry | null;
+	weakest: MathPerformanceEntry | null;
+	totalCount: number;
+};
+
 function intentToLabel(intent: HistoryListItem['intent']) {
 	return intent === 'EXAM_PRACTICE' ? 'Luyện tập' : 'Đề thi';
 }
@@ -53,6 +67,92 @@ function getHistoryMetric(item: HistoryListItem) {
 	}
 
 	return `${item.correct_count} / ${item.total_questions}`;
+}
+
+function normalizeSearchText(value: string) {
+	return value
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/đ/g, 'd')
+		.replace(/Đ/g, 'D')
+		.toLowerCase();
+}
+
+function getHistoryPerformanceValue(item: HistoryListItem) {
+	if (item.score !== null && item.score !== undefined) {
+		return Math.max(0, Math.min(10, item.score));
+	}
+
+	if (!item.total_questions) {
+		return 0;
+	}
+
+	return Math.max(0, Math.min(10, (item.correct_count / item.total_questions) * 10));
+}
+
+function summarizeMathPerformance(items: HistoryListItem[]): MathPerformanceSnapshot {
+	const mathItems = items.filter((item) => normalizeSearchText(item.subject).includes('toan'));
+	const sourceItems = mathItems.length > 0 ? mathItems : items;
+
+	if (sourceItems.length === 0) {
+		return {
+			entries: [],
+			strongest: null,
+			weakest: null,
+			totalCount: 0,
+		};
+	}
+
+	const grouped = new Map<string, { total: number; count: number }>();
+
+	sourceItems.forEach((item) => {
+		const label = item.exam_type?.trim() || 'Khác';
+		const current = grouped.get(label) ?? { total: 0, count: 0 };
+		const score = getHistoryPerformanceValue(item);
+
+		grouped.set(label, {
+			total: current.total + score,
+			count: current.count + 1,
+		});
+	});
+
+	const orderedLabels = [
+		...EXAM_TYPE_OPTIONS,
+		...Array.from(grouped.keys()).filter((label) => !EXAM_TYPE_OPTIONS.includes(label as (typeof EXAM_TYPE_OPTIONS)[number])),
+	];
+
+	const entries = orderedLabels
+		.filter((label) => grouped.has(label))
+		.map((label) => {
+			const summary = grouped.get(label)!;
+			const average = Number((summary.total / summary.count).toFixed(1));
+
+			return {
+				label,
+				average,
+				count: summary.count,
+				width: Math.max(10, Math.round(average * 10)),
+			};
+		});
+
+	if (entries.length === 0) {
+		return {
+			entries: [],
+			strongest: null,
+			weakest: null,
+			totalCount: sourceItems.length,
+		};
+	}
+
+	const strongest = [...entries].sort((left, right) => right.average - left.average)[0] ?? null;
+	const weakest = [...entries].sort((left, right) => left.average - right.average)[0] ?? null;
+
+	return {
+		entries,
+		strongest,
+		weakest,
+		totalCount: sourceItems.length,
+	};
 }
 
 function groupHistoryItems(items: HistoryListItem[]): HistoryGroup[] {
@@ -251,6 +351,7 @@ export default function DashboardPage() {
 
 	const averageScore = useMemo(() => calculateAverageScore(historyItems), [historyItems]);
 	const groupedHistoryItems = useMemo(() => groupHistoryItems(historyItems), [historyItems]);
+	const mathPerformance = useMemo(() => summarizeMathPerformance(historyItems), [historyItems]);
 
 	useEffect(() => {
 		setCollapsedHistoryGroups((current) => ({
@@ -392,6 +493,84 @@ export default function DashboardPage() {
 								<p className="dash-card-label">Điểm trung bình</p>
 								<p className="dash-card-value">{formatScore(averageScore)}</p>
 								<p className="dash-card-hint">Chỉ tính từ các bài làm đã có điểm số được lưu trong lịch sử.</p>
+							</article>
+
+							<article className="dash-card dash-strength-card">
+								<div className="dash-strength-head">
+									<p className="dash-card-label">Điểm mạnh / yếu Toán</p>
+									{mathPerformance.totalCount > 0 ? (
+										<span className="dash-strength-chip">{mathPerformance.totalCount} bài</span>
+									) : null}
+								</div>
+
+								{mathPerformance.entries.length > 0 ? (
+									<>
+										<div className="dash-strength-summary">
+											<div className="dash-strength-summary-card">
+												<span className="dash-strength-caption">Mạnh hơn</span>
+												<strong>{mathPerformance.strongest?.label ?? 'Chưa đủ dữ liệu'}</strong>
+												<small>
+													{mathPerformance.strongest
+														? `${formatScore(mathPerformance.strongest.average)} điểm trung bình`
+														: 'Cần thêm bài làm để nhận diện.'}
+												</small>
+											</div>
+
+											<div className="dash-strength-summary-card is-muted">
+												<span className="dash-strength-caption">
+													{mathPerformance.weakest &&
+													mathPerformance.strongest &&
+													mathPerformance.weakest.label !== mathPerformance.strongest.label
+														? 'Cần ôn thêm'
+														: 'Tín hiệu'}
+												</span>
+												<strong>
+													{mathPerformance.weakest &&
+													mathPerformance.strongest &&
+													mathPerformance.weakest.label !== mathPerformance.strongest.label
+														? mathPerformance.weakest.label
+														: 'Dữ liệu vẫn còn ít'}
+												</strong>
+												<small>
+													{mathPerformance.weakest &&
+													mathPerformance.strongest &&
+													mathPerformance.weakest.label !== mathPerformance.strongest.label
+														? `${formatScore(mathPerformance.weakest.average)} điểm trung bình`
+														: 'Làm thêm vài bài để hệ thống so sánh rõ hơn.'}
+												</small>
+											</div>
+										</div>
+
+										<div
+											className="dash-strength-chart"
+											role="img"
+											aria-label="Biểu đồ tổng hợp điểm mạnh và điểm yếu môn Toán theo từng loại bài"
+										>
+											{mathPerformance.entries.map((entry) => (
+												<div key={entry.label} className="dash-strength-row">
+													<div className="dash-strength-row-head">
+														<span>
+															{entry.label}
+															<small>{entry.count} bài</small>
+														</span>
+														<strong>{formatScore(entry.average)}</strong>
+													</div>
+													<div className="dash-strength-track" aria-hidden="true">
+														<span className="dash-strength-fill" style={{ width: `${entry.width}%` }} />
+													</div>
+												</div>
+											))}
+										</div>
+
+										<p className="dash-card-hint">
+											Dựa trên lịch sử môn Toán hiện có. Nếu bài chưa có điểm, hệ thống sẽ quy đổi theo số câu đúng.
+										</p>
+									</>
+								) : (
+									<p className="dash-card-hint">
+										Chưa có đủ dữ liệu môn Toán để hiển thị điểm mạnh và phần cần ôn thêm.
+									</p>
+								)}
 							</article>
 						</section>
 					</div>

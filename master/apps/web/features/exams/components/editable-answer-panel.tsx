@@ -1,5 +1,5 @@
 import { MathText } from '@/features/exams/components/math-text';
-import { getAlphabetLabel, parseOption } from '@/features/exams/lib/helpers';
+import { getAlphabetLabel, getTrueFalseStatements, parseOption } from '@/features/exams/lib/helpers';
 import { FlatQuestion } from '@/features/exams/lib/types';
 
 type EditableAnswerPanelProps = {
@@ -47,7 +47,7 @@ export function EditableAnswerPanel({
 	}
 
 	if (question.sectionType === 'true_false') {
-		const statements = question.question.statements ?? [];
+		const statements = getTrueFalseStatements(question.question);
 		const tokens = answer.split(',');
 
 		return (

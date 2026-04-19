@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ASCII_SECTION_NAME_BY_TYPE, buildExamSections, ExamMetadataShape, sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
+import { ASCII_SECTION_NAME_BY_TYPE, buildExamSections, sortItemsByReferenceOrder } from 'src/shared/exams/exam-content';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import {
 	findExamDocumentByAnyId,
@@ -50,7 +50,6 @@ export class DocumentsService {
 			total_questions: exam.total_questions ?? 0,
 			duration: exam.duration ?? 0,
 			is_completed: completedExamIds.has(exam.id) || completedExamIds.has(exam.mongo_id),
-			metadata: exam.metadata,
 			created_at: exam.created_at ?? undefined,
 		}));
 	}
@@ -66,17 +65,16 @@ export class DocumentsService {
 		const questions = await findQuestionDocumentsByAnyIds(this.prisma, questionIds);
 		const sortedQuestions = sortItemsByReferenceOrder(questionIds, questions);
 
-		const metadata = (exam.metadata ?? {}) as ExamMetadataShape;
 		const sections = buildExamSections(sortedQuestions, ASCII_SECTION_NAME_BY_TYPE);
 
 		return {
 			exam_id: exam.id,
-			source_type: metadata.source_type ?? 'documents_library',
+			source_type: 'documents_library',
 			subject: exam.subject || 'Đề chưa xác định',
 			grade: exam.grade ?? undefined,
 			exam_type: exam.exam_type || 'Đề chưa xác định',
 			total_questions: sortedQuestions.length > 0 ? sortedQuestions.length : (exam.total_questions ?? 0),
-			duration_minutes: metadata.duration_minutes ?? exam.duration ?? 0,
+			duration_minutes: exam.duration ?? 0,
 			sections,
 		};
 	}

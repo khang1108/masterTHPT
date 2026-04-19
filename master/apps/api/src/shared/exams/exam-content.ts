@@ -1,8 +1,3 @@
-export type ExamMetadataShape = {
-	source_type?: string;
-	duration_minutes?: number;
-};
-
 export type SectionType = 'multiple_choice' | 'true_false' | 'short_ans';
 
 export type SectionNameMap = Record<SectionType, string>;
@@ -30,7 +25,7 @@ type RenderableQuestion = ItemWithReferenceId & {
 	content: string;
 	content_latex?: string | null;
 	options: string[];
-	statements: string[];
+	statements?: string[];
 	has_image: boolean;
 	image_url?: string | null;
 };
@@ -98,6 +93,8 @@ export function buildExamSections(
 		const current = sectionBuckets.get(normalizedType) ?? [];
 		const options = Array.isArray(question.options) ? question.options : [];
 		const statements = Array.isArray(question.statements) ? question.statements : [];
+		const trueFalseStatements =
+			normalizedType === 'true_false' && statements.length === 0 ? options : statements;
 
 		current.push({
 			question_id: question.question_id,
@@ -105,7 +102,7 @@ export function buildExamSections(
 			type: normalizedType,
 			content: question.content_latex ?? question.content,
 			options: options.length > 0 ? options : undefined,
-			statements: statements.length > 0 ? statements : undefined,
+			statements: trueFalseStatements.length > 0 ? trueFalseStatements : undefined,
 			has_image: question.has_image,
 			image_url: question.image_url ?? undefined,
 		});

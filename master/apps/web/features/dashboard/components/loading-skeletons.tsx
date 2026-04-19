@@ -21,6 +21,7 @@ function AppTopbarSkeleton() {
 				<SkeletonBox className="dash-skeleton-pill" />
 			</div>
 			<div className="dash-userbar">
+				<SkeletonBox className="dash-skeleton-streak" />
 				<SkeletonBox className="dash-skeleton-avatar" />
 			</div>
 		</header>

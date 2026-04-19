@@ -364,7 +364,9 @@ export default function ExamRoomPage() {
 						type: question.type,
 						content: question.content,
 						options: question.options,
-						statements: question.statements,
+						statements: question.type === 'true_false'
+							? (question.statements ?? question.options)
+							: question.statements,
 						answer: question.answer ?? '',
 						student_answer: answers[question.question_id] ?? '',
 						has_image: question.has_image,
