@@ -53,6 +53,7 @@ class QuestionOutput(BaseModel):
     options: Optional[list[str]] = Field(default=None, description="Danh sách lựa chọn nếu là câu hỏi trắc nghiệm, để trống nếu là câu hỏi tự luận")
     has_image: bool = Field(description="Câu hỏi có chứa hình ảnh hay không")
     image_url: Optional[str] = Field(default=None, description="URL của hình ảnh nếu có")
+    generated: bool = Field(default=False, description="True nếu câu hỏi được tạo ra bởi LLM, False nếu được trích xuất trực tiếp từ đề thi. Nếu generated = True thì các trường có thể không chính xác và chỉ mang tính tham khảo.")
 
 
     @field_validator("content")
@@ -746,12 +747,12 @@ class ParserAgent(ToolsRegistry, BaseAgent):
     async def _ocr_file(self, file_path: str, batch_size: Optional[int] = None) -> list[dict]:
         if not os.path.exists(file_path):
             self.logger.warning(f"Parser input file not found: {file_path}")
-            return []
+            return {"metadata": {}, "questions": []}
 
         extension = os.path.splitext(file_path)[1].lower()
         if extension not in ALLOWED_EXTENSIONS:
             self.logger.warning(f"Parser input extension not supported: {extension}")
-            return []
+            return {"metadata": {}, "questions": []}
 
         if not batch_size or batch_size <= 0:
             batch_size = 2
@@ -950,10 +951,13 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "duration": metadata.get("duration"),
             "created_at": datetime.datetime.now().isoformat(),
             "questions": [q.get("id") for q in questions_data],
+            "generated": False,
         }
 
-        await self.insert_data("masterthpt", "exams", [exam])
-        self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")
+        self.logger.agent_node(f"Parser extracted exam metadata: {json.dumps(exam, ensure_ascii=False, indent=2)}")
+
+        # await self.insert_data("masterthpt", "exams", [exam])
+        # self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")
 
         request = MessageRequest(
             intent=request.intent,
@@ -975,10 +979,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
     async def run(self, input: str) -> str:
         pass
 
-# if __name__ == "__main__":
-#     parser_agent = ParserAgent()
-#     asyncio.run(parser_agent.setup())
+if __name__ == "__main__":
+    parser_agent = ParserAgent()
+    asyncio.run(parser_agent.setup())
 #     # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 10 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
 #     # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 11 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
-#     # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 12 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
-#     asyncio.run(parser_agent._ocr_file(file_path, batch_size=2))
+    file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 12 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
+    asyncio.run(parser_agent._ocr_file(file_path, batch_size=2))
