@@ -1,18 +1,21 @@
 import pytest
 
 from exam_scraper.config import Settings
-from exam_scraper.core.crawl_transaction import CrawlTransaction
-from exam_scraper.db.session import get_db
+from exam_scraper.core import CrawlTransaction
+from exam_scraper.core import get_db
 
 
 @pytest.mark.asyncio
 async def test_transaction_rollback_removes_files_and_db_rows(tmp_path):
-    settings = Settings(storage_dir=str(tmp_path / "storage"), data_dir=str(tmp_path / "data"))
+    settings = Settings(
+        storage_dir=str(tmp_path / "storage" / "pdfs"),
+        data_dir=str(tmp_path / "storage" / "state"),
+    )
     db = await get_db(settings.db_path)
-    temp_dir = settings.storage_path / ".tmp_runs" / "run_test"
+    temp_dir = settings.data_path / ".tmp_runs" / "run_test"
     tx = CrawlTransaction(db, temp_dir)
 
-    final_file = settings.storage_path / "toanmath.com" / "lop-12" / "toan" / "unknown" / "x.pdf"
+    final_file = settings.storage_path / "toan" / "lop-12" / "x.pdf"
     final_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -24,10 +27,10 @@ async def test_transaction_rollback_removes_files_and_db_rows(tmp_path):
                (source_url, source_domain, pdf_url, local_path)
                VALUES (?, ?, ?, ?)""",
             (
-                "https://example.com/detail",
-                "example.com",
-                "https://example.com/a.pdf",
-                "storage/example.pdf",
+                "https://toanmath.com/detail",
+                "toanmath.com",
+                "https://toanmath.com/a.pdf",
+                str(final_file.resolve()),
             ),
         )
 

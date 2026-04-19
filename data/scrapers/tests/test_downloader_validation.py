@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from exam_scraper.core.downloader import Downloader, PdfValidationError
+from exam_scraper.core import Downloader, PdfValidationError
 
 
 class _DownloadResult:
@@ -37,7 +37,10 @@ async def test_downloader_rejects_invalid_magic_bytes(tmp_path):
 
 @pytest.mark.asyncio
 async def test_downloader_requires_network_signal_when_configured(tmp_path):
-    client = _ClientStub(payload=b"%PDF-1.7\n" + b"A" * 2048, headers={"content-type": "text/html"})
+    client = _ClientStub(
+        payload=b"%PDF-1.7\n" + b"A" * 2048,
+        headers={"content-type": "text/html"},
+    )
     downloader = Downloader(client)
     out = tmp_path / "bad-signal.pdf"
 

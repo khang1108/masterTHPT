@@ -1,5 +1,5 @@
 from exam_scraper.config import Settings
-from exam_scraper.core.detectors import DownloadTargetDetector
+from exam_scraper.core import DownloadTargetDetector
 
 
 def test_download_detector_ranks_pdf_candidate_first():

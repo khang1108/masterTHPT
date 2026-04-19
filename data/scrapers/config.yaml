@@ -1,23 +1,14 @@
-storage_dir: "./storage"
-data_dir: "./data"
-
-throttle:
-  min_delay: 1.0
-  max_delay: 3.0
+storage_dir: "./storage/pdfs"
+data_dir: "./storage/state"
 
 dedup:
   ttl_days: 7
 
 priority:
-  min_year: 2022
-  prefer_years: [2026, 2025, 2024]
-
-proxy:
-  enabled: false
-  url: ""
+  min_year: 2024
 
 playwright:
-  headless: true
+  headless: false
   timeout: 30000
 
 crawl:
@@ -57,17 +48,17 @@ detectors:
   intent:
     subjects:
       toan: ["toan", "mon toan"]
-      van: ["van", "ngu van", "nguvan"]
-      anh: ["anh", "tieng anh", "ngoai ngu"]
-      ly: ["ly", "vat ly", "vat li"]
-      hoa: ["hoa", "hoa hoc"]
-      sinh: ["sinh", "sinh hoc"]
-      su: ["su", "lich su"]
-      dia: ["dia", "dia ly"]
-      gdcd: ["gdcd", "giao duc cong dan"]
-      gdktpl: ["gdktpl", "kinh te phap luat", "kinh te va phap luat"]
-      tin: ["tin", "tin hoc"]
-      cong_nghe: ["cong nghe"]
+      # van: ["van", "ngu van", "nguvan"]
+      # anh: ["anh", "tieng anh", "ngoai ngu"]
+      # ly: ["ly", "vat ly", "vat li"]
+      # hoa: ["hoa", "hoa hoc"]
+      # sinh: ["sinh", "sinh hoc"]
+      # su: ["su", "lich su"]
+      # dia: ["dia", "dia ly"]
+      # gdcd: ["gdcd", "giao duc cong dan"]
+      # gdktpl: ["gdktpl", "kinh te phap luat", "kinh te va phap luat"]
+      # tin: ["tin", "tin hoc"]
+      # cong_nghe: ["cong nghe"]
     grades:
       "10": ["lop 10", "khoi 10", "10"]
       "11": ["lop 11", "khoi 11", "11"]
@@ -78,6 +69,15 @@ detectors:
       hk1: ["hoc ky 1", "hk1", "ki 1", "ck1"]
       giua_hk2: ["giua ky 2", "giua hk2", "giua hoc ky 2", "gk2"]
       hk2: ["hoc ky 2", "hk2", "ki 2", "ck2"]
-      thi_thu: ["thi thu"]
-      de_cuong: ["de cuong"]
-      minh_hoa: ["minh hoa"]
+      khao_sat: ["khao sat", "khao sat chat luong", "kscl"]
+      hsg: ["hsg", "hoc sinh gioi", "de thi hsg"]
+      thptqg:
+        - "thptqg"
+        - "thpt qg"
+        - "tnthpt"
+        - "tot nghiep thpt"
+        - "thi tot nghiep thpt"
+        - "thi thpt quoc gia"
+      # thi_thu: ["thi thu"]
+      # de_cuong: ["de cuong"]
+      # minh_hoa: ["minh hoa"]

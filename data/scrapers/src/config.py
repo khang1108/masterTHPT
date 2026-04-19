@@ -6,23 +6,12 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 
-class ThrottleConfig(BaseModel):
-    min_delay: float = 1.0
-    max_delay: float = 3.0
-
-
 class DedupConfig(BaseModel):
     ttl_days: int = 7
 
 
 class PriorityConfig(BaseModel):
-    min_year: int = 2022
-    prefer_years: list[int] = Field(default_factory=lambda: [2026, 2025, 2024])
-
-
-class ProxyConfig(BaseModel):
-    enabled: bool = False
-    url: str = ""
+    min_year: int = 2024
 
 
 class PlaywrightConfig(BaseModel):
@@ -95,10 +84,20 @@ class IntentKeywordConfig(BaseModel):
     )
     exam_types: dict[str, list[str]] = Field(
         default_factory=lambda: {
-            "giua_hk1": ["giua ky 1", "giua hk1", "giua hoc ky 1"],
-            "hk1": ["hoc ky 1", "hk1", "ki 1"],
-            "giua_hk2": ["giua ky 2", "giua hk2", "giua hoc ky 2"],
-            "hk2": ["hoc ky 2", "hk2", "ki 2"],
+            "giua_hk1": ["giua ky 1", "giua hk1", "giua hoc ky 1", "gk1"],
+            "hk1": ["hoc ky 1", "hk1", "ki 1", "ck1"],
+            "giua_hk2": ["giua ky 2", "giua hk2", "giua hoc ky 2", "gk2"],
+            "hk2": ["hoc ky 2", "hk2", "ki 2", "ck2"],
+            "khao_sat": ["khao sat", "khao sat chat luong", "kscl"],
+            "hsg": ["hsg", "hoc sinh gioi", "de thi hsg"],
+            "thptqg": [
+                "thptqg",
+                "thpt qg",
+                "tnthpt",
+                "tot nghiep thpt",
+                "thi tot nghiep thpt",
+                "thi thpt quoc gia",
+            ],
             "thi_thu": ["thi thu"],
             "de_cuong": ["de cuong"],
             "minh_hoa": ["minh hoa"],
@@ -119,12 +118,10 @@ class CrawlConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    storage_dir: str = "./storage"
-    data_dir: str = "./data"
-    throttle: ThrottleConfig = Field(default_factory=ThrottleConfig)
+    storage_dir: str = "./storage/pdfs"
+    data_dir: str = "./storage/state"
     dedup: DedupConfig = Field(default_factory=DedupConfig)
     priority: PriorityConfig = Field(default_factory=PriorityConfig)
-    proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     playwright: PlaywrightConfig = Field(default_factory=PlaywrightConfig)
     detectors: DetectorConfig = Field(default_factory=DetectorConfig)
     crawl: CrawlConfig = Field(default_factory=CrawlConfig)

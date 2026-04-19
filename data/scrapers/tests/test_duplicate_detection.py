@@ -1,8 +1,8 @@
 import pytest
 
 from exam_scraper.config import Settings
-from exam_scraper.db.session import get_db
-from exam_scraper.routing.deep_crawl import DeepCrawlRouter
+from exam_scraper.core import CrawlService
+from exam_scraper.core import get_db
 
 
 class _HttpStub:
@@ -17,13 +17,16 @@ class _HttpStub:
 
 @pytest.mark.asyncio
 async def test_duplicate_detected_by_size_and_header(tmp_path):
-    settings = Settings(storage_dir=str(tmp_path / "storage"), data_dir=str(tmp_path / "data"))
-    router = DeepCrawlRouter(settings)
+    settings = Settings(
+        storage_dir=str(tmp_path / "storage" / "pdfs"),
+        data_dir=str(tmp_path / "storage" / "state"),
+    )
+    service = CrawlService(settings)
     db = await get_db(settings.db_path)
 
     try:
         content = b"%PDF-1.7\n" + (b"A" * 4096)
-        file_path = settings.storage_path / "toanmath.com" / "lop-12" / "toan" / "unknown" / "sample.pdf"
+        file_path = settings.storage_path / "toan" / "lop-12" / "sample.pdf"
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(content)
 
@@ -35,7 +38,7 @@ async def test_duplicate_detected_by_size_and_header(tmp_path):
                 "https://toanmath.com/de-1",
                 "toanmath.com",
                 "https://toanmath.com/files/de-1.pdf",
-                str(file_path.relative_to(settings.storage_path.parent)),
+                str(file_path.resolve()),
                 "hash-existing-1",
                 len(content),
             ),
@@ -43,9 +46,9 @@ async def test_duplicate_detected_by_size_and_header(tmp_path):
         await db.commit()
 
         http = _HttpStub(content)
-        is_dup = await router._is_duplicate_by_size_and_header(
+        is_dup = await service._is_duplicate_by_size_and_header(
             db=db,
-            http=http,  # type: ignore[arg-type]
+            http=http,
             pdf_url="https://example.com/new.pdf",
             content_length=len(content),
         )
@@ -57,8 +60,11 @@ async def test_duplicate_detected_by_size_and_header(tmp_path):
 
 @pytest.mark.asyncio
 async def test_not_duplicate_when_header_differs_even_if_size_matches(tmp_path):
-    settings = Settings(storage_dir=str(tmp_path / "storage"), data_dir=str(tmp_path / "data"))
-    router = DeepCrawlRouter(settings)
+    settings = Settings(
+        storage_dir=str(tmp_path / "storage" / "pdfs"),
+        data_dir=str(tmp_path / "storage" / "state"),
+    )
+    service = CrawlService(settings)
     db = await get_db(settings.db_path)
 
     try:
@@ -66,7 +72,7 @@ async def test_not_duplicate_when_header_differs_even_if_size_matches(tmp_path):
         remote_content = b"%PDF-1.7\n" + (b"R" * 4096)
         assert len(local_content) == len(remote_content)
 
-        file_path = settings.storage_path / "thi247.com" / "lop-11" / "toan" / "unknown" / "sample.pdf"
+        file_path = settings.storage_path / "toan" / "lop-11" / "sample.pdf"
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(local_content)
 
@@ -75,10 +81,10 @@ async def test_not_duplicate_when_header_differs_even_if_size_matches(tmp_path):
                (source_url, source_domain, pdf_url, local_path, file_hash, file_size_bytes)
                VALUES (?, ?, ?, ?, ?, ?)""",
             (
-                "https://thi247.com/de-2",
-                "thi247.com",
-                "https://thi247.com/files/de-2.pdf",
-                str(file_path.relative_to(settings.storage_path.parent)),
+                "https://toanmath.com/de-2",
+                "toanmath.com",
+                "https://toanmath.com/files/de-2.pdf",
+                str(file_path.resolve()),
                 "hash-existing-2",
                 len(local_content),
             ),
@@ -86,9 +92,9 @@ async def test_not_duplicate_when_header_differs_even_if_size_matches(tmp_path):
         await db.commit()
 
         http = _HttpStub(remote_content)
-        is_dup = await router._is_duplicate_by_size_and_header(
+        is_dup = await service._is_duplicate_by_size_and_header(
             db=db,
-            http=http,  # type: ignore[arg-type]
+            http=http,
             pdf_url="https://example.com/new.pdf",
             content_length=len(remote_content),
         )
