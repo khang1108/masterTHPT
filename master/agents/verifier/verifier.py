@@ -11,7 +11,6 @@ from master.agents.teacher.teacher import EvaluateBatch
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
     verifier_prompt,
-    verifier_system_prompt,
     verifier_counter_evidence_prompt,
     verifier_tool_research_prompt,
 )
