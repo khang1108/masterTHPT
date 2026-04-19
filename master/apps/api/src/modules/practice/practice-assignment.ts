@@ -107,7 +107,6 @@ async function ensureQuestionDocument(
 			content: question.content,
 			content_latex: question.content_latex ?? undefined,
 			options: question.options,
-			statements: question.statements,
 			correct_answer: question.correct_answer ?? undefined,
 			has_image: question.has_image,
 			image_url: question.image_url ?? undefined,

@@ -36,6 +36,7 @@ model Exam {
   questions     String[]
   total_questions  Int
   duration         Int
+  metadata         Json?
   created_at       String?
 
   @@map("exams")
