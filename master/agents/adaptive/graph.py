@@ -109,6 +109,74 @@ class AdaptiveGraph:
 
         return self.knowledge_graph.get_related_kcs(topic)
 
+    def expand_topics(
+        self,
+        topics: Sequence[str],
+        *,
+        depth: int = 1,
+        max_topics: int = 12,
+    ) -> dict[str, list[str]]:
+        """Mo rong topic tu seed topics bang prerequisite va related topics.
+
+        Muc tieu cua ham nay la phuc vu retrieval cho Adaptive:
+        - `prerequisite_topics` giup uu tien lo hong nen tang
+        - `related_topics` giup lay them mau cau hoi gan ngu canh
+        - `expanded_topics` la hop cua seed/prerequisite/related theo depth
+        """
+
+        normalized_depth = max(0, depth)
+        seed_topics = self.canonical_or_raw_topics(topics)
+        if not seed_topics:
+            return {
+                "seed_topics": [],
+                "prerequisite_topics": [],
+                "related_topics": [],
+                "expanded_topics": [],
+            }
+
+        prerequisite_topics: list[str] = []
+        related_topics: list[str] = []
+        expanded_topics: list[str] = list(seed_topics)
+        frontier: list[str] = list(seed_topics)
+        visited: set[str] = set(seed_topics)
+
+        for _ in range(normalized_depth):
+            next_frontier: list[str] = []
+            for topic in frontier:
+                for prerequisite in self.prerequisite_topics(topic):
+                    if prerequisite not in prerequisite_topics:
+                        prerequisite_topics.append(prerequisite)
+                    if prerequisite in visited:
+                        continue
+                    visited.add(prerequisite)
+                    expanded_topics.append(prerequisite)
+                    next_frontier.append(prerequisite)
+
+                for related in self.related_topics(topic):
+                    if related not in related_topics:
+                        related_topics.append(related)
+                    if related in visited:
+                        continue
+                    visited.add(related)
+                    expanded_topics.append(related)
+                    next_frontier.append(related)
+
+                if len(expanded_topics) >= max_topics:
+                    break
+
+            if len(expanded_topics) >= max_topics:
+                break
+            frontier = next_frontier
+            if not frontier:
+                break
+
+        return {
+            "seed_topics": seed_topics[:max_topics],
+            "prerequisite_topics": prerequisite_topics[:max_topics],
+            "related_topics": related_topics[:max_topics],
+            "expanded_topics": expanded_topics[:max_topics],
+        }
+
     def topic_contexts(
         self,
         topics: Sequence[str],

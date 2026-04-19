@@ -13,6 +13,7 @@ from master.agents.common.llm_client import LLMClient
 from master.agents.common.message import ExamQuestion, MessageRequest
 from master.agents.common.prompt import adaptive_generate_questions_prompt
 
+from .instruction import GenerationInstruction
 from .question_gen import GeneratedQuestionBatch
 
 
@@ -218,6 +219,7 @@ class AdaptiveQuestionGenerator(BaseAgent):
         request: MessageRequest | None,
         profile: LearnerProfile,
         context_questions: Sequence[ExamQuestion],
+        instruction: GenerationInstruction | None = None,
         limit: int = 3,
     ) -> list[ExamQuestion]:
         """Generate new questions using THPTQG-style context retrieved from DB.
@@ -237,7 +239,11 @@ class AdaptiveQuestionGenerator(BaseAgent):
             return []
 
         metadata = request.metadata if request else {}
-        target_topics = self._target_topics(profile, metadata.get("target_topics"))
+        target_topics = (
+            instruction.target_topics
+            if instruction is not None and instruction.target_topics
+            else self._target_topics(profile, metadata.get("target_topics"))
+        )
         learner_request = (
             request.content
             if request and getattr(request, "content", None)
@@ -246,7 +252,11 @@ class AdaptiveQuestionGenerator(BaseAgent):
         prompt = adaptive_generate_questions_prompt(
             limit=limit,
             learner_profile_json=profile.model_dump_json(),
-            target_topics_json=json.dumps(target_topics, ensure_ascii=False),
+            generation_instruction_json=(
+                instruction.model_dump_json(indent=2)
+                if instruction is not None
+                else "{}"
+            ),
             learner_request=learner_request,
             rag_context_json=json.dumps(
                 self._context_payload(context_questions),

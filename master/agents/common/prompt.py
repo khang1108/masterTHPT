@@ -474,7 +474,7 @@ def adaptive_generate_questions_prompt(
     *,
     limit: int,
     learner_profile_json: str,
-    target_topics_json: str,
+    generation_instruction_json: str,
     learner_request: str,
     rag_context_json: str,
 ) -> str:
@@ -483,14 +483,15 @@ def adaptive_generate_questions_prompt(
 
 		Dữ liệu đầu vào:
 		- LearnerProfile: {learner_profile_json}
-		- Target topics ưu tiên: {target_topics_json}
+		- GenerationInstruction: {generation_instruction_json}
 		- Yêu cầu bổ sung của học sinh: {learner_request or "Không có"}
 
 		RAG context từ database (chỉ dùng để tham khảo phong cách, độ khó, và phạm vi kiến thức):
 		{rag_context_json}
 
 		Yêu cầu:
-		- Ưu tiên các chủ đề học sinh còn yếu và các target topics.
+		- Phải đọc GenerationInstruction trước khi sinh câu.
+		- Ưu tiên các target_topics, prerequisite_topics và learning_goal trong GenerationInstruction.
 		- Độ khó phù hợp với năng lực hiện tại của học sinh.
 		- Câu hỏi phải mới, không sao chép hoặc biến đổi nhẹ từ context.
 		- Chỉ trả về output đúng schema đã được quy định.

@@ -24,7 +24,9 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import TypedDict
 
 from .db_tools import AdaptiveDBTools
+from .graph import AdaptiveGraph
 from .generator import AdaptiveQuestionGenerator
+from .instruction import GenerationInstruction
 from .profile_builder import AdaptiveAttempt
 from .question_gen import QuestionRecommendation
 from .service import AdaptiveService
@@ -34,6 +36,7 @@ class AdaptiveWorkflowState(TypedDict, total=False):
     request: MessageRequest
     learner_profile: LearnerProfile
     active_plan: SharedPlanMemory | None
+    generation_instruction: GenerationInstruction | None
     planner_summary: str | None
     allowed_tools: list[str]
     questions: list[ExamQuestion]
@@ -70,6 +73,7 @@ class AdaptiveAgent(BaseAgent):
         service: AdaptiveService | None = None,
         repository: AdaptiveDBTools | None = None,
         generator: AdaptiveQuestionGenerator | None = None,
+        topic_graph: AdaptiveGraph | None = None,
     ) -> None:
         """Create the adaptive LangGraph wrapper around ``AdaptiveService``.
 
@@ -85,6 +89,7 @@ class AdaptiveAgent(BaseAgent):
         self.service = service or AdaptiveService()
         self.repository = repository or AdaptiveDBTools()
         self.generator = generator or AdaptiveQuestionGenerator()
+        self.topic_graph = topic_graph or AdaptiveGraph()
         self._decision_llm = None
         self.graph = self._build_graph()
         self.system_prompt = """
@@ -169,6 +174,7 @@ class AdaptiveAgent(BaseAgent):
                 "service": type(self.service).__name__,
                 "repository": type(self.repository).__name__,
                 "generator": type(self.generator).__name__,
+                "topic_graph": type(self.topic_graph).__name__,
             },
             mode="completed",
         )
@@ -311,6 +317,166 @@ class AdaptiveAgent(BaseAgent):
             if isinstance(candidate, str) and candidate.strip():
                 return candidate.strip()
         return ""
+
+    @staticmethod
+    def _active_step_title(active_plan: SharedPlanMemory | None) -> str | None:
+        """Lay ten step dang active/pending uu tien nhat trong GoalPlan."""
+
+        if active_plan is None or not active_plan.steps:
+            return None
+
+        prioritized_steps = sorted(
+            active_plan.steps,
+            key=lambda step: (
+                0 if str(step.status) == "active" else 1,
+                step.sequence_order,
+                -step.priority,
+            ),
+        )
+        for step in prioritized_steps:
+            if step.title.strip():
+                return step.title.strip()
+        return None
+
+    @staticmethod
+    def _difficulty_target(profile: LearnerProfile) -> float:
+        """Quy doi theta sang muc difficulty target don gian cho retrieval/generation."""
+
+        # Cong thuc nay co y don gian de giu scope toi thieu.
+        # Theta quanh 0 -> difficulty quanh 0.5.
+        raw_target = 0.5 + (profile.theta * 0.15)
+        return max(0.2, min(0.85, raw_target))
+
+    @classmethod
+    def _instruction_seed_topics(
+        cls,
+        *,
+        request: MessageRequest | None,
+        profile: LearnerProfile,
+        active_plan: SharedPlanMemory | None,
+    ) -> list[str]:
+        """Chot seed topics uu tien truoc khi mo rong bang KG."""
+
+        metadata = request.metadata if request else {}
+        requested_topics = metadata.get("rag_topic_tags") or metadata.get("topic_tags") or []
+        if not isinstance(requested_topics, list):
+            requested_topics = []
+
+        plan_topics: list[str] = []
+        if active_plan is not None:
+            plan_topics.extend(active_plan.focus_topics)
+            for step in active_plan.steps:
+                plan_topics.extend(step.target_topics)
+
+        return cls._dedupe_preserve_order(
+            [
+                *[str(topic).strip() for topic in requested_topics if str(topic).strip()],
+                *plan_topics,
+                *profile.weak_topics()[:5],
+            ]
+        )[:6]
+
+    def build_generation_instruction(
+        self,
+        *,
+        request: MessageRequest | None,
+        profile: LearnerProfile,
+        active_plan: SharedPlanMemory | None,
+    ) -> GenerationInstruction:
+        """Tong hop GoalPlan + LearnerProfile + KG thanh instruction cho luot hien tai."""
+
+        metadata = request.metadata if request else {}
+        requested_depth = metadata.get("kg_depth") or metadata.get("rag_kg_depth") or 1
+        requested_top_k = metadata.get("rag_context_limit") or metadata.get("retrieval_top_k") or 8
+        requested_generation_limit = metadata.get("generation_limit") or metadata.get("question_limit") or 3
+
+        try:
+            kg_depth = max(0, min(3, int(requested_depth)))
+        except (TypeError, ValueError):
+            kg_depth = 1
+
+        try:
+            retrieval_top_k = max(1, min(20, int(requested_top_k)))
+        except (TypeError, ValueError):
+            retrieval_top_k = 8
+
+        try:
+            generation_limit = max(1, min(5, int(requested_generation_limit)))
+        except (TypeError, ValueError):
+            generation_limit = 3
+
+        seed_topics = self._instruction_seed_topics(
+            request=request,
+            profile=profile,
+            active_plan=active_plan,
+        )
+        expanded = self.topic_graph.expand_topics(
+            seed_topics,
+            depth=kg_depth,
+            max_topics=max(retrieval_top_k * 2, 8),
+        )
+
+        learning_goal = self._learning_goal(request) or (active_plan.goal if active_plan else "")
+        active_step_title = self._active_step_title(active_plan)
+        weak_topics = profile.weak_topics()[:5]
+        strong_topics = profile.strong_topics()[:5]
+        target_topics = self._dedupe_preserve_order(
+            [
+                *expanded["seed_topics"],
+                *weak_topics,
+            ]
+        )[:6]
+        retrieval_topics = self._dedupe_preserve_order(
+            [
+                *expanded["seed_topics"],
+                *expanded["prerequisite_topics"],
+                *expanded["related_topics"],
+            ]
+        )[: max(retrieval_top_k * 2, 8)]
+
+        strategy_parts: list[str] = []
+        if learning_goal:
+            strategy_parts.append(f"goal={learning_goal}")
+        if active_step_title:
+            strategy_parts.append(f"active_step={active_step_title}")
+        if target_topics:
+            strategy_parts.append(f"target_topics={target_topics[:4]}")
+        if expanded["prerequisite_topics"]:
+            strategy_parts.append(
+                f"prerequisite_topics={expanded['prerequisite_topics'][:4]}"
+            )
+
+        return GenerationInstruction(
+            based_on_plan_id=active_plan.plan_id if active_plan else None,
+            learning_goal=learning_goal,
+            active_step_title=active_step_title,
+            learner_theta=profile.theta,
+            weak_topics=weak_topics,
+            strong_topics=strong_topics,
+            seed_topics=expanded["seed_topics"],
+            target_topics=target_topics,
+            prerequisite_topics=expanded["prerequisite_topics"],
+            related_topics=expanded["related_topics"],
+            expanded_topics=expanded["expanded_topics"],
+            retrieval_topics=retrieval_topics,
+            difficulty_target=self._difficulty_target(profile),
+            generation_limit=generation_limit,
+            retrieval_top_k=retrieval_top_k,
+            kg_depth=kg_depth,
+            strategy_summary="; ".join(strategy_parts),
+            generator_constraints=[
+                "uu_tien_goal_plan",
+                "uu_tien_weak_topics",
+                "khong_copy_rag_context",
+                "giu_do_kho_phu_hop_learner",
+            ],
+            metadata={
+                "exam_matrix_summary": self._exam_matrix_summary(request, active_plan),
+                "target_exam": metadata.get("target_exam") or (active_plan.target_exam if active_plan else None),
+                "target_exam_name": metadata.get("target_exam_name") or (active_plan.target_exam_name if active_plan else None),
+                "target_exam_type": metadata.get("target_exam_type") or (active_plan.target_exam_type if active_plan else None),
+            },
+        )
 
     @staticmethod
     def _dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -956,11 +1122,18 @@ class AdaptiveAgent(BaseAgent):
                 exclude_question_ids=excluded_question_ids,
             )
 
+        generation_instruction = self.build_generation_instruction(
+            request=request,
+            profile=profile,
+            active_plan=active_plan,
+        )
+
         # RAG context is always loaded from Mongo, so this node must await it
         # directly instead of relying on any sync wrapper around async IO.
         rag_context_questions = await self.load_rag_context_questions(
             request=request,
             profile=profile,
+            instruction=generation_instruction,
             exclude_question_ids=excluded_question_ids,
         )
         decision = self.decide_question_strategy(
@@ -1027,6 +1200,7 @@ class AdaptiveAgent(BaseAgent):
                 request=request,
                 profile=profile,
                 rag_context_questions=rag_context_questions,
+                instruction=generation_instruction,
                 limit_override=generation_target,
             )
 
@@ -1075,6 +1249,7 @@ class AdaptiveAgent(BaseAgent):
                 "strong_topics": profile.strong_topics(),
                 "theta": profile.theta,
                 "active_plan_id": active_plan.plan_id if active_plan else None,
+                "generation_instruction": generation_instruction.model_dump(mode="json"),
             },
             "outputs": {
                 "reused_question_ids": [question.question_id for question in selected_reused],
@@ -1091,6 +1266,7 @@ class AdaptiveAgent(BaseAgent):
         result = {
             "questions": questions,
             "active_plan": active_plan,
+            "generation_instruction": generation_instruction,
             "rag_context_questions": rag_context_questions,
             "generated_questions": generated_questions,
             "selected_questions": selected_questions,
@@ -1109,6 +1285,8 @@ class AdaptiveAgent(BaseAgent):
                 "candidate_questions": len(questions),
                 "rag_context_questions": len(rag_context_questions),
                 "decision_mode": decision.mode,
+                "instruction_target_topics": len(generation_instruction.target_topics),
+                "instruction_retrieval_topics": len(generation_instruction.retrieval_topics),
                 "reuse_count": len(selected_reused),
                 "generated_count": len(generated_questions),
                 "selected_questions": len(selected_questions),
@@ -1294,6 +1472,7 @@ class AdaptiveAgent(BaseAgent):
         *,
         request: MessageRequest | None,
         profile: LearnerProfile,
+        instruction: GenerationInstruction | None = None,
         exclude_question_ids: list[str] | None = None,
     ) -> list[ExamQuestion]:
         """Always retrieve DB-backed question context for adaptive generation.
@@ -1305,8 +1484,17 @@ class AdaptiveAgent(BaseAgent):
 
         metadata = request.metadata if request else {}
         requested_question_ids = metadata.get("rag_question_ids") or metadata.get("question_ids") or []
-        requested_topic_tags = metadata.get("rag_topic_tags") or metadata.get("topic_tags") or profile.weak_topics()
-        requested_limit = metadata.get("rag_context_limit") or 8
+        requested_topic_tags = (
+            metadata.get("rag_topic_tags")
+            or metadata.get("topic_tags")
+            or (instruction.retrieval_topics if instruction is not None else None)
+            or profile.weak_topics()
+        )
+        requested_limit = (
+            metadata.get("rag_context_limit")
+            or (instruction.retrieval_top_k if instruction is not None else None)
+            or 8
+        )
         scoped_exam_id = self._candidate_exam_scope(request, metadata=metadata)
 
         if not isinstance(requested_question_ids, list):
@@ -1357,12 +1545,19 @@ class AdaptiveAgent(BaseAgent):
         request: MessageRequest | None,
         profile: LearnerProfile,
         rag_context_questions: list[ExamQuestion],
+        instruction: GenerationInstruction | None = None,
         limit_override: int | None = None,
     ) -> list[ExamQuestion]:
         """Generate new practice questions from mandatory DB-retrieved context."""
 
         metadata = request.metadata if request else {}
-        requested_limit = limit_override or metadata.get("generation_limit") or metadata.get("question_limit") or 3
+        requested_limit = (
+            limit_override
+            or metadata.get("generation_limit")
+            or metadata.get("question_limit")
+            or (instruction.generation_limit if instruction is not None else None)
+            or 3
+        )
         try:
             limit = max(1, int(requested_limit))
         except (TypeError, ValueError):
@@ -1372,6 +1567,7 @@ class AdaptiveAgent(BaseAgent):
             request=request,
             profile=profile,
             context_questions=rag_context_questions,
+            instruction=instruction,
             limit=limit,
         )
         log_agent_event(
