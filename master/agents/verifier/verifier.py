@@ -106,7 +106,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         feedback = []
         item_list = request.parser_output or []
         teacher_feedback = state.get("teacher_feedback") or []
-        id_to_index = {item["id"]: idx for idx, item in enumerate(item_list)} if item_list else {}
+        id_to_index = {item.get("question_id"): idx for idx, item in enumerate(item_list)} if item_list else {}
         remaining_items = []
         db_inserted = 0
         db_saved_total_before = state.get("db_saved_total", 0) or 0
@@ -116,6 +116,10 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         state_solutions = state.get("solutions", []) or []
         has_prior_verifier_feedback = bool(state.get("verifier_feedback"))
         solution_by_id = {}
+
+        latest_teacher_feedback = teacher_feedback[-1].content if teacher_feedback and hasattr(teacher_feedback[-1], "content") else (teacher_feedback[-1] if teacher_feedback else "")
+        if isinstance(latest_teacher_feedback, list):
+            latest_teacher_feedback = json.dumps(latest_teacher_feedback, ensure_ascii=False)
 
         for solution in state_solutions:
             if hasattr(solution, "question_id") and hasattr(solution, "solution"):
@@ -128,7 +132,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
         for i in range(0, len(item_list), BATCH_SIZE):
             batch = item_list[i:i + BATCH_SIZE]
             batch_saved = 0
-            question_ids = [item["id"] for item in batch]
+            question_ids = [item.get("question_id") for item in batch]
 
             skip_verify = [
                 question_id
@@ -142,7 +146,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             ]
 
             if intent == Intent.PREPROCESS.value and skip_verify:
-                batch_map = {(item.get("id") or item.get("question_id")): item for item in batch}
+                batch_map = {item.get("question_id"): item for item in batch}
                 for ids in skip_verify:
                     item = batch_map.get(ids)
                     if not item:
@@ -318,9 +322,6 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                     self.logger.agent_node(f"Verifier batch {i // BATCH_SIZE + 1}: saved {len(done_items)} verified questions to database")
 
             for ids in skip_verify:
-                latest_teacher_feedback = teacher_feedback[-1].content if teacher_feedback and hasattr(teacher_feedback[-1], "content") else (teacher_feedback[-1] if teacher_feedback else "")
-                if isinstance(latest_teacher_feedback, list):
-                    latest_teacher_feedback = json.dumps(latest_teacher_feedback, ensure_ascii=False)
                 state.setdefault("response", []).append(MessageResponse(student_id=request.student_id, exam_id=request.exam_id, question_id=ids, feedback=f"Câu trả lời đúng là {latest_teacher_feedback}"))
 
             for item in need_verify:

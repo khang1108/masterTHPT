@@ -113,7 +113,8 @@ class ToolsRegistry:
             getattr(tool, "name", type(tool).__name__): tool
             for tool in (self._tools or [])
         }
-        self.logger.tools_node(f"{messages_key} start: {len(tool_calls)} tool call(s)")
+        tool_names = [tc.get("name", "unknown_tool") for tc in tool_calls]
+        self.logger.tools_node(f"{messages_key} start: {len(tool_calls)} tool call(s) {tool_names}")
 
         tool_messages: list[ToolMessage] = []
         for tool_call in tool_calls:
@@ -153,7 +154,8 @@ class ToolsRegistry:
                     )
                 )
 
-        self.logger.tools_node(f"{messages_key} completed: {len(tool_messages)} tool message(s)")
+        completed_names = [tm.name for tm in tool_messages]
+        self.logger.tools_node(f"{messages_key} completed: {len(tool_messages)} tool message(s) {completed_names}")
         return tool_messages
 
     async def _run_python_research_fallback(self, prompt: str, messages_key: str) -> tuple[str, bool]:

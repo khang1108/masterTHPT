@@ -249,7 +249,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     item_id = item.get("question_id")
                     r = response_by_id.get(item_id)
                     if r:
-                        is_agreed.append(r.agree)
+                        is_agreed.append(r.agree if round_now > 0 else False)
                         confidence.append(r.confidence)
                         discrimination_a.append(r.discrimination_a)
                         difficulty_b.append(r.difficulty_b)
@@ -328,11 +328,10 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "round": round_now + 1,
                 "max_round": max_round,
                 "confidence": [response.confidence],
-                "is_agreed": [response.agree],
+                "is_agreed": [response.agree if round_now > 0 else False],
                 "student_answers": StudentAnswer(question_id=request.question_id, student_answer=student_answer),
                 "teacher_feedback": [review_feedback_message]
             }
-
 
     async def teacher(self, state: AgentState) -> AgentState:
         self.logger.agent_node("Teacher debate started")

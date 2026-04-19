@@ -844,11 +844,9 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "total_questions": len(questions_data),
             "duration": metadata.get("duration"),
             "created_at": datetime.datetime.now().isoformat(),
-            "questions": [q.get("id") for q in questions_data],
+            "questions": [q.get("question_id") for q in questions_data],
             "generated": False,
         }
-
-        self.logger.agent_node(f"Parser extracted exam metadata: {json.dumps(exam, ensure_ascii=False, indent=2)}")
 
         await self.insert_data("masterthpt", "exams", [exam])
         self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")

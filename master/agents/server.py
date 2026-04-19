@@ -105,7 +105,11 @@ async def main():
 		question_id="07931d51-d61b-5a58-bb3b-351a8edccbcd",
         # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 10 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
         # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 11 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
-        file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 12 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
+        # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 12 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
+        # file_path="c:\\Users\\abcsd\\Downloads\\Đề kiểm tra cuối học kì 2 Toán 12 năm 2025 – 2026 sở GD&ĐT Bắc Ninh.pdf"
+        file_path="c:\\Users\\abcsd\\Downloads\\Đề khảo sát thi tốt nghiệp THPT 2026 môn Toán sở GD&ĐT Hải Phòng.pdf"
+        # file_path="c:\\Users\\abcsd\\Downloads\\de-thi-thu-tot-nghiep-thpt-2026-mon-toan-lan-2-so-gddt-son-la (1).pdf"
+        # file_path="c:\\Users\\abcsd\\Downloads\\de-khao-sat-chat-luong-toan-12-dot-2-nam-2025-2026-so-gddt-phu-tho.pdf"
     )
 
     try:

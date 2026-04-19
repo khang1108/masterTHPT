@@ -484,7 +484,6 @@ def verifier_counter_evidence_prompt(batch_input_json: str, conversation: str) -
     {conversation}
     """
 
-
 def verifier_tool_research_prompt(batch_input_json: str, conversation: str) -> str:
   return f"""\
     Bạn đang ở bước tool research sau khi Verifier không tìm được bằng chứng phản biện đủ mạnh bằng lập luận thuần.
