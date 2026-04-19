@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, List
 
 from master.agents.common.execution_plan import ExecutionPlan, StepResult
 from master.agents.common.learner_profile import LearnerProfile
@@ -39,6 +39,7 @@ class AgentState(TypedDict, total=False):
     is_agreed: List[bool]
     reasoning: str
     confidence: list[float]
+    parser_output: list[dict[str, Any]] | None
     teacher_feedback: list[Any]
     verifier_feedback: list[Any]
 

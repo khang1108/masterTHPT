@@ -1049,7 +1049,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
     
     def parser_router(self, state: AgentState) -> str:
         request = state["request"]
-        if request.intent == Intent.PREPROCESS.value:
+        # Nếu request PREPROCESS đã có ``parser_output`` thì nghĩa là parser
+        # đã chạy ở một bước trước đó rồi. Khi đó pipeline cũ phải bỏ qua Parser
+        # và nhảy thẳng sang Teacher để tránh parse lại cùng một file.
+        if request.intent == Intent.PREPROCESS.value and not request.parser_output:
             return "parser"
         return "teacher"
 

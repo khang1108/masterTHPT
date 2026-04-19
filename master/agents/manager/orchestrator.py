@@ -73,6 +73,8 @@ def preprocess_node(state: AgentState) -> AgentState:
         "debate_outputs": state.get("debate_outputs", []),
         "questions": state.get("questions", []),
         "student_answers": state.get("student_answers", []),
+        "parser_output": state.get("parser_output")
+        or (request.parser_output if request is not None else []),
         "selected_questions": state.get("selected_questions", []),
         "profile_updates": state.get("profile_updates", {}),
         "execution_plan": state.get("execution_plan"),
@@ -185,6 +187,9 @@ class ManagerOrchestrator:
         self.repository = repository or AdaptiveDBTools()
         self.adaptive_agent = adaptive_agent or AdaptiveAgent(repository=self.repository)
         self.request_planner = request_planner or RequestPlannerAgent()
+        # Chỉ setup Parser khi execution plan thật sự cần tới.
+        # Cách này giữ thay đổi nhỏ, không làm manager khởi động nặng hơn.
+        self._parser_agent = None
         self.graph = self._build_graph()
         log_agent_event(
             "manager",
@@ -204,6 +209,16 @@ class ManagerOrchestrator:
         if inspect.isawaitable(value):
             return await value
         return value
+
+    async def _get_parser_agent(self):
+        """Khởi tạo muộn ParserAgent để step parser chạy độc lập trong manager."""
+
+        if self._parser_agent is None:
+            from master.agents.parser.parser import ParserAgent
+
+            self._parser_agent = ParserAgent()
+            await self._parser_agent.setup()
+        return self._parser_agent
 
     @staticmethod
     def _append_agent_trail(state: AgentState, *agents: str) -> list[str]:
@@ -657,7 +672,17 @@ class ManagerOrchestrator:
 
         graded_state = {
             **state,
+            "request": pipeline_result.get("request", request)
+            if isinstance(pipeline_result, dict)
+            else request,
             "response": response,
+            "parser_output": (
+                pipeline_result.get("request").parser_output
+                if isinstance(pipeline_result, dict)
+                and pipeline_result.get("request") is not None
+                and hasattr(pipeline_result.get("request"), "parser_output")
+                else state.get("parser_output")
+            ),
             "teacher_feedback": teacher_feedback,
             "verifier_feedback": verifier_feedback,
             "debate_outputs": debate_outputs,
@@ -676,6 +701,80 @@ class ManagerOrchestrator:
             mode="completed",
         )
         return graded_state
+
+    async def _parser_node(self, state: AgentState) -> AgentState:
+        """Chạy Parser như một step độc lập trước khi vào pipeline chấm cũ.
+
+        Mục tiêu của bước nối tối thiểu:
+        - manager thực sự gọi Parser ở step ``parser-1``
+        - lưu ``parser_output`` vào state/request
+        - step kế tiếp vẫn có thể tái sử dụng pipeline Teacher/Verifier hiện tại
+        """
+
+        request = state.get("request")
+        if request is None:
+            return state
+
+        log_agent_event(
+            "manager",
+            "parser:start",
+            state=state,
+            request=request,
+            mode="agent_node",
+        )
+
+        file_path = self._extract_file_path(request)
+        if not file_path:
+            log_agent_event(
+                "manager",
+                "parser:skip_no_file",
+                state=state,
+                request=request,
+                mode="progress",
+            )
+            return state
+
+        parser_request = request.model_copy(update={"file_path": file_path})
+        parser_agent = await self._get_parser_agent()
+        parser_state = await self._maybe_await(
+            parser_agent.parser(
+                AgentState(
+                    request=parser_request,
+                    parser_output=state.get("parser_output"),
+                )
+            )
+        )
+
+        parsed_request = parser_state.get("request") if isinstance(parser_state, dict) else None
+        if parsed_request is None:
+            log_agent_event(
+                "manager",
+                "parser:missing_request",
+                state=state,
+                request=parser_request,
+                mode="progress",
+            )
+            return state
+
+        next_state = {
+            **state,
+            "request": parsed_request,
+            "exam_id": parsed_request.exam_id or state.get("exam_id"),
+            "parser_output": parsed_request.parser_output or [],
+            "agent_trail": self._append_agent_trail(state, "parser"),
+        }
+        log_agent_event(
+            "manager",
+            "parser:done",
+            state=next_state,
+            request=parsed_request,
+            extra={
+                "parsed_question_count": len(parsed_request.parser_output or []),
+                "exam_id": parsed_request.exam_id,
+            },
+            mode="completed",
+        )
+        return next_state
 
     async def _adaptive_node(self, state: AgentState) -> AgentState:
         """Chạy adaptive để cập nhật hồ sơ và gợi ý bài tiếp theo.
@@ -833,6 +932,42 @@ class ManagerOrchestrator:
                 "profile_update_keys": sorted(
                     self._ensure_dict(specialist_state.get("profile_updates")).keys()
                 ),
+                "response_type": execution_plan.final_response_mode.value,
+            }
+            step_results.append(
+                self._build_step_result(
+                    step_id=current_step.step_id,
+                    agent=current_step.agent,
+                    step_output=step_output,
+                    tool_calls_used=current_step.allowed_tools,
+                )
+            )
+            tool_trace.append(
+                {
+                    "step_id": current_step.step_id,
+                    "agent": current_step.agent.value,
+                    "allowed_tools": list(current_step.allowed_tools),
+                }
+            )
+            next_state = {
+                **specialist_state,
+                "execution_plan": execution_plan,
+                "step_results": step_results,
+                "tool_trace": tool_trace,
+                "needs_replan": False,
+                "allowed_tools": list(execution_plan.current_step().allowed_tools)
+                if execution_plan.current_step()
+                else [],
+            }
+        elif current_step.agent == ExecutionAgent.PARSER:
+            # Parser được tách thành step riêng.
+            # Sau bước này, Teacher/Verifier vẫn chạy qua pipeline cũ nhưng sẽ
+            # dùng lại ``request.parser_output`` nên không parse lại file nữa.
+            specialist_state = await self._parser_node(base_state)
+            execution_plan.current_step_index += 1
+            step_output = {
+                "parsed_question_count": len(specialist_state.get("parser_output") or []),
+                "exam_id": specialist_state.get("exam_id"),
                 "response_type": execution_plan.final_response_mode.value,
             }
             step_results.append(
