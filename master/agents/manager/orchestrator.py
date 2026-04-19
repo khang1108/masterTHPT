@@ -465,6 +465,23 @@ class ManagerOrchestrator:
                 )
                 student_record = None
 
+        learner_profile = state.get("learner_profile")
+        if learner_profile is None and student_lookup_identity:
+            try:
+                # Adaptive phụ thuộc trực tiếp vào learner_profile.
+                # Nếu bỏ sót field này trong hydrate thì nhánh adaptive sẽ coi như
+                # chưa có hồ sơ học sinh và trả về ``selected_questions=[]``.
+                learner_profile = await self.repository.get_learner_profile(student_lookup_identity)
+            except RuntimeError:
+                log_agent_event(
+                    "manager",
+                    "hydrate:learner_profile_lookup_failed",
+                    request=request,
+                    extra={"student_lookup_identity": student_lookup_identity},
+                    mode="warning",
+                )
+                learner_profile = None
+
         if student_record is not None:
             learning_goal = student_record.get("learning_goal")
             if isinstance(learning_goal, str) and learning_goal.strip():
@@ -569,6 +586,7 @@ class ManagerOrchestrator:
             **state,
             "request": normalized_request,
             "exam_id": resolved_exam_id,
+            "learner_profile": learner_profile,
             "student_answers": student_answers,
             "questions": questions,
             "history_record": history_record,
@@ -582,6 +600,7 @@ class ManagerOrchestrator:
             extra={
                 "history_found": history_record is not None,
                 "resolved_student_id": resolved_student_id,
+                "has_learner_profile": learner_profile is not None,
                 "has_active_plan": active_plan is not None,
             },
             mode="progress",

@@ -1028,6 +1028,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "year": metadata.get("year"),
             "grade": metadata.get("grade"),
             "source": metadata.get("source"),
+            # Kho đề thi của backend chỉ hiển thị các exam có ``generated = false``.
+            # Nếu parser không set cờ này thì đề vẫn được lưu xuống DB nhưng sẽ bị
+            # loại khỏi query listDocuments, dẫn tới UI không render được đề mới.
+            "generated": False,
             "total_questions": len(questions_data),
             "duration": metadata.get("duration"),
             "created_at": datetime.datetime.now().isoformat(),
