@@ -956,8 +956,8 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         self.logger.agent_node(f"Parser extracted exam metadata: {json.dumps(exam, ensure_ascii=False, indent=2)}")
 
-        # await self.insert_data("masterthpt", "exams", [exam])
-        # self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")
+        await self.insert_data("masterthpt", "exams", [exam])
+        self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")
 
         request = MessageRequest(
             intent=request.intent,
