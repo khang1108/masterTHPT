@@ -165,18 +165,19 @@ class KnowledgeGraphTraceTool(BaseTool):
         )
 
 
-class ToolsRegistry(MongoDBTools):
-    """Mixin that centralizes shared tools, Mongo helpers, and the ReAct loop.
+# class ToolsRegistry(MongoDBTools):
+#     """Mixin that centralizes shared tools, Mongo helpers, and the ReAct loop.
 
-    Tool instances are cached at class level so multiple agents can share the
-    same browser and utility tool setup without repeatedly re-initializing them.
-    """
+#     Tool instances are cached at class level so multiple agents can share the
+#     same browser and utility tool setup without repeatedly re-initializing them.
+#     """
 
-    # Class-level caches are shared across every agent instance so scoped
-    # bundles can be reused without repeatedly booting Playwright.
-    _tool_bundles: dict[str, list[BaseTool]] | None = None
-    _tool_nodes: dict[str, ToolNode | None] | None = None
-    _tool_name_bundles: dict[str, list[str]] | None = None
+#     # Class-level caches are shared across every agent instance so scoped
+#     # bundles can be reused without repeatedly booting Playwright.
+#     _tool_bundles: dict[str, list[BaseTool]] | None = None
+#     _tool_nodes: dict[str, ToolNode | None] | None = None
+#     _tool_name_bundles: dict[str, list[str]] | None = None
+
 class CounterEvidenceDecision(BaseModel):
     found_counter_evidence: bool = Field(
         default=False,
@@ -187,11 +188,14 @@ class CounterEvidenceDecision(BaseModel):
         description="Concrete counter-evidence. Prefer one line per question_id.",
     )
 
-class ToolsRegistry:
+class ToolsRegistry(MongoDBTools):
     # ── Class-level cache (dùng chung toàn bộ agent instances) ────────────────
     _tools: list[BaseTool] | None = None
     _browser = None
     _playwright = None
+    _tool_bundles: dict[str, list[BaseTool]] | None = None
+    _tool_nodes: dict[str, ToolNode | None] | None = None
+    _tool_name_bundles: dict[str, list[str]] | None = None
 
     def _log_tools(self, message: str) -> None:
         """Log tool-related lifecycle events through the agent logger when available."""
