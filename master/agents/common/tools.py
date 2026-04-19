@@ -347,16 +347,53 @@ class ToolsRegistry(MongoDBTools):
         if ToolsRegistry._tool_nodes and selected_bundle in ToolsRegistry._tool_nodes:
             return ToolsRegistry._tool_nodes[selected_bundle]
         return self._tool_node
-    
-    async def get_data(self, database_name: str, collection_name: str, query: dict, limit: int = 10) -> list:
-        collection = ToolsRegistry._mongo_client[database_name][collection_name]
-        return await collection.find(query).to_list(length=limit)
 
-    async def insert_data(self, database_name: str, collection_name: str, documents: list[dict]):
+    async def get_data(
+        self,
+        database_name: str,
+        collection_name: str,
+        query: dict,
+        limit: int = 10,
+    ) -> list:
+        """Doc du lieu Mongo theo duong an toan cua MongoDBTools.
+
+        Ly do khong truy cap truc tiep `ToolsRegistry._mongo_client[...]`:
+        - Trong flow ASK_HINT / REVIEW_MISTAKE, browser tools co the da setup
+          xong nhung Mongo client chua duoc khoi tao.
+        - Khi do `_mongo_client` van la None va truy cap kieu subscript se no
+          loi `'NoneType' object is not subscriptable`.
+        - `super().get_data(...)` tu dong goi `get_mongo_client()` de lazy-init
+          Mongo client dung cach va giu chung mot duong truy cap nhat quan.
+        """
+
+        return await super().get_data(
+            database_name=database_name,
+            collection_name=collection_name,
+            query=query,
+            limit=limit,
+        )
+
+    async def insert_data(
+        self,
+        database_name: str,
+        collection_name: str,
+        documents: list[dict],
+    ):
+        """Ghi du lieu Mongo qua MongoDBTools roi moi thuc hien debug side-effect.
+
+        Muc tieu:
+        - Van giu hanh vi dump `questions` ra file JSON de debug preprocess.
+        - Khong duoc bo qua lazy-init Mongo client cua lop cha.
+        """
+
         if not documents:
             return
-        collection = ToolsRegistry._mongo_client[database_name][collection_name]
-        await collection.insert_many(documents)
+
+        await super().insert_data(
+            database_name=database_name,
+            collection_name=collection_name,
+            documents=documents,
+        )
 
         # Trích xuất và lưu riêng data questions ra file JSON để debug
         if collection_name == "questions":
