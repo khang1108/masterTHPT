@@ -26,6 +26,7 @@ import re
 
 load_dotenv(override=True)
 BATCH_SIZE = 3
+RETRY_COUNT = 2
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
@@ -73,9 +74,9 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             provider="openai_compatible",
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
-            model="gpt-oss-120b",
+            model=os.getenv("TEACHER_MODEL"),
             max_tokens=8000,
-            temperature=0.7,
+            temperature=0.7,    
         )
         await self.setup_tools(llm)
         self._llm_with_single_output = self._llm.with_structured_output(Evaluate)
@@ -112,58 +113,52 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
             feedback = []
             discrimination_a = []
             difficulty_b = []
+            db_saved_total_before = state.get("db_saved_total", 0) or 0
             
             item_list = request.parser_output or []
-            id_to_index = {(item.get("id") or item.get("question_id")): idx for idx, item in enumerate(item_list)} if item_list else {}
+            id_to_index = {item.get("question_id"): idx for idx, item in enumerate(item_list)} if item_list else {}
             remaining_items = []  # Collect items that still need verification
-            db_inserted = 0  # Track total DB inserts this round
-            db_saved_total_before = state.get("db_saved_total", 0) or 0
+            db_inserted = 0       # Track total DB inserts this round
+
             state_is_agreed = state.get("is_agreed", []) or []
             state_discrimination_a = state.get("discrimination_a", []) or []
             state_difficulty_b = state.get("difficulty_b", []) or []
             state_solutions = state.get("solutions", []) or []
+            
             solution_by_id = {}
             for solution in state_solutions:
                 if hasattr(solution, "question_id") and hasattr(solution, "solution"):
                     solution_by_id[solution.question_id] = solution.solution
-                elif isinstance(solution, dict):
-                    question_id = solution.get("question_id")
-                    if question_id:
-                        solution_by_id[question_id] = solution.get("solution")
+                # elif isinstance(solution, dict):
+                #     question_id = solution.get("question_id")
+                #     if question_id:
+                #         solution_by_id[question_id] = solution.get("solution")
 
             for i in range(0, len(item_list), BATCH_SIZE):
                 batch = item_list[i:i + BATCH_SIZE]
                 batch_saved = 0
                 skip_verify = [
                     question_id
-                    for question_id in [(item.get("id") or item.get("question_id")) for item in batch]
-                    if (
-                        id_to_index.get(question_id) is not None
+                    for question_id in [item.get("question_id") for item in batch]
+                    if (id_to_index.get(question_id) is not None
                         and id_to_index[question_id] < len(state_is_agreed)
                         and state_is_agreed[id_to_index[question_id]]
                     )
                 ]
 
                 if skip_verify:
-                    batch_map = {(item.get("id") or item.get("question_id")): item for item in batch}
+                    # Process items that don't need verification and save them directly to the database
+                    batch_map = {item.get("question_id"): item for item in batch}
                     for ids in skip_verify:
                         item = batch_map.get(ids)
                         if not item:
                             continue
 
                         item_index = id_to_index.get(ids)
-                        discrimination_a_value = (
-                            state_discrimination_a[item_index]
-                            if item_index is not None and item_index < len(state_discrimination_a)
-                            else None
-                        )
-                        difficulty_b_value = (
-                            state_difficulty_b[item_index]
-                            if item_index is not None and item_index < len(state_difficulty_b)
-                            else None
-                        )
-                        correct_answer_value = solution_by_id.get(ids)
-                        question_type = (item.get("type") or "").strip().lower()
+                        discrimination_a_value = state_discrimination_a[item_index] if item_index is not None and item_index < len(state_discrimination_a) else None
+                        difficulty_b_value     = state_difficulty_b[item_index]     if item_index is not None and item_index < len(state_difficulty_b)     else None
+                        correct_answer_value   = solution_by_id.get(ids)
+                        question_type          = (item.get("type") or "").strip().lower()
                         normalized_correct_answer = None
 
                         # Normalize correct answer based on question type 
@@ -186,7 +181,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                             normalized_correct_answer = correct_answer_value
 
                         data = {
-                            "question_id": item.get("id") or item.get("question_id"),
+                            "question_id": item.get("question_id"),
                             "question_index": item["question_index"],
                             "type": item.get("type"),
                             "content": item.get("content"),
@@ -201,29 +196,28 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         await self.insert_data("masterthpt", "questions", [data])
                         db_inserted += 1
                         batch_saved += 1
-                    self.logger.agent_node(
-                        f"Teacher batch {i//BATCH_SIZE + 1}: saved {batch_saved} skipped-verify questions to database"
-                    )
+                    self.logger.agent_node(f"Teacher batch {i//BATCH_SIZE + 1}: saved {batch_saved} skipped-verify questions to database")
 
-                need_verify = [item for item in batch if (item.get("id") or item.get("question_id")) not in skip_verify]
+                need_verify = [item for item in batch if item.get("question_id") not in skip_verify]
                 remaining_items.extend(need_verify)
                 if not need_verify:
                     continue
+                
 
+                # CALL LLM
                 batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
                 prompt = teacher_preprocess_prompt(batch_input_json)
+                
                 try:
                     research_evidence, _, research_source = await self.run_counter_evidence_then_tool(
-                        counter_prompt=teacher_counter_evidence_prompt(batch_input_json),
-                        tool_prompt=teacher_tool_research_prompt(batch_input_json),
-                        messages_key="Teacher_feedback",
+                        counter_prompt  =teacher_counter_evidence_prompt(batch_input_json),
+                        tool_prompt     =teacher_tool_research_prompt(batch_input_json),
+                        messages_key    ="Teacher_feedback",
                     )
                 except Exception as error:
                     research_evidence = ""
                     research_source = "none"
-                    self.logger.warning(
-                        f"Teacher research failed for batch {i//BATCH_SIZE + 1}: {error}"
-                    )
+                    self.logger.warning(f"Teacher research failed for batch {i//BATCH_SIZE + 1}: {error}")
 
                 if research_evidence:
                     prompt += (
@@ -231,32 +225,28 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                         f"{research_evidence}\n"
                         "Nếu có bằng chứng từ tool thì phải nhắc ngắn gọn bằng chứng đó trong reasoning hoặc feedback."
                     )
-                responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
-                    self.build_messages(prompt)
-                )
+                responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(self.build_messages(prompt))
 
                 response_by_id = {r.question_id: r for r in responses.results}
-                missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+                missing = [item for item in need_verify if item.get("question_id") not in response_by_id]
                 retry_count = 0
-                while missing and retry_count < 2:
+                while missing and retry_count < RETRY_COUNT:
                     retry_count += 1
                     self.logger.agent_node(f"Teacher retry {retry_count}: {len(missing)} missing items")
                     retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
                     retry_prompt = teacher_preprocess_prompt(retry_json)
                     if research_evidence:
                         retry_prompt += (
-                            f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n"
+                            f"\nRESEARCH_EVIDENCE ({research_source}, ưu tiên trong reasoning/feedback):\n"
                             f"{research_evidence}\n"
                         )
-                    retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(
-                        self.build_messages(retry_prompt)
-                    )
+                    retry_responses: EvaluateBatch = await self._llm_with_batch_output.ainvoke(self.build_messages(retry_prompt))
                     for r in retry_responses.results:
                         response_by_id[r.question_id] = r
-                    missing = [item for item in need_verify if (item.get("id") or item.get("question_id")) not in response_by_id]
+                    missing = [item for item in need_verify if item.get("question_id") not in response_by_id]
 
                 for item in need_verify:
-                    item_id = item.get("id") or item.get("question_id")
+                    item_id = item.get("question_id")
                     r = response_by_id.get(item_id)
                     if r:
                         is_agreed.append(r.agree)
@@ -281,6 +271,7 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                     f"{batch_saved} questions saved this batch, "
                     f"{db_inserted} saved this round so far"
                 )
+
             # Overwrite parser_output with only remaining items that need further verification
             request.parser_output = remaining_items
             db_saved_total = db_saved_total_before + db_inserted
@@ -301,53 +292,36 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
                 "teacher_feedback": feedback,
                 "discrimination_a": discrimination_a,
                 "difficulty_b": difficulty_b,
-                "db_saved_total": db_saved_total,
             }
 
+        question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id})
+        question = question[0] if question else None
+        content = question.get("content") if question else ""
+        options = question.get("options") if question else []
+        content += "\nOptions:\n" + "\n".join(options) if options else ""
+        
         if intent == Intent.ASK_HINT.value:
-            question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id})
-            question = question[0] if question else None
-            content = question.get("content") if question else ""
-            options = question.get("options") if question else []
-            content += "\nOptions:\n" + "\n".join(options) if options else ""
-
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
             student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_hint_prompt(content, student_answer, student_message)
-            print(prompt)
-            response = await self._llm_with_single_output.ainvoke(
-                self.build_messages(prompt)
-            )
+            response = await self._llm_with_single_output.ainvoke(self.build_messages(prompt))
             self.logger.agent_node(f"Hint response: {response}")
-            hint_feedback_message = AIMessage(
-                content=json.dumps(response.model_dump(), ensure_ascii=False)
-            )
+            hint_feedback_message = AIMessage(content=json.dumps(response.model_dump(), ensure_ascii=False))
             return {
                 "request": request,
                 "phase": "END",
                 "teacher_feedback": [hint_feedback_message]
             }
 
-        if intent == Intent.REVIEW_MISTAKE.value:
-            question = await self.get_data("masterthpt", "questions", {"question_id": request.question_id})
-            question = question[0] if question else None
-            content = question.get("content") if question else ""
-            options = question.get("options") if question else []
-            content += "\nOptions:\n" + "\n".join(options) if options else ""
-                
+        if intent == Intent.REVIEW_MISTAKE.value:                
             student_answer = request.student_answers[-1].student_answer if request.student_answers else None
             student_message = request.student_message if request.student_message else ""
 
             prompt = teacher_review_mistake_prompt(content, student_answer, student_message)
-            print(prompt)
-            response = await self._llm_with_single_output.ainvoke(
-                self.build_messages(prompt)
-            )
+            response = await self._llm_with_single_output.ainvoke(self.build_messages(prompt))
             self.logger.agent_node(f"Review mistake response: {response}")
-            review_feedback_message = AIMessage(
-                content=json.dumps(response.model_dump(), ensure_ascii=False)
-            )
+            review_feedback_message = AIMessage(content=json.dumps(response.model_dump(), ensure_ascii=False))
             return {
                 "request": request,
                 "phase": "verify",

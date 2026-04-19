@@ -20,14 +20,8 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 
 class CounterEvidenceDecision(BaseModel):
-    found_counter_evidence: bool = Field(
-        default=False,
-        description="True only if there is concrete math-based counter-evidence already found without tools.",
-    )
-    counter_evidence: str = Field(
-        default="",
-        description="Concrete counter-evidence. Prefer one line per question_id.",
-    )
+    found_counter_evidence: bool = Field(default=False, description="True only if there is concrete math-based counter-evidence already found without tools.")
+    counter_evidence: str = Field(default="", description="Concrete counter-evidence. Prefer one line per question_id.")
 
 class ToolsRegistry:
     # ── Class-level cache (dùng chung toàn bộ agent instances) ────────────────
@@ -73,30 +67,6 @@ class ToolsRegistry:
             return
         collection = ToolsRegistry._mongo_client[database_name][collection_name]
         await collection.insert_many(documents)
-
-        # Trích xuất và lưu riêng data questions ra file JSON để debug
-        if collection_name == "questions":
-            import json
-            import os
-            debug_file = "preprocess_output.json"
-            
-            existing_docs = []
-            if os.path.exists(debug_file):
-                try:
-                    with open(debug_file, "r", encoding="utf-8") as f:
-                        content = f.read().strip()
-                        if content:
-                            existing_docs = json.loads(content)
-                except Exception:
-                    pass
-                    
-            for doc in documents:
-                # Loại bỏ objectid do mongo tự sinh
-                doc_copy = {k: v for k, v in doc.items() if k != "_id"}
-                existing_docs.append(doc_copy)
-                
-            with open(debug_file, "w", encoding="utf-8") as f:
-                json.dump(existing_docs, f, ensure_ascii=False, indent=2)
 
     def _stringify_message_content(self, content: Any) -> str:
         if isinstance(content, str):
@@ -186,11 +156,7 @@ class ToolsRegistry:
         self.logger.tools_node(f"{messages_key} completed: {len(tool_messages)} tool message(s)")
         return tool_messages
 
-    async def _run_python_research_fallback(
-        self,
-        prompt: str,
-        messages_key: str,
-    ) -> tuple[str, bool]:
+    async def _run_python_research_fallback(self, prompt: str, messages_key: str) -> tuple[str, bool]:
         code_prompt = (
             "Hãy viết MỘT đoạn Python ngắn để kiểm tra hoặc tính thử cho yêu cầu research dưới đây. "
             "Ưu tiên dùng sympy nếu phù hợp. Chỉ trả về code Python hợp lệ, không markdown, không giải thích.\n\n"
@@ -232,13 +198,7 @@ class ToolsRegistry:
         )
         return summary_content, True
 
-    async def run_tool_research(
-        self,
-        prompt: str,
-        messages_key: str,
-        require_tool: bool = False,
-        max_steps: int = 4,
-    ) -> tuple[str, bool]:
+    async def run_tool_research(self, prompt: str, messages_key: str, require_tool: bool = False, max_steps: int = 4) -> tuple[str, bool]:
         if not getattr(self, "_llm_with_tools", None):
             raise RuntimeError("LLM with tools has not been initialized. Call setup_tools() first.")
 
@@ -267,47 +227,26 @@ class ToolsRegistry:
             getattr(final_response, "content", final_response)
         )
         if require_tool and not used_tools:
-            self.logger.warning(
-                f"{messages_key} research finished without any tool call after {max_steps} step(s)"
-            )
+            self.logger.warning(f"{messages_key} research finished without any tool call after {max_steps} step(s)")
         return final_content, used_tools
 
-    async def run_counter_evidence_then_tool(
-        self,
-        counter_prompt: str,
-        tool_prompt: str,
-        messages_key: str,
-        max_steps: int = 4,
-    ) -> tuple[str, bool, str]:
+    async def run_counter_evidence_then_tool(self, counter_prompt: str, tool_prompt: str, messages_key: str, max_steps: int = 4) -> tuple[str, bool, str]:
         if not getattr(self, "_llm", None):
             raise RuntimeError("LLM has not been initialized. Call setup_tools() first.")
 
         try:
             research_llm = self._llm.with_structured_output(CounterEvidenceDecision)
-            decision: CounterEvidenceDecision = await research_llm.ainvoke(
-                self.build_messages(counter_prompt)
-            )
+            decision: CounterEvidenceDecision = await research_llm.ainvoke(self.build_messages(counter_prompt))
             counter_evidence = (decision.counter_evidence or "").strip()
             if decision.found_counter_evidence and counter_evidence:
-                self.logger.agent_node(
-                    f"{messages_key} research: found counter_evidence without tools"
-                )
-                return counter_evidence, False, "counter_evidence"
+                self.logger.agent_node(f"{messages_key} research: found counter evidence without tools")
+                return counter_evidence, False, "counter evidence"
 
-            self.logger.agent_node(
-                f"{messages_key} research: no counter_evidence found, fallback to tools"
-            )
+            self.logger.agent_node(f"{messages_key} research: no counter evidence found, fallback to tools")
         except Exception as error:
-            self.logger.warning(
-                f"{messages_key} counter_evidence step failed, fallback to tools: {error}"
-            )
-
-        tool_evidence, used_tools = await self.run_tool_research(
-            tool_prompt,
-            messages_key=messages_key,
-            require_tool=True,
-            max_steps=max_steps,
-        )
+            self.logger.warning(f"{messages_key} counter evidence step failed, fallback to tools: {error}")
+    
+        tool_evidence, used_tools = await self.run_tool_research(tool_prompt, messages_key=messages_key, require_tool=True, max_steps=max_steps)
         return tool_evidence, used_tools, "tool"
 
 

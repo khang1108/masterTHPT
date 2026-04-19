@@ -324,22 +324,21 @@ def teacher_preprocess_prompt(batch_input_json: str) -> str:
 
 def teacher_counter_evidence_prompt(batch_input_json: str) -> str:
   return f"""\
-    Ban dang o buoc tu phan bien truoc khi Teacher ket luan batch cau hoi.
+    Bạn đang ở bước tự phản biện trước khi Teacher kêt luận batch câu hỏi.
 
-    Muc tieu:
-    - Thu tu phan bien dap an/huong giai du kien cua chinh ban bang kien thuc toan hoc, lap luan doc lap, phan vi du, truong hop bien hoac cach giai thay the.
-    - KHONG duoc goi tool o buoc nay.
-    - Chi danh dau `found_counter_evidence = true` neu ban co bang chung phan bien cu the, dung duoc ngay, gan voi tung `question_id`.
-    - Neu khong tim duoc bang chung phan bien cu the thi de `found_counter_evidence = false` va `counter_evidence = ""`.
+    Mục tiêu:
+    - Thứ tự phản biện đáp án/hướng giải dự kiến của chính bạn bằng kiến thức toán học, lập luận độc lập, phần ví dụ, trường hợp biên hoặc cách giải thay thế.
+    - KHÔNG được gọi tool ở bước này.
+    - Chỉ đánh dấu 'found_counter_evidence = true' nếu bạn có bằng chứng phản biện cụ thể, dùng được ngay, gắn với từng question_id.
+    - Nếu không tìm được bằng chứng phản biện cụ thể thì để `found_counter_evidence = false` và `counter_evidence = ""`.
 
-    Output bat buoc la JSON hop le:
+    Output bắt buộc là JSON hợp lệ:
     {{
       "found_counter_evidence": boolean,
       "counter_evidence": "string"
     }}
 
-    Neu co bang chung, moi dong cua `counter_evidence` phai theo dang:
-    `question_id=... | evidence=...`
+    Nếu có bằng chứng, mỗi dòng của `counter_evidence` phải theo dạng:`question_id=... | evidence=...`
 
     BATCH_INPUT:
     {batch_input_json}
