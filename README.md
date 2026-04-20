@@ -176,17 +176,7 @@ We welcome and appreciate all contributions to the MASTER platform. Thank you to
 [![Contributors](https://img.shields.io/github/contributors/khang1108/MASTER---Multi-Agent-System-for-Teaching-Evaluating-Reviewing?style=for-the-badge)](https://github.com/khang1108/MASTER---Multi-Agent-System-for-Teaching-Evaluating-Reviewing/graphs/contributors)
 
 <p align="left">
-  <!-- Thay đổi hoặc thêm GitHub username của các thành viên trong đội vào bên dưới -->
-  <a href="https://github.com/khang1108">
-    <img src="https://github.com/khang1108.png?size=80" width="80" height="80" alt="khang1108" style="border-radius: 50%;"/>
-  </a>
-  <a href="https://github.com/phucvo-nino-nvd">
-    <img src="https://avatars.githubusercontent.com/u/187082162?v=4?size=80" width="80" height="80" alt="phucvo-nino-nvd" style="border-radius: 50%;"/>
-  </a>
-  <a href="https://github.com/huylhn1810">
-    <img src="https://github.com/huylhn1810.png?size=80" width="80" height="80" alt="phucvo-nino-nvd" style="border-radius: 50%;"/>
-  </a>
-  <a href="https://github.com/Nagahuy">
-    <img src="https://github.com/Nagahuy.png?size=80" width="80" height="80" alt="phucvo-nino-nvd" style="border-radius: 50%;"/>
+  <a href="https://github.com/khang1108/masterTHPT/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=khang1108/masterTHPT" />
   </a>
 </p>
