@@ -26,6 +26,7 @@ import re
 
 load_dotenv(override=True)
 BATCH_SIZE = 3
+MAX_ROUND = 3
 RETRY_COUNT = 2
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────
@@ -105,7 +106,8 @@ class TeacherAgent(ToolsRegistry, BaseAgent):
         request = state["request"]
         intent = request.intent
         round_now = state.get("round", 0)
-        max_round = state.get("max_round", 3)
+        max_round = state.get("max_round", MAX_ROUND)
+
         if intent == Intent.PREPROCESS.value:
             is_agreed= []
             solutions = []

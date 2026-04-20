@@ -1,11 +1,11 @@
 from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
-from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageStat
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import ValidationError
 
+from master.agents.parser.output import QuestionOutput, PageReviewOutput, Type 
 from master.agents import BaseAgent
 from master.agents.common.tools import ToolsRegistry
 from master.agents.common.message import Intent, MessageRequest
@@ -13,13 +13,11 @@ from master.agents.common.state import AgentState
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
     parser_document_review_instruction,
-    parser_ocr_instruction,
     parser_page_review_instruction,
     parser_review_system_prompt,
     parser_system_prompt,
 )
 
-import asyncio
 import base64
 import datetime
 import uuid
@@ -40,111 +38,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 
 load_dotenv(override=True)
 
-class Type(str, Enum):
-    MULTIPLE_CHOICE = "multiple_choice"
-    TRUE_FALSE = "true_false"
-    SHORT_ANSWER = "short_ans"
-
-class QuestionOutput(BaseModel):
-    question_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    question_index: int = Field(description="Số thứ tự câu hỏi trong đề, bắt đầu từ 1")
-    type: Type = Field(description="Loại câu hỏi, là 1 trong 3 loại sau 'multiple_choice' hoặc 'true_false' hoặc 'short_ans'")
-    content: str = Field(description="Nội dung câu hỏi, có thể bao gồm cả text và LaTeX, bỏ phần đầu như 'Câu 1: ' hoặc '1.'")
-    options: Optional[list[str]] = Field(default=None, description="Danh sách lựa chọn nếu là câu hỏi trắc nghiệm, để trống nếu là câu hỏi tự luận")
-    has_image: bool = Field(description="Câu hỏi có chứa hình ảnh hay không")
-    image_url: Optional[str] = Field(default=None, description="URL của hình ảnh nếu có")
-    generated: bool = Field(default=False, description="True nếu câu hỏi được tạo ra bởi LLM, False nếu được trích xuất trực tiếp từ đề thi. Nếu generated = True thì các trường có thể không chính xác và chỉ mang tính tham khảo.")
-
-
-    @field_validator("content")
-    @classmethod
-    def validate_content(cls, value: str) -> str:
-        content = value.strip()
-        if not content:
-            raise ValueError("content must not be empty")
-        return content
-
-    @field_validator("options")
-    @classmethod
-    def validate_options_items(cls, value: Optional[list[str]]) -> Optional[list[str]]:
-        if value is None:
-            return None
-
-        normalized_options = [str(option).strip() for option in value if str(option).strip()]
-        return normalized_options or None
-
-    @model_validator(mode="after")
-    def validate_question_rules(self) -> "QuestionOutput":
-        if self.type == Type.MULTIPLE_CHOICE:
-            if not self.options or len(self.options) != 4:
-                raise ValueError("multiple_choice must have exactly 4 options")
-
-            expected_prefixes = ("A.", "B.", "C.", "D.")
-            all_correct = all(
-                option.startswith(prefix)
-                for option, prefix in zip(self.options, expected_prefixes)
-            )
-
-            if not all_correct:
-                # Normalize: strip existing wrong prefixes and add correct ones
-                normalized = []
-                for option, prefix in zip(self.options, expected_prefixes):
-                    text = option.strip()
-                    # Remove existing prefix patterns like "a.", "a)", "A)", "1.", etc.
-                    text = re.sub(r"^[A-Da-d1-4][.\)]\s*", "", text).strip()
-                    normalized.append(f"{prefix} {text}")
-                self.options = normalized
-
-        elif self.type == Type.TRUE_FALSE:
-            if not self.options:
-                raise ValueError("true_false must have options")
-
-            expected_prefixes = list("abcd")[:len(self.options)]
-            normalized = []
-            for option, letter in zip(self.options, expected_prefixes):
-                text = option.strip()
-                if re.match(r"^[a-d][.\)]", text):
-                    normalized.append(text)
-                else:
-                    # Remove wrong prefix and add correct one
-                    text = re.sub(r"^[A-Da-d1-4][.\)]\s*", "", text).strip()
-                    normalized.append(f"{letter}) {text}")
-            self.options = normalized
-
-        elif self.type == Type.SHORT_ANSWER:
-            if self.options is not None:
-                raise ValueError("short_ans must have options = []")
-
-        return self
-
-
-class OCRMetadataOutput(BaseModel):
-    subject: Optional[str] = None
-    exam_type: Optional[str] = None
-    year: Optional[int] = None
-    grade: Optional[int] = None
-    source: Optional[str] = None
-    total_questions: Optional[int] = None
-    duration: Optional[int] = None
-    generated: bool = Field(default=False, description="True nếu metadata được tạo ra bởi LLM, False nếu được trích xuất trực tiếp từ đề thi. Nếu generated = True thì các trường có thể không chính xác và chỉ mang tính tham khảo.")
-    
-
-class OCRQuestionReviewOutput(BaseModel):
-    question_marker: Optional[str] = None
-    type: Type
-    content: str
-    options: list[str] = Field(default_factory=list)
-    has_image: bool = False
-    image_url: Optional[str] = None
-
-
-class OCRPageReviewOutput(BaseModel):
-    metadata: OCRMetadataOutput = Field(default_factory=OCRMetadataOutput)
-    questions: list[OCRQuestionReviewOutput] = Field(default_factory=list)
-
-
 class ParserAgent(ToolsRegistry, BaseAgent):
-
     def __init__(self):
         super().__init__(agent_role="Parser")
         self.system_prompt = parser_system_prompt()
@@ -165,23 +59,38 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             max_tokens=8192,
         )
         self._llm = llm
-        try:
-            self._review_llm = LLMClient.chat_model(
-                provider="openai_compatible",
-                base_url=os.getenv("FPT_BASE_URL"),
-                api_key=os.getenv("FPT_API_KEY"),
-                model=os.getenv("PARSER_REVIEW_MODEL"),
-                temperature=0.1,
-                top_p=0.8,
-                max_tokens=8192,
-            )
-            self._review_llm_with_output = self._review_llm.with_structured_output(OCRPageReviewOutput)
-        except Exception as error:
-            self.logger.warning(f"Parser review LLM setup failed, fallback to OCR LLM: {error}")
-            self._review_llm = self._llm
-            self._review_llm_with_output = self._review_llm.with_structured_output(OCRPageReviewOutput)
+        self._review_llm = llm
+        self._review_llm_with_output = self._review_llm.with_structured_output(PageReviewOutput)
         self.logger.agent_node("Parser setup completed")
 
+    def _decode_escaped_text(self, text: str | None) -> str:
+        normalized = str(text or "").strip()
+        if not normalized:
+            return ""
+
+        if any(token in normalized for token in ('\\"', "\\n", "\\r", "\\t")):
+            normalized = (
+                normalized
+                .replace("\\r", "\r")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace('\\"', '"')
+            )
+
+        return normalized.strip()
+    def _fold_text(self, text: str | None) -> str:
+        normalized = unicodedata.normalize("NFD", str(text or ""))
+        without_marks = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+        return without_marks.replace("đ", "d").replace("Đ", "D").lower()
+    def _starts_with_question_marker(self, text: str | None) -> bool:
+        return bool(re.match(r"^\s*(?:cau|bai)\s*\d+\b", self._fold_text(text), flags=re.IGNORECASE))
+    def _has_question_marker(self, item: dict) -> bool:
+        marker = str(item.get("question_marker") or "").strip()
+        if marker:
+            return self._starts_with_question_marker(marker)
+        return self._starts_with_question_marker(item.get("content"))
+    
+    
     def _extract_options_from_content(self, content: str, options: list | None) -> tuple[str, list[str]]:
         if options:
             return content, options
@@ -214,61 +123,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         self.logger.agent_node(f"Parser extracted {len(extracted_options)} options from content for true_false question")
         return cleaned_content, extracted_options
-
-    def _normalize_question_type(self, raw_type: str | None, options: list | None) -> Type:
-        if options and len(options) >= 2:
-            has_uppercase = all(isinstance(opt, str) and re.match(r'^[A-D]\.', opt.strip()) for opt in options)
-            has_lowercase = all(isinstance(opt, str) and re.match(r'^[a-d][.)]', opt.strip()) for opt in options)
-            if has_uppercase and len(options) == 4:
-                return Type.MULTIPLE_CHOICE
-            if has_lowercase:
-                return Type.TRUE_FALSE
-
-        if raw_type:
-            raw = str(raw_type).strip().lower()
-            
-            if raw in {"short_ans", "short_answer", "tự luận", "tu luan"}:
-                return Type.SHORT_ANSWER
-                
-            if raw in {"multiple_choice", "multiple choice", "trắc nghiệm", "trac nghiem"}:
-                return Type.MULTIPLE_CHOICE
-                
-            if raw in {"true_false", "true false", "đúng sai", "đúng/sai", "dung sai"}:
-                return Type.TRUE_FALSE if options else Type.SHORT_ANSWER
-                
-            try:
-                return Type(raw)
-            except ValueError:
-                pass
-
-        if not options:
-            return Type.SHORT_ANSWER
-
-        return Type.MULTIPLE_CHOICE
-    def _decode_escaped_text(self, text: str | None) -> str:
-        normalized = str(text or "").strip()
-        if not normalized:
-            return ""
-
-        if any(token in normalized for token in ('\\"', "\\n", "\\r", "\\t")):
-            normalized = (
-                normalized
-                .replace("\\r", "\r")
-                .replace("\\n", "\n")
-                .replace("\\t", "\t")
-                .replace('\\"', '"')
-            )
-
-        return normalized.strip()
-
-    def _fold_text(self, text: str | None) -> str:
-        normalized = unicodedata.normalize("NFD", str(text or ""))
-        without_marks = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
-        return without_marks.replace("đ", "d").replace("Đ", "D").lower()
-
-    def _starts_with_question_marker(self, text: str | None) -> bool:
-        return bool(re.match(r"^\s*(?:cau|bai)\s*\d+\b", self._fold_text(text), flags=re.IGNORECASE))
-
     def _extract_embedded_questions(self, text: str | None) -> list[dict]:
         normalized = self._decode_escaped_text(text)
         if not normalized:
@@ -310,7 +164,82 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                     return embedded_questions
 
         return []
+    def _extract_multiple_choice_options_from_content(self, content: str, options: list | None) -> tuple[str, list[str]]:
+        if options and len(options) == 4:
+            return content, options
 
+        marker_pattern = re.compile(r"(?<!\w)([A-D][\.]|\d+\.|\d+\))\s*", re.IGNORECASE)
+        matches = list(marker_pattern.finditer(content))
+        if len(matches) < 4:
+            return content, options or []
+
+        for start_idx in range(0, len(matches) - 3):
+            selected = matches[start_idx:start_idx + 4]
+            labels = [match.group(1)[0].upper() for match in selected]
+            if labels != ["A", "B", "C", "D"]:
+                continue
+
+            extracted_options: list[str] = []
+            for idx, match in enumerate(selected):
+                start = match.start()
+                end = selected[idx + 1].start() if idx + 1 < len(selected) else len(content)
+                option_block = content[start:end].strip()
+                option_text = re.sub(r"^[A-Da-d][\.]\s*", "", option_block).strip()
+                extracted_options.append(f"{labels[idx]}. {option_text}")
+
+            cleaned_content = content[:selected[0].start()].strip()
+            self.logger.agent_node(f"Parser extracted {len(extracted_options)} options from content for multiple_choice question")
+            return cleaned_content, extracted_options
+
+        return content, options or []
+    def _extract_questions_from_ocr_payload(self, payload: dict) -> list[dict]:
+        page_questions: list[dict] = []
+
+        if isinstance(payload, dict) and isinstance(payload.get("questions"), list):
+            page_questions = [q for q in payload["questions"] if isinstance(q, dict)]
+        elif isinstance(payload, dict) and "content" in payload:
+            page_questions = [payload]
+        elif isinstance(payload, dict) and "raw_text" in payload:
+            page_questions = [{"content": payload.get("raw_text", "")}]
+
+        normalized_page_questions: list[dict] = []
+        for item in page_questions:
+            embedded_questions = self._extract_embedded_questions(item.get("content"))
+            if embedded_questions:
+                normalized_page_questions.extend(embedded_questions)
+                self.logger.agent_node(f"Parser expanded embedded OCR JSON into {len(embedded_questions)} questions")
+                continue
+            normalized_page_questions.append(item)
+
+        return normalized_page_questions
+    
+
+    def _normalize_question_type(self, raw_type: str | None, options: list | None) -> Type:
+        if options and len(options) >= 2:
+            has_uppercase = all(isinstance(opt, str) and re.match(r'^[A-D]\.', opt.strip()) for opt in options)
+            has_lowercase = all(isinstance(opt, str) and re.match(r'^[a-d][.)]', opt.strip()) for opt in options)
+            if has_uppercase and len(options) == 4:
+                return Type.MULTIPLE_CHOICE
+            if has_lowercase:
+                return Type.TRUE_FALSE
+
+        if raw_type:
+            raw = str(raw_type).strip().lower()
+             
+            if raw in {"short_ans", "short_answer", "tự luận", "tu luan"}:                     return Type.SHORT_ANSWER
+            if raw in {"multiple_choice", "multiple choice", "trắc nghiệm", "trac nghiem"}:    return Type.MULTIPLE_CHOICE
+            if raw in {"true_false", "true false", "đúng sai", "đúng/sai", "dung sai"}:        return Type.TRUE_FALSE
+            return Type.TRUE_FALSE if options else Type.SHORT_ANSWER
+            
+            try:
+                return Type(raw)
+            except ValueError:
+                pass
+
+        if not options:
+            return Type.SHORT_ANSWER
+
+        return Type.MULTIPLE_CHOICE
     def _normalize_question_content(self, content: str | None) -> str:
         normalized = self._decode_escaped_text(content)
         if not normalized:
@@ -356,63 +285,8 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         return normalized_options
 
-    def _extract_multiple_choice_options_from_content(self, content: str, options: list | None) -> tuple[str, list[str]]:
-        if options and len(options) == 4:
-            return content, options
 
-        marker_pattern = re.compile(r"(?<!\w)([A-D][\.\)])\s*", re.IGNORECASE)
-        matches = list(marker_pattern.finditer(content))
-        if len(matches) < 4:
-            return content, options or []
-
-        for start_idx in range(0, len(matches) - 3):
-            selected = matches[start_idx:start_idx + 4]
-            labels = [match.group(1)[0].upper() for match in selected]
-            if labels != ["A", "B", "C", "D"]:
-                continue
-
-            extracted_options: list[str] = []
-            for idx, match in enumerate(selected):
-                start = match.start()
-                end = selected[idx + 1].start() if idx + 1 < len(selected) else len(content)
-                option_block = content[start:end].strip()
-                option_text = re.sub(r"^[A-Da-d][\.\)]\s*", "", option_block).strip()
-                extracted_options.append(f"{labels[idx]}. {option_text}")
-
-            cleaned_content = content[:selected[0].start()].strip()
-            self.logger.agent_node(f"Parser extracted {len(extracted_options)} options from content for multiple_choice question")
-            return cleaned_content, extracted_options
-
-        return content, options or []
-
-    def _extract_questions_from_ocr_payload(self, payload: dict) -> list[dict]:
-        page_questions: list[dict] = []
-
-        if isinstance(payload, dict) and isinstance(payload.get("questions"), list):
-            page_questions = [q for q in payload["questions"] if isinstance(q, dict)]
-        elif isinstance(payload, dict) and "content" in payload:
-            page_questions = [payload]
-        elif isinstance(payload, dict) and "raw_text" in payload:
-            page_questions = [{"content": payload.get("raw_text", "")}]
-
-        normalized_page_questions: list[dict] = []
-        for item in page_questions:
-            embedded_questions = self._extract_embedded_questions(item.get("content"))
-            if embedded_questions:
-                normalized_page_questions.extend(embedded_questions)
-                self.logger.agent_node(f"Parser expanded embedded OCR JSON into {len(embedded_questions)} questions")
-                continue
-            normalized_page_questions.append(item)
-
-        return normalized_page_questions
-
-    def _has_question_marker(self, item: dict) -> bool:
-        marker = str(item.get("question_marker") or "").strip()
-        if marker:
-            return self._starts_with_question_marker(marker)
-
-        return self._starts_with_question_marker(item.get("content"))
-
+    # Fix the case where a question is split into multiple pages
     def _merge_continuation_questions(self, questions: list[dict]) -> list[dict]:
         merged: list[dict] = []
 
@@ -471,7 +345,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         with open(file_path, "rb") as f:
             raw_bytes = f.read()
         return source_type, [(1, raw_bytes, os.path.basename(file_path))]
-
     def _drop_white_page(self, image_bytes: bytes) -> bool:
         try:
             with Image.open(io.BytesIO(image_bytes)) as image:
@@ -489,70 +362,9 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         except Exception as error:
             self.logger.error(f"Drop white page failed: {error}")
             return False
-
     def _count_questions_in_payload(self, payload: dict) -> int:
         return len(self._extract_questions_from_ocr_payload(payload))
 
-    def _page_ocr_text(self, payload: dict) -> str:
-        if not isinstance(payload, dict):
-            return ""
-
-        parts: list[str] = []
-        for question in self._extract_questions_from_ocr_payload(payload):
-            marker = str(question.get("question_marker") or "").strip()
-            content = self._decode_escaped_text(question.get("content"))
-            options = self._normalize_options(question.get("options"))
-            section = "\n".join(part for part in [marker, content, *options] if part)
-            if section:
-                parts.append(section)
-
-        raw_text = self._decode_escaped_text(payload.get("raw_text"))
-        if raw_text:
-            parts.append(raw_text)
-
-        return "\n\n".join(parts).strip()
-
-    def _review_page_ocr_output(self, *, page_num: int, image_bytes: bytes, ocr_output: dict, previous_page_context: str = "") -> dict:
-        if not getattr(self, "_review_llm_with_output", None):
-            return ocr_output
-
-        instruction = parser_page_review_instruction(
-            page_num=page_num,
-            current_page_candidate_json=json.dumps(ocr_output, ensure_ascii=False, indent=2),
-            previous_page_context=previous_page_context,
-        )
-        message = HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": instruction,
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
-                    },
-                },
-            ]
-        )
-
-        raw_count = self._count_questions_in_payload(ocr_output)
-        try:
-            review_result: OCRPageReviewOutput = self._review_llm_with_output.invoke(
-                [
-                    SystemMessage(content=self._review_system_prompt),
-                    message,
-                ]
-            )
-        except Exception as error:
-            self.logger.warning(f"Parser page review failed page={page_num}: {error}")
-            return ocr_output
-
-        reviewed_payload = review_result.model_dump(exclude_none=True)
-        reviewed_count = self._count_questions_in_payload(reviewed_payload)
-
-        self.logger.agent_node(f"Parser page review applied page={page_num} questions_before={raw_count} questions_after={reviewed_count}")
-        return reviewed_payload
 
     def _ocr_single_page(self, image_bytes: bytes, instruction: str) -> dict:
         if self._llm is None:
@@ -589,13 +401,71 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             return json.loads(clean)
         except json.JSONDecodeError:
             return {"raw_text": clean}
+    def _review_page_ocr_output(self, *, page_num: int, image_bytes: bytes, ocr_output: dict, previous_page_context: str = "") -> dict:
+        if not getattr(self, "_review_llm_with_output", None):
+            return ocr_output
 
+        instruction = parser_page_review_instruction(
+            page_num=page_num,
+            current_page_candidate_json=json.dumps(ocr_output, ensure_ascii=False, indent=2),
+            previous_page_context=previous_page_context,
+        )
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": instruction,
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                    },
+                },
+            ]
+        )
+
+        raw_count = self._count_questions_in_payload(ocr_output)
+        try:
+            review_result: PageReviewOutput = self._review_llm_with_output.invoke(
+                [
+                    SystemMessage(content=self._review_system_prompt),
+                    message,
+                ]
+            )
+        except Exception as error:
+            self.logger.warning(f"Parser page review failed page={page_num}: {error}")
+            return ocr_output
+
+        reviewed_payload = review_result.model_dump(exclude_none=True)
+        reviewed_count = self._count_questions_in_payload(reviewed_payload)
+
+        self.logger.agent_node(f"Parser page review applied page={page_num} questions_before={raw_count} questions_after={reviewed_count}")
+        return reviewed_payload
+    def _page_ocr_text(self, payload: dict) -> str:
+        if not isinstance(payload, dict):
+            return ""
+
+        parts: list[str] = []
+        for question in self._extract_questions_from_ocr_payload(payload):
+            marker = str(question.get("question_marker") or "").strip()
+            content = self._decode_escaped_text(question.get("content"))
+            options = self._normalize_options(question.get("options"))
+            section = "\n".join(part for part in [marker, content, *options] if part)
+            if section:
+                parts.append(section)
+
+        raw_text = self._decode_escaped_text(payload.get("raw_text"))
+        if raw_text:
+            parts.append(raw_text)
+
+        return "\n\n".join(parts).strip()
+    
     def _flatten_page_questions(self, ocr_pages: list[tuple[int, dict]]) -> dict:
         return {
             "metadata": ocr_pages[0][1].get("metadata", {}) if ocr_pages else {},
             "questions": [question for _, page in ocr_pages for question in self._extract_questions_from_ocr_payload(page)],
         }
-
     def _review_document_ocr_output(self, *, page_payloads: list[tuple[int, bytes, str]], ocr_pages: list[tuple[int, dict]],) -> dict:
         if not getattr(self, "_review_llm_with_output", None):
             return self._flatten_page_questions(ocr_pages)
@@ -632,7 +502,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         raw_count = sum(self._count_questions_in_payload(page) for _, page in ocr_pages)
         try:
-            review_result: OCRPageReviewOutput = self._review_llm_with_output.invoke(
+            review_result: PageReviewOutput = self._review_llm_with_output.invoke(
                 [
                     SystemMessage(content=self._review_system_prompt),
                     HumanMessage(content=message_content),
@@ -646,7 +516,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         reviewed_count = self._count_questions_in_payload(reviewed_payload)
         self.logger.agent_node(f"Parser document review applied questions_before={raw_count} questions_after={reviewed_count}")
         return reviewed_payload
-
     async def _ocr_file(self, file_path: str, batch_size: Optional[int] = None) -> list[dict]:
         if not os.path.exists(file_path):
             self.logger.warning(f"Parser input file not found: {file_path}")
@@ -695,9 +564,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
                         completed_pages += 1
                         self.logger.warning(f"Parser OCR failed page={page_num}: {e}")
 
-            self.logger.agent_node(
-                f"Parser OCR batch {batch_index}/{total_batches} completed pages={batch_page_nums}"
-            )
+            self.logger.agent_node(f"Parser OCR batch {batch_index}/{total_batches} completed pages={batch_page_nums}")
 
         # Sort results by page number to ensure correct order
         ocr_pages = [(page_num, all_results[page_num]) for page_num in sorted(all_results.keys())]
@@ -750,7 +617,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             # Normalize: extract options embedded in content for true_false questions
             raw_type = item.get("type", "")
             raw_type_lower = str(raw_type).strip().lower() if raw_type else ""
-            if raw_type_lower in {"true_false", "true false", "Ã„â€˜ÃƒÂºng sai", "Ã„â€˜ÃƒÂºng/sai", "dung sai"} or not options:
+            if raw_type_lower in {"true_false", "true false", "Đúng sai", "Đúng/sai", "sai", "dung sai"} or not options:
                 content, options = self._extract_options_from_content(content, options)
 
             # Get the type of the question
@@ -797,13 +664,13 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "metadata": document_output.get("metadata", {}),
             "questions": [q.model_dump() for q in questions],
         }
-    
+        
+
     async def parser(self, state: AgentState) -> AgentState:
         request = state["request"]
         file_path = request.file_path
         if not file_path:
             self.logger.warning("Parser request missing file_path in parser_output")
-            
             return AgentState(request=request)
 
         ocr_result = await self._ocr_file(file_path, batch_size=2)

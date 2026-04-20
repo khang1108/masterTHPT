@@ -189,7 +189,6 @@ class ToolsRegistry:
             HumanMessage(
                 content=(
                     "Tóm tắt ngắn gọn các bằng chứng vừa kiểm tra được. "
-                    "Mỗi dòng theo dạng `question_id=... | tool=Python_REPL | evidence=...`. "
                     "Nếu code lỗi thì nêu rõ lỗi đó."
                 )
             )

@@ -443,7 +443,7 @@ def verifier_system_prompt() -> str:
   """
 
 
-def verifier_prompt(batch_input_json: str) -> str:
+def verifier_summary_prompt(batch_input_json: str) -> str:
   return f"""\
     Kiểm tra lại đánh giá của Teacher cho toàn bộ câu hỏi trong BATCH_INPUT.
 

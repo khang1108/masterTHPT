@@ -10,8 +10,8 @@ from master.agents.common.tools import ToolsRegistry
 from master.agents.teacher.teacher import EvaluateBatch
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
-    verifier_prompt,
     verifier_system_prompt,
+    verifier_summary_prompt,
     verifier_counter_evidence_prompt,
     verifier_tool_research_prompt,
 )
@@ -221,7 +221,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
             batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
             conversation = self.format_conversation(state)
-            prompt = verifier_prompt(batch_input_json)
+            prompt = verifier_summary_prompt(batch_input_json)
             prompt += conversation
 
             try:
@@ -232,8 +232,8 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 self.logger.warning(f"Verifier research failed for batch {i // BATCH_SIZE + 1}: {error}")
 
             if research_evidence:
-                prompt += f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n{research_evidence}\nIf RESEARCH_EVIDENCE exists, mention the strongest evidence briefly in reasoning or feedback."
-            responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(prompt))
+                prompt += f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n{research_evidence}\nLưu ý: Bạn phải ưu tiên dùng dữ liệu này để lập luận. Hãy trích dẫn ngắn gọn bằng chứng thuyết phục nhất vào phần phản hồi."
+                responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(prompt))
 
             response_by_id = {r.question_id: r for r in responses.results}
             missing = [item for item in need_verify if item.get("question_id") not in response_by_id]
@@ -242,10 +242,10 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 retry_count += 1
                 self.logger.agent_node(f"Verifier retry {retry_count}: {len(missing)} missing items")
                 retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
-                retry_prompt = verifier_prompt(retry_json)
+                retry_prompt = verifier_summary_prompt(retry_json)
                 retry_prompt += conversation
                 if research_evidence:
-                    retry_prompt += f"\nRESEARCH_EVIDENCE ({research_source}, prioritize in reasoning/feedback):\n{research_evidence}\nIf RESEARCH_EVIDENCE exists, mention the strongest evidence briefly in reasoning or feedback."
+                    retry_prompt += f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n{research_evidence}\nLưu ý: Bạn phải ưu tiên dùng dữ liệu này để lập luận. Hãy trích dẫn ngắn gọn bằng chứng thuyết phục nhất vào phần phản hồi."
                 retry_responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(retry_prompt))
                 for result in retry_responses.results:
                     response_by_id[result.question_id] = result
