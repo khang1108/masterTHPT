@@ -148,10 +148,10 @@ class ParserAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
         super().__init__(agent_role="Parser")
         self.system_prompt = parser_system_prompt()
+        self._review_system_prompt = parser_review_system_prompt()
         self._llm = None
         self._review_llm = None
         self._review_llm_with_output = None
-        self._review_system_prompt = parser_review_system_prompt()
 
     async def setup(self):
         self.logger.agent_node("Parser setup started")
@@ -165,30 +165,21 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             max_tokens=8192,
         )
         self._llm = llm
-        review_provider = os.getenv("PARSER_REVIEW_PROVIDER") or "openai_compatible"
-        review_base_url = os.getenv("PARSER_REVIEW_BASE_URL") or os.getenv("FPT_BASE_URL")
-        review_api_key = os.getenv("PARSER_REVIEW_API_KEY") or os.getenv("FPT_API_KEY")
-        review_model = os.getenv("PARSER_REVIEW_MODEL")
-
         try:
             self._review_llm = LLMClient.chat_model(
-                provider=review_provider,
-                base_url=review_base_url,
-                api_key=review_api_key,
-                model=review_model,
-                temperature=0.0,
-                top_p=0.7,
-                max_tokens=4096,
+                provider="openai_compatible",
+                base_url=os.getenv("FPT_BASE_URL"),
+                api_key=os.getenv("FPT_API_KEY"),
+                model=os.getenv("PARSER_REVIEW_MODEL"),
+                temperature=0.1,
+                top_p=0.8,
+                max_tokens=8192,
             )
-            self._review_llm_with_output = self._review_llm.with_structured_output(
-                OCRPageReviewOutput
-            )
+            self._review_llm_with_output = self._review_llm.with_structured_output(OCRPageReviewOutput)
         except Exception as error:
             self.logger.warning(f"Parser review LLM setup failed, fallback to OCR LLM: {error}")
             self._review_llm = self._llm
-            self._review_llm_with_output = self._review_llm.with_structured_output(
-                OCRPageReviewOutput
-            )
+            self._review_llm_with_output = self._review_llm.with_structured_output(OCRPageReviewOutput)
         self.logger.agent_node("Parser setup completed")
 
     def _extract_options_from_content(self, content: str, options: list | None) -> tuple[str, list[str]]:
@@ -197,10 +188,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         # Pattern to match lines starting with a), b), c), d) or a., b., c., d.
         # These are typical true_false sub-option prefixes
-        option_pattern = re.compile(
-            r"^[ \t]*([a-d][\.\)])\s*(.+)",
-            re.IGNORECASE | re.MULTILINE
-        )
+        option_pattern = re.compile(r"^[ \t]*([a-d][\.\)])\s*(.+)", re.IGNORECASE | re.MULTILINE)
 
         matches = list(option_pattern.finditer(content))
         if len(matches) < 2:
@@ -502,42 +490,6 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             self.logger.error(f"Drop white page failed: {error}")
             return False
 
-    def _invoke_ocr(self, image_bytes: bytes, instruction: str) -> dict:
-        if self._llm is None:
-            raise RuntimeError("Parser OCR model is not initialized. Call setup() before OCR.")
-
-        message = HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": instruction
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
-                    },
-                },
-            ]
-        )
-
-        result = self._llm.invoke(self.build_messages(message))
-        content = result.content if hasattr(result, "content") else result
-
-        if isinstance(content, list):
-            raw = "".join(chunk.get("text", "") if isinstance(chunk, dict) else str(chunk) for chunk in content)
-        else:
-            raw = str(content)
-
-        clean = raw.strip()
-        clean = re.sub(r"^```json\s*", "", clean)
-        clean = re.sub(r"\s*```$", "", clean)
-
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            return {"raw_text": clean}
-
     def _count_questions_in_payload(self, payload: dict) -> int:
         return len(self._extract_questions_from_ocr_payload(payload))
 
@@ -602,8 +554,41 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         self.logger.agent_node(f"Parser page review applied page={page_num} questions_before={raw_count} questions_after={reviewed_count}")
         return reviewed_payload
 
-    def _ocr_single_page(self, page_num: int, image_bytes: bytes) -> dict:
-        return self._invoke_ocr(image_bytes, parser_ocr_instruction())
+    def _ocr_single_page(self, image_bytes: bytes, instruction: str) -> dict:
+        if self._llm is None:
+            raise RuntimeError("Parser OCR model is not initialized. Call setup() before OCR.")
+
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": instruction
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                    },
+                },
+            ]
+        )
+
+        result = self._llm.invoke(self.build_messages(message))
+        content = result.content if hasattr(result, "content") else result
+
+        if isinstance(content, list):
+            raw = "".join(chunk.get("text", "") if isinstance(chunk, dict) else str(chunk) for chunk in content)
+        else:
+            raw = str(content)
+
+        clean = raw.strip()
+        clean = re.sub(r"^```json\s*", "", clean)
+        clean = re.sub(r"\s*```$", "", clean)
+
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            return {"raw_text": clean}
 
     def _flatten_page_questions(self, ocr_pages: list[tuple[int, dict]]) -> dict:
         return {
@@ -867,14 +852,5 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             return "parser"
         return "teacher"
 
-
     async def run(self, input: str) -> str:
         pass
-
-if __name__ == "__main__":
-    parser_agent = ParserAgent()
-    asyncio.run(parser_agent.setup())
-#     # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 10 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
-#     # file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 11 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
-    file_path="c:\\Users\\abcsd\\Downloads\\Đề cuối kỳ 2 Toán 12 năm 2024 - 2025 trường THPT Lê Hồng Phong - Đắk Lắk - TOANMATH.com.pdf"
-    asyncio.run(parser_agent._ocr_file(file_path, batch_size=2))
