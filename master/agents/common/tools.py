@@ -84,9 +84,7 @@ class ToolsRegistry:
                 f"db={database_name} collection={collection_name}"
             ) from error
 
-        self.logger.agent_node(
-            f"Mongo find completed db={database_name} collection={collection_name} docs={len(result)}"
-        )
+        self.logger.agent_node(f"Mongo find completed db={database_name} collection={collection_name} docs={len(result)}")
         return result
 
     async def insert_data(self, database_name: str, collection_name: str, documents: list[dict]):
@@ -145,11 +143,7 @@ class ToolsRegistry:
             normalized = normalized.rsplit("```", 1)[0]
         return normalized.strip()
 
-    async def _execute_tool_calls(
-        self,
-        tool_calls: list[dict],
-        messages_key: str,
-    ) -> list[ToolMessage]:
+    async def _execute_tool_calls(self, tool_calls: list[dict], messages_key: str) -> list[ToolMessage]:
         if not tool_calls:
             return []
 

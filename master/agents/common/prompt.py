@@ -36,6 +36,17 @@ Gồm có 3 phần, tổng cộng 22 câu:
 - PHẦN III (Trả lời ngắn): điền kết quả số, không có lựa chọn.
 """
 
+_LATEX_TABLE_RULE = """\
+Quy tắc LaTeX cho bảng:
+- Nếu đề có bảng, hãy biểu diễn bảng bằng LaTeX display math `$$...$$`.
+- Dùng `array` hoặc `tabular` đầy đủ; không bỏ dấu backslash trước begin/end/text/hline.
+- Chữ trong bảng phải dùng `\\\\text{...}` trong JSON, không viết thành `text{...}` hoặc `ext{...}`.
+- Mỗi dòng bảng kết thúc bằng `\\\\\\\\` trong JSON; đường kẻ dùng `\\\\hline`.
+- Vì output là JSON, mọi backslash trong LaTeX phải được escape: `\\\\begin`, `\\\\end`, `\\\\text`, `\\\\hline`, `\\\\\\\\`.
+- Ví dụ đúng trong JSON string:
+  `$$\\\\begin{array}{|c|c|c|}\\\\hline \\\\text{Đường kính (cm)} & [20;22) & [22;24) \\\\\\\\ \\\\hline \\\\text{Tần số} & 5 & 20 \\\\\\\\ \\\\hline \\\\end{array}$$`
+"""
+
 
 def parser_system_prompt() -> str:
   return """\
@@ -101,6 +112,7 @@ def parser_system_prompt() -> str:
     - Chữ mờ/không chắc → ghi phần nhìn thấy rõ; không đoán phần còn thiếu.
     - LaTeX: escape backslash đúng JSON (\\frac, \\sqrt…).
     - Công thức độc lập: $$...$$  |  Công thức nội tuyến: $...$
+    - Nếu có bảng, dùng LaTeX display math với `array` và bọc bằng $$...$$. Chữ trong bảng phải là \\text{...}, không được thành text{...} hoặc ext{...}.
 
     THỨ TỰ ƯU TIÊN
     1. Output là JSON hợp lệ
@@ -117,6 +129,7 @@ def parser_ocr_instruction() -> str:
     QUAN TRỌNG: Đề thi này có thể có tới 6–8 câu hỏi trên một trang. \
     Phải trích xuất HẾT tất cả, kể cả câu ở sát mép dưới ảnh.
 
+    """ + _LATEX_TABLE_RULE + """\
     CHECKLIST TRƯỚC KHI TRẢ VỀ:
     □ Output bắt đầu bằng { và kết thúc bằng } — không có gì trước hoặc sau.
     □ Chỉ dòng bắt đầu bằng "Câu X" / "Bài X" mới tạo object mới.
@@ -147,7 +160,10 @@ def parser_review_system_prompt() -> str:
     - `multiple_choice` chỉ dùng khi nhìn rõ đây là trắc nghiệm A/B/C/D.
     - `true_false` phải đưa các ý a)/b)/c)/d) vào `options`.
     - `short_ans` phải có `options: []`.
+    - Nếu candidate có bảng bị mất `\\` như `ext{...}` hoặc thiếu `$$...$$`, phải sửa lại theo quy tắc LaTeX cho bảng.
     - Chỉ trả về đúng một JSON object theo schema page OCR, không markdown.
+
+    """ + _LATEX_TABLE_RULE + """\
     """
 
 
@@ -181,6 +197,9 @@ def parser_page_review_instruction(
     - Nếu candidate đang gộp nhiều câu vào một phần tử, hãy tách lại đúng theo ảnh.
     - Nếu OCR cũ đã có câu hợp lý thì giữ lại, chỉ sửa khi thật sự cần.
     - Nếu thiếu một phần văn bản do ảnh mờ, ghi phần nhìn thấy rõ; không bịa thêm.
+    - Nếu có bảng hoặc candidate có bảng LaTeX lỗi, sửa theo quy tắc LaTeX cho bảng.
+
+    {_LATEX_TABLE_RULE}
 
     Output bắt buộc là JSON object theo schema:
     {{
@@ -229,6 +248,9 @@ def parser_document_review_instruction(
     - Tiêu đề phần như "PHẦN I", "PHẦN II", "PHẦN III" và hướng dẫn chung như "Thí sinh trả lời..." không được đưa vào `content`.
     - Không tạo object riêng cho tiêu đề phần hoặc hướng dẫn chung.
     - Không bịa thêm nội dung không nhìn thấy rõ trên ảnh.
+    - Nếu có bảng hoặc candidate có bảng LaTeX lỗi, sửa theo quy tắc LaTeX cho bảng.
+
+    {_LATEX_TABLE_RULE}
 
     Output bắt buộc là JSON object theo schema:
     {{
@@ -386,44 +408,35 @@ def teacher_review_mistake_prompt(content: str, student_answer: str | None, stud
 
 def verifier_system_prompt() -> str:
   return f"""\
-    Bạn là AI kiểm định chéo (Verifier) cho giáo viên Toán THPT Việt Nam.
-    Nhiệm vụ: xác nhận hoặc phản biện đánh giá của Teacher một cách khắt khe, trung thực.
+    Bạn là Verifier môn Toán THPT. Nhiệm vụ: kiểm tra độc lập đáp án/lập luận của Teacher và trả kết quả ngắn gọn, đúng schema.
 
     OUTPUT BẮT BUỘC
     {_RESULT_SCHEMA}
 
-    BỐI CẢNH ĐỀ THI
-    {_2026_FORMAT}
-
-    QUY TẮC VERIFIER
-    - Kiểm tra lại từng bước tính toán của Teacher trong `reasoning`.
-    - agree = true chỉ khi bạn xác nhận Teacher đúng sau khi kiểm tra độc lập.
-    - Nếu Teacher sai: agree = false, chỉ rõ lỗi sai và đưa ra correct_answer của riêng bạn.
-    - Không dùng icon, emoji, ký hiệu trang trí.
-    - Công thức toán: $...$ (nội tuyến) hoặc $$...$$ (độc lập). Escape JSON đúng cách.
-    - `feedback` là phiên bản cuối có thể gửi thẳng cho học sinh — rõ ràng, tiếng Việt tự nhiên.
-    - Nếu đề thiếu dữ kiện, nêu rõ điểm bất hợp lý.
-
-    QUY TẮC THEO TÌNH HUỐNG
-    Hint:
-      - Tối ưu lại hint của Teacher để gợi mở hơn, không giải hộ học sinh.
-
-    Chữa lỗi:
-      - Đảm bảo Teacher giải thích đúng và dễ hiểu.
-      - Nếu cách Teacher sửa chưa chuẩn, đưa ra cách sửa đúng hơn.
+    Quy tắc:
+    - `agree=true` chỉ khi đáp án và lập luận của Teacher đúng.
+    - Nếu sai hoặc thiếu chắc chắn: `agree=false`, nêu lỗi chính và đưa `correct_answer` tốt nhất.
+    - `reasoning` chỉ ghi các bước kiểm tra cần thiết, không viết dài.
+    - `feedback` là phản hồi cuối cho học sinh: rõ, ngắn, tự nhiên.
+    - Không markdown, không emoji. Công thức dùng $...$ hoặc $$...$$ và escape JSON đúng.
   """
 
 
 def verifier_summary_prompt(batch_input_json: str) -> str:
   return f"""\
-    Kiểm tra lại đánh giá của Teacher cho toàn bộ câu hỏi trong BATCH_INPUT.
+    Kiểm tra các câu trong BATCH_INPUT dựa trên Conversation history.
 
-    Yêu cầu:
-    - Xác nhận hoặc phản biện từng question_id dựa trên Conversation history.
-    - agree = true nếu Teacher đúng; false nếu sai hoặc chưa đủ chắc chắn.
-    - reasoning: tính toán lại độc lập, nêu rõ điểm đúng/sai của Teacher.
-    - feedback: phiên bản cuối, sẵn sàng gửi cho học sinh.
-    - Không bỏ sót question_id nào. Mỗi id đúng 1 kết quả.
+    PLAN CHẤM cho từng question_id:
+    1. Xác định type và yêu cầu của đề.
+    2. Tự giải hoặc kiểm tra phép tính cốt lõi.
+    3. So với kết luận gần nhất của Teacher.
+    4. Quyết định `agree`; nếu false thì sửa `correct_answer`.
+    5. Viết `reasoning` và `feedback` ngắn gọn, đủ ý.
+
+    Ràng buộc:
+    - Trả đủ mọi question_id, mỗi id đúng 1 object.
+    - `reasoning` tối đa 3 câu.
+    - `feedback` tối đa 3 câu, gửi được cho học sinh.
 
     BATCH_INPUT:
     {batch_input_json}
@@ -432,21 +445,21 @@ def verifier_summary_prompt(batch_input_json: str) -> str:
 
 def verifier_counter_evidence_prompt(batch_input_json: str, conversation: str) -> str:
   return f"""\
-    Ban dang o buoc tu phan bien truoc khi Verifier dung tool.
+    Tự phản biện nhanh trước khi Verifier dùng tool.
 
-    Muc tieu:
-    - Co gang bac bo, phan bien hoac tim diem dang nghi trong ket luan gan nhat cua Teacher bang lap luan toan hoc doc lap.
-    - Duoc phep dung conversation de doi chieu, nhung KHONG duoc goi tool o buoc nay.
-    - Chi danh dau `found_counter_evidence = true` neu ban co bang chung phan bien cu the, gan voi tung `question_id`.
-    - Neu khong tim duoc bang chung phan bien du manh thi de `found_counter_evidence = false` va `counter_evidence = ""`.
+    Yêu cầu:
+    - Dựa vào BATCH_INPUT và conversation, tìm lỗi toán học cụ thể trong kết luận của Teacher.
+    - KHÔNG gọi tool.
+    - Chỉ đặt `found_counter_evidence=true` khi có bằng chứng rõ ràng theo từng `question_id`.
+    - Nếu không có bằng chứng mạnh: `found_counter_evidence=false`, `counter_evidence=""`.
 
-    Output bat buoc la JSON hop le:
+    Output JSON:
     {{
       "found_counter_evidence": boolean,
       "counter_evidence": "string"
     }}
 
-    Neu co bang chung, moi dong cua `counter_evidence` phai theo dang:
+    Nếu có bằng chứng, mỗi dòng:
     `question_id=... | evidence=...`
 
     BATCH_INPUT:
@@ -457,15 +470,13 @@ def verifier_counter_evidence_prompt(batch_input_json: str, conversation: str) -
 
 def verifier_tool_research_prompt(batch_input_json: str, conversation: str) -> str:
   return f"""\
-    Bạn đang ở bước tool research sau khi Verifier không tìm được bằng chứng phản biện đủ mạnh bằng lập luận thuần.
+    Verifier cần kiểm tra bằng tool.
 
-    Yêu cầu bắt buộc:
-    - Phải gọi ít nhất một tool trước khi kết luận.
-    - Ưu tiên dùng `Python_REPL` để kiểm tra lại phép tính, công thức, nghiệm hoặc phản ví dụ.
-    - Nếu cần đối chiếu dữ liệu cục bộ thì dùng file tools; chỉ dùng browser tools khi thật sự cần.
-    - Sau khi dùng tool, hãy tóm tắt ngắn gọn các bằng chứng đã kiểm tra được cho từng `question_id`.
-    - Mỗi dòng nên theo dạng: `question_id=... | tool=... | evidence=...`.
-    - Nếu phát hiện Teacher có điểm đáng nghi, phải nêu rõ điểm nào bị tool phản biện.
+    Yêu cầu:
+    - Gọi ít nhất 1 tool; ưu tiên `Python_REPL` cho tính toán/nghiệm/phản ví dụ.
+    - Chỉ dùng file/browser tools khi thật sự cần.
+    - Tóm tắt ngắn theo dòng: `question_id=... | tool=... | evidence=...`.
+    - Nếu Teacher sai, nêu đúng điểm bị phản biện.
 
     BATCH_INPUT:
     {batch_input_json}

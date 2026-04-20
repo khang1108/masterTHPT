@@ -40,7 +40,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             base_url=os.getenv("FPT_BASE_URL"),
             api_key=os.getenv("FPT_API_KEY"),
             model=os.getenv("VERIFIER_MODEL"),
-            max_tokens=8192,
+            max_tokens=12000,
             temperature=0.7,
         )
         await self.setup_tools(llm)
@@ -66,9 +66,26 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 return "END"
         return "teacher"
 
-    def format_conversation(self, state: AgentState) -> str:
+    def _is_length_limit_error(self, error: Exception) -> bool:
+        if error.__class__.__name__ == "LengthFinishReasonError":
+            return True
+        return "length limit was reached" in str(error).lower()
+
+    def _message_to_text(self, message) -> str:
+        text = message.content if hasattr(message, "content") else str(message)
+        if isinstance(text, list):
+            return json.dumps(text, ensure_ascii=False)
+        return str(text or "")
+
+    def _mentions_any_question(self, text: str, question_ids: set[str]) -> bool:
+        if not question_ids:
+            return True
+        return any(question_id in text for question_id in question_ids)
+
+    def format_conversation(self, state: AgentState, question_ids: list[str] | None = None) -> str:
         teacher_feedback = state.get("teacher_feedback") or []
         verifier_feedback = state.get("verifier_feedback") or []
+        question_id_set = {str(question_id) for question_id in (question_ids or []) if question_id}
 
         if not isinstance(teacher_feedback, list):
             teacher_feedback = [teacher_feedback]
@@ -77,22 +94,84 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
         conversation_lines = ["Conversation history:", ""]
         for i, t_feedback in enumerate(teacher_feedback):
-            teacher_text = t_feedback.content if hasattr(t_feedback, "content") else str(t_feedback)
-            
-            if isinstance(teacher_text, list):
-                teacher_text = json.dumps(teacher_text, ensure_ascii=False)
+            teacher_text = self._message_to_text(t_feedback)
+            if not self._mentions_any_question(teacher_text, question_id_set):
+                continue
             
             conversation_lines.append(f"Round {i + 1}")
             conversation_lines.append(f"Teacher feedback: {teacher_text}")
             if i < len(verifier_feedback):
-                verifier_text = verifier_feedback[i].content if hasattr(verifier_feedback[i], "content") else str(verifier_feedback[i])
-                
-                if isinstance(verifier_text, list):
-                    verifier_text = json.dumps(verifier_text, ensure_ascii=False)
-                conversation_lines.append(f"Verifier feedback: {verifier_text}")
+                verifier_text = self._message_to_text(verifier_feedback[i])
+                if self._mentions_any_question(verifier_text, question_id_set):
+                    conversation_lines.append(f"Verifier feedback: {verifier_text}")
             conversation_lines.append("")
 
+        if len(conversation_lines) == 2 and question_id_set:
+            conversation_lines.append(
+                "Không có feedback cũ liên quan trực tiếp tới các question_id trong batch này."
+            )
+
         return "\n".join(conversation_lines)
+
+    async def _invoke_verifier_batch(
+        self,
+        *,
+        batch: list[dict],
+        conversation: str,
+        research_evidence: str = "",
+        research_source: str = "none",
+    ) -> EvaluateBatch:
+        batch_input_json = json.dumps(batch, ensure_ascii=False, indent=2)
+        prompt = verifier_summary_prompt(batch_input_json)
+        prompt += conversation
+        if research_evidence:
+            prompt += (
+                f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n"
+                f"{research_evidence}\n"
+                "Lưu ý: Bạn phải ưu tiên dùng dữ liệu này để lập luận. Hãy trích dẫn ngắn gọn bằng chứng thuyết phục nhất vào phần phản hồi."
+            )
+
+        try:
+            return await self._llm_with_output.ainvoke(self.build_messages(prompt))
+        except Exception as error:
+            if not self._is_length_limit_error(error):
+                raise
+
+            if len(batch) <= 1:
+                item_id = batch[0].get("question_id") if batch else "unknown"
+                self.logger.warning(f"Verifier structured output hit length limit for single item {item_id}; retrying with minimal prompt")
+                minimal_prompt = (
+                    verifier_summary_prompt(batch_input_json)
+                    + "\nĐã lược bỏ lịch sử hội thoại vì phản hồi trước vượt giới hạn token."
+                    + "\nChỉ trả về JSON hợp lệ, thật ngắn gọn. Giữ reasoning dưới 300 ký tự và feedback dưới 300 ký tự."
+                )
+                if research_evidence:
+                    minimal_prompt += (
+                        f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n"
+                        f"{research_evidence}\n"
+                    )
+
+                try:
+                    return await self._llm_with_output.ainvoke(self.build_messages(minimal_prompt))
+                except Exception as retry_error:
+                    if not self._is_length_limit_error(retry_error):
+                        raise
+                    self.logger.warning(f"Verifier minimal fallback also hit length limit for single item {item_id}; returning no result")
+                    return EvaluateBatch(results=[])
+
+            self.logger.warning(f"Verifier structured output hit length limit for {len(batch)} items; retrying per question")
+            merged = EvaluateBatch(results=[])
+            for item in batch:
+                item_id = item.get("question_id")
+                single_response = await self._invoke_verifier_batch(
+                    batch=[item],
+                    conversation=conversation,
+                    research_evidence=research_evidence,
+                    research_source=research_source,
+                )
+                matched = [result for result in single_response.results if result.question_id == item_id]
+                merged.results.extend(matched or single_response.results[:1])
+            return merged
 
     async def _run_batch(self, state: AgentState) -> AgentState:
         request = state["request"]
@@ -220,9 +299,8 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 continue
 
             batch_input_json = json.dumps(need_verify, ensure_ascii=False, indent=2)
-            conversation = self.format_conversation(state)
-            prompt = verifier_summary_prompt(batch_input_json)
-            prompt += conversation
+            need_verify_ids = [item.get("question_id") for item in need_verify]
+            conversation = self.format_conversation(state, need_verify_ids)
 
             try:
                 research_evidence, _, research_source = await self.run_counter_evidence_then_tool(counter_prompt=verifier_counter_evidence_prompt(batch_input_json, conversation), tool_prompt=verifier_tool_research_prompt(batch_input_json, conversation), messages_key="Verifier_feedback")
@@ -231,9 +309,12 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
                 research_source = "none"
                 self.logger.warning(f"Verifier research failed for batch {i // BATCH_SIZE + 1}: {error}")
 
-            if research_evidence:
-                prompt += f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n{research_evidence}\nLưu ý: Bạn phải ưu tiên dùng dữ liệu này để lập luận. Hãy trích dẫn ngắn gọn bằng chứng thuyết phục nhất vào phần phản hồi."
-            responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(prompt))
+            responses = await self._invoke_verifier_batch(
+                batch=need_verify,
+                conversation=conversation,
+                research_evidence=research_evidence,
+                research_source=research_source,
+            )
 
             response_by_id = {r.question_id: r for r in responses.results}
             missing = [item for item in need_verify if item.get("question_id") not in response_by_id]
@@ -241,12 +322,12 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
             while missing and retry_count < 2:
                 retry_count += 1
                 self.logger.agent_node(f"Verifier retry {retry_count}: {len(missing)} missing items")
-                retry_json = json.dumps(missing, ensure_ascii=False, indent=2)
-                retry_prompt = verifier_summary_prompt(retry_json)
-                retry_prompt += conversation
-                if research_evidence:
-                    retry_prompt += f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n{research_evidence}\nLưu ý: Bạn phải ưu tiên dùng dữ liệu này để lập luận. Hãy trích dẫn ngắn gọn bằng chứng thuyết phục nhất vào phần phản hồi."
-                retry_responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(retry_prompt))
+                retry_responses = await self._invoke_verifier_batch(
+                    batch=missing,
+                    conversation=conversation,
+                    research_evidence=research_evidence,
+                    research_source=research_source,
+                )
                 for result in retry_responses.results:
                     response_by_id[result.question_id] = result
                 missing = [item for item in need_verify if item.get("question_id") not in response_by_id]
