@@ -16,12 +16,6 @@ This repository constitutes the primary codebase for the MASTER system. The foll
 
 **Visit our website**: [Here](masterthpt.app)
 
-## Star History
-
-Tracking the community interest and growth of the repository over time:
-
-[![Star History Chart](https://api.star-history.com/svg?repos=khang1108/MASTER---Multi-Agent-System-for-Teaching-Evaluating-Reviewing&type=Date)](https://star-history.com/#khang1108/MASTER---Multi-Agent-System-for-Teaching-Evaluating-Reviewing&Date)
-
 ## Overview and Core Value Proposition
 
 MASTER is developed to address the growing need for personalized learning among high school students. It serves as a centralized repository for examination papers and practice tests categorized by subject, grade level, and exam type. The system supports entrance assessments, maintains a comprehensive history of attempted exams, and allows students to review their performance at any time. Based on previous results and individual learner profiles, MASTER generates tailored recommendations for subsequent study sessions. To ensure seamless development, testing, and deployment, the architecture is decoupled into independent services: the web interface, the API backend, and the sophisticated AI agent service. The current implementation evaluates objective tests deterministically at the API layer, while the agent service is dedicated to advanced tasks such as providing strategic hints, analyzing student mistakes, generating adaptive practice sessions, and orchestrating various AI-driven workflows.
@@ -120,13 +114,13 @@ cp infra/.env.example infra/.env.ai
 ```
 *(Ensure you update the newly created files with your MongoDB keys, Google OAuth client secrets, and preferred LLM provider details)*
 
-2. **Initialize the Docker Stack:**
+1. **Initialize the Docker Stack:**
 ```bash
 docker compose -f infra/docker-compose-web.yml up --build
 ```
 When the containers successfully deploy, the user interface immediately becomes accessible via the standard local port 3000, while the API health statuses can be monitored at ports 3001 and 8000 respectively.
 
-3. **Alternative Manual Setup (Without Docker):**
+1. **Alternative Manual Setup (Without Docker):**
 Engineers seeking to focus on distinct subsystems can instantiate the services manually.
 
 **For the Backend API (NestJS):**
@@ -168,6 +162,12 @@ pytest
 The repository integrates an automated Continuous Integration and Continuous Deployment pipeline using GitHub Actions, tailored directly for Microsoft Azure. Triggered by a primary branch push or a manual workflow dispatch, the pipeline actively builds the distinct Docker images and securely pushes them into an Azure Container Registry (ACR).
 
 Subsequently, the Azure Container Apps are thoroughly updated with the latest revisions alongside their isolated secure environment variables via GitHub Secrets. Required keys include Azure subscription identifiers, registry login paths, database uniform resource identifiers, and LLM access tokens. This serverless container deployment strictly guarantees isolated execution, rapid scaling capabilities during high-traffic examination periods, and built-in observability with an integrated LangSmith tracing protocol activated natively across the AI containers.
+
+## Star History
+
+Tracking the community interest and growth of the repository over time:
+
+[![Star History Chart](https://api.star-history.com/svg?repos=khang1108/MASTER---Multi-Agent-System-for-Teaching-Evaluating-Reviewing&type=Date)](https://star-history.com/#khang1108/MASTER---Multi-Agent-System-for-Teaching-Evaluating-Reviewing&Date)
 
 ## Contributors
 
