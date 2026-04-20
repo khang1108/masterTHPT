@@ -13,12 +13,14 @@ from master.agents.common.state import AgentState
 from master.agents.common.llm_client import LLMClient
 from master.agents.common.prompt import (
     parser_document_review_instruction,
+    parser_ocr_instruction,
     parser_page_review_instruction,
     parser_review_system_prompt,
     parser_system_prompt,
 )
 
 import base64
+import asyncio
 import datetime
 import uuid
 import json
@@ -37,6 +39,10 @@ MIN_NON_WHITE_RATIO = 0.003
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 
 load_dotenv(override=True)
+
+PAGE_REVIEW_TIMEOUT_SECONDS = int(os.getenv("PARSER_PAGE_REVIEW_TIMEOUT_SECONDS", "90"))
+DOCUMENT_REVIEW_TIMEOUT_SECONDS = int(os.getenv("PARSER_DOCUMENT_REVIEW_TIMEOUT_SECONDS", "180"))
+DOCUMENT_REVIEW_MAX_PAGES = int(os.getenv("PARSER_DOCUMENT_REVIEW_MAX_PAGES", "4"))
 
 class ParserAgent(ToolsRegistry, BaseAgent):
     def __init__(self):
@@ -401,7 +407,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             return json.loads(clean)
         except json.JSONDecodeError:
             return {"raw_text": clean}
-    def _review_page_ocr_output(self, *, page_num: int, image_bytes: bytes, ocr_output: dict, previous_page_context: str = "") -> dict:
+    async def _review_page_ocr_output(self, *, page_num: int, image_bytes: bytes, ocr_output: dict, previous_page_context: str = "") -> dict:
         if not getattr(self, "_review_llm_with_output", None):
             return ocr_output
 
@@ -427,12 +433,21 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         raw_count = self._count_questions_in_payload(ocr_output)
         try:
-            review_result: PageReviewOutput = self._review_llm_with_output.invoke(
-                [
-                    SystemMessage(content=self._review_system_prompt),
-                    message,
-                ]
+            self.logger.agent_node(f"Parser page review started page={page_num} questions_before={raw_count}")
+            review_result: PageReviewOutput = await asyncio.wait_for(
+                self._review_llm_with_output.ainvoke(
+                    [
+                        SystemMessage(content=self._review_system_prompt),
+                        message,
+                    ]
+                ),
+                timeout=PAGE_REVIEW_TIMEOUT_SECONDS,
             )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"Parser page review timed out page={page_num} after {PAGE_REVIEW_TIMEOUT_SECONDS}s; using raw OCR output"
+            )
+            return ocr_output
         except Exception as error:
             self.logger.warning(f"Parser page review failed page={page_num}: {error}")
             return ocr_output
@@ -466,8 +481,14 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "metadata": ocr_pages[0][1].get("metadata", {}) if ocr_pages else {},
             "questions": [question for _, page in ocr_pages for question in self._extract_questions_from_ocr_payload(page)],
         }
-    def _review_document_ocr_output(self, *, page_payloads: list[tuple[int, bytes, str]], ocr_pages: list[tuple[int, dict]],) -> dict:
+    async def _review_document_ocr_output(self, *, page_payloads: list[tuple[int, bytes, str]], ocr_pages: list[tuple[int, dict]],) -> dict:
         if not getattr(self, "_review_llm_with_output", None):
+            return self._flatten_page_questions(ocr_pages)
+
+        if len(ocr_pages) > DOCUMENT_REVIEW_MAX_PAGES:
+            self.logger.agent_node(
+                f"Parser document review skipped pages={len(ocr_pages)} max_pages={DOCUMENT_REVIEW_MAX_PAGES}"
+            )
             return self._flatten_page_questions(ocr_pages)
 
         page_nums = {page_num for page_num, _ in ocr_pages}
@@ -502,12 +523,23 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
         raw_count = sum(self._count_questions_in_payload(page) for _, page in ocr_pages)
         try:
-            review_result: PageReviewOutput = self._review_llm_with_output.invoke(
-                [
-                    SystemMessage(content=self._review_system_prompt),
-                    HumanMessage(content=message_content),
-                ]
+            self.logger.agent_node(
+                f"Parser document review started pages={sorted(page_nums)} questions_before={raw_count}"
             )
+            review_result: PageReviewOutput = await asyncio.wait_for(
+                self._review_llm_with_output.ainvoke(
+                    [
+                        SystemMessage(content=self._review_system_prompt),
+                        HumanMessage(content=message_content),
+                    ]
+                ),
+                timeout=DOCUMENT_REVIEW_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"Parser document review timed out after {DOCUMENT_REVIEW_TIMEOUT_SECONDS}s; using page-reviewed output"
+            )
+            return self._flatten_page_questions(ocr_pages)
         except Exception as error:
             self.logger.warning(f"Parser document review failed: {error}")
             return self._flatten_page_questions(ocr_pages)
@@ -536,6 +568,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
         all_results: dict[int, dict] = {}
         completed_pages = 0
 
+        ocr_instruction = parser_ocr_instruction()
         for i in range(0, total_pages, batch_size):
             batch = page_payloads[i: i + batch_size]
             batch_index = (i // batch_size) + 1
@@ -545,7 +578,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
 
             with ThreadPoolExecutor(max_workers=batch_size) as executor:
                 future_map = {
-                    executor.submit(self._ocr_single_page, page_num, image_bytes): page_num
+                    executor.submit(self._ocr_single_page, image_bytes, ocr_instruction): page_num
                     for page_num, image_bytes, image_name in batch
                     if self._drop_white_page(image_bytes)
                 }
@@ -577,7 +610,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             if image_bytes is None:
                 continue
 
-            reviewed_output = self._review_page_ocr_output(
+            reviewed_output = await self._review_page_ocr_output(
                 page_num=page_num,
                 image_bytes=image_bytes,
                 ocr_output=ocr_output,
@@ -587,7 +620,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             previous_page_context = self._page_ocr_text(reviewed_output) or self._page_ocr_text(ocr_output)
 
         ocr_pages = reviewed_pages
-        document_output = self._review_document_ocr_output(page_payloads=page_payloads, ocr_pages=ocr_pages)
+        document_output = await self._review_document_ocr_output(page_payloads=page_payloads, ocr_pages=ocr_pages)
 
         questions: list[QuestionOutput] = []
         question_index = 0
@@ -700,6 +733,7 @@ class ParserAgent(ToolsRegistry, BaseAgent):
             "generated": False,
         }
 
+        self.logger.agent_node(f"Parser exam insert started exam_id={exam_id} total_questions={len(questions_data)}")
         await self.insert_data("masterthpt", "exams", [exam])
         self.logger.agent_node(f"Parser saved exam {exam_id} with {len(questions_data)} questions to database")
 

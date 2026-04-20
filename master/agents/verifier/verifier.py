@@ -233,7 +233,7 @@ class VerifierAgent(ToolsRegistry, BaseAgent):
 
             if research_evidence:
                 prompt += f"\nDỮ LIỆU KIỂM CHỨNG ({research_source}):\n{research_evidence}\nLưu ý: Bạn phải ưu tiên dùng dữ liệu này để lập luận. Hãy trích dẫn ngắn gọn bằng chứng thuyết phục nhất vào phần phản hồi."
-                responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(prompt))
+            responses: EvaluateBatch = await self._llm_with_output.ainvoke(self.build_messages(prompt))
 
             response_by_id = {r.question_id: r for r in responses.results}
             missing = [item for item in need_verify if item.get("question_id") not in response_by_id]

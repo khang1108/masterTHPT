@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Any
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+import asyncio
 import json
 import uuid
 import os
@@ -17,6 +18,10 @@ import os
 load_dotenv(override=True)
 
 MONGO_URI = os.getenv("MONGO_URI")
+MONGO_SERVER_SELECTION_TIMEOUT_MS = int(os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "10000"))
+MONGO_CONNECT_TIMEOUT_MS = int(os.getenv("MONGO_CONNECT_TIMEOUT_MS", "10000"))
+MONGO_SOCKET_TIMEOUT_MS = int(os.getenv("MONGO_SOCKET_TIMEOUT_MS", "20000"))
+MONGO_OPERATION_TIMEOUT_SECONDS = int(os.getenv("MONGO_OPERATION_TIMEOUT_SECONDS", "25"))
 
 
 class CounterEvidenceDecision(BaseModel):
@@ -28,7 +33,12 @@ class ToolsRegistry:
     _tools: list[BaseTool] | None = None
     _browser = None
     _playwright = None
-    _mongo_client = AsyncIOMotorClient(MONGO_URI)
+    _mongo_client = AsyncIOMotorClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=MONGO_SERVER_SELECTION_TIMEOUT_MS,
+        connectTimeoutMS=MONGO_CONNECT_TIMEOUT_MS,
+        socketTimeoutMS=MONGO_SOCKET_TIMEOUT_MS,
+    )
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -60,13 +70,47 @@ class ToolsRegistry:
 
     async def get_data(self, database_name: str, collection_name: str, query: dict, limit: int = 10) -> list:
         collection = ToolsRegistry._mongo_client[database_name][collection_name]
-        return await collection.find(query).to_list(length=limit)
+        self.logger.agent_node(
+            f"Mongo find started db={database_name} collection={collection_name} limit={limit}"
+        )
+        try:
+            result = await asyncio.wait_for(
+                collection.find(query).to_list(length=limit),
+                timeout=MONGO_OPERATION_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as error:
+            raise TimeoutError(
+                f"Mongo find timed out after {MONGO_OPERATION_TIMEOUT_SECONDS}s "
+                f"db={database_name} collection={collection_name}"
+            ) from error
+
+        self.logger.agent_node(
+            f"Mongo find completed db={database_name} collection={collection_name} docs={len(result)}"
+        )
+        return result
 
     async def insert_data(self, database_name: str, collection_name: str, documents: list[dict]):
         if not documents:
             return
         collection = ToolsRegistry._mongo_client[database_name][collection_name]
-        await collection.insert_many(documents)
+        self.logger.agent_node(
+            f"Mongo insert started db={database_name} collection={collection_name} docs={len(documents)}"
+        )
+        try:
+            result = await asyncio.wait_for(
+                collection.insert_many(documents),
+                timeout=MONGO_OPERATION_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as error:
+            raise TimeoutError(
+                f"Mongo insert timed out after {MONGO_OPERATION_TIMEOUT_SECONDS}s "
+                f"db={database_name} collection={collection_name} docs={len(documents)}"
+            ) from error
+
+        inserted_count = len(getattr(result, "inserted_ids", []) or [])
+        self.logger.agent_node(
+            f"Mongo insert completed db={database_name} collection={collection_name} inserted={inserted_count}"
+        )
 
     def _stringify_message_content(self, content: Any) -> str:
         if isinstance(content, str):
